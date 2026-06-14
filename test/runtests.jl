@@ -1,6 +1,9 @@
 using Test
 using EDGAR
 
+# The SEC requires a User-Agent; set one so the network smoke tests can run.
+set_user_agent("EDGAR.jl test suite", "noreply@example.com")
+
 @testset "EDGAR basic" begin
     # Smoke test: list recent filings (network request). Wrapped so CI/offline doesn't fail.
     try
@@ -76,4 +79,15 @@ end
     EDGAR.CONFIG.cache_dir = nothing
     EDGAR.CONFIG.cache_max_age = nothing
     set_config(cache = :temporary)
+end
+
+@testset "set_user_agent + guard (offline)" begin
+    ua = set_user_agent(" Jane Doe ", " jane@example.com ")   # trimmed
+    @test ua == "Jane Doe jane@example.com"
+    @test EDGAR.get_user_agent() == ua
+    @test_throws ArgumentError set_user_agent("Jane Doe", "not-an-email")
+    @test_throws ArgumentError set_user_agent("", "jane@example.com")
+    # With no User-Agent set, requests fail fast with a clear error.
+    EDGAR.CONFIG.user_agent = nothing
+    @test_throws ArgumentError EDGAR.get_user_agent()
 end

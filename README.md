@@ -34,9 +34,15 @@ Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 ## ⚠️ Set a User-Agent first
 
 > The SEC requires a **descriptive `User-Agent` with contact information**. Requests
-> without one are rejected (HTTP 403). Open `src/EDGAR.jl` and update the
-> `USER_AGENT` constant to include your name and a contact email, for example
-> `"Jane Doe jane@example.com"`.
+> without one are rejected (HTTP 403). Set yours once per session with your name and
+> a contact email:
+>
+> ```julia
+> using EDGAR
+> set_user_agent("Jane Doe", "jane@example.com")
+> ```
+>
+> EDGAR.jl will otherwise stop with a clear error before contacting the SEC.
 
 ## Quick start
 

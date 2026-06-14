@@ -6,8 +6,6 @@ using Gumbo
 using Cascadia
 # avoid requiring extra stdlib; use built-in hash for cache key
 
-const USER_AGENT = "EDGAR.jl/0.1 (https://github.com/yourname/EDGAR.jl)"
-
 # HTTP helper (injectable for tests)
 http_get = HTTP.get
 
@@ -54,9 +52,9 @@ Override the global runtime configuration. Only the keyword arguments you pass
 (anything other than `nothing`) are changed; the rest keep their current values.
 Returns the live configuration object.
 
-- `user_agent` — the `User-Agent` header sent with every request. **Set this to a
-  descriptive value with contact information**, as the SEC requires, or requests
-  are rejected with HTTP 403.
+- `user_agent` — the `User-Agent` header sent with every request. **Required**: the
+  SEC rejects requests without a descriptive value with contact information.
+  [`set_user_agent`](@ref) is the convenient way to set it.
 - `cache` — caching mode, `:temporary` / `:persistent` / `:off`; see *Caching* below.
 - `cache_dir`, `cache_ttl`, `cache_max_size`, `cache_max_age` — cache location and
   limits; see *Caching* below.
@@ -118,7 +116,35 @@ end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size
 get_cache_max_age() = CONFIG.cache_max_age === nothing ? CACHE_MAX_AGE : CONFIG.cache_max_age
-get_user_agent() = CONFIG.user_agent === nothing ? USER_AGENT : CONFIG.user_agent
+# Returns the configured User-Agent, or throws a clear, actionable error if none
+# has been set — the SEC rejects requests without a descriptive User-Agent.
+function get_user_agent()
+    CONFIG.user_agent === nothing && throw(ArgumentError(
+        "No SEC User-Agent set. The SEC requires a descriptive User-Agent with " *
+        "contact information. Set one with:\n    set_user_agent(\"Your Name\", \"you@example.com\")"))
+    return CONFIG.user_agent
+end
+
+"""
+    set_user_agent(name, email) -> String
+
+Set the SEC `User-Agent` from your `name` and contact `email`. The SEC requires a
+descriptive User-Agent with contact information; requests without one are rejected
+with HTTP 403. Returns the User-Agent string that will be sent.
+
+```julia
+set_user_agent("Jane Doe", "jane@example.com")
+```
+"""
+function set_user_agent(name::AbstractString, email::AbstractString)
+    name = strip(name)
+    email = strip(email)
+    isempty(name) && throw(ArgumentError("name must not be empty"))
+    occursin('@', email) || throw(ArgumentError("\"$email\" does not look like an email address"))
+    ua = "$(name) $(email)"
+    set_config(user_agent = ua)
+    return ua
+end
 
 # True when the cache is stored persistently (named mode or a pinned directory),
 # as opposed to the ephemeral per-process :temporary dir.
@@ -279,10 +305,11 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         end
     end
 
+    ua = get_user_agent()   # throws a clear error if unset, before any network call
     CACHE_METRICS[:requests] += 1
     r = nothing
     try
-        r = http_get(url, headers=["User-Agent"=>get_user_agent()], readtimeout=timeout)
+        r = http_get(url, headers=["User-Agent"=>ua], readtimeout=timeout)
     catch e
         @info "fetch_url error: $e"
     end
@@ -395,7 +422,7 @@ end
 # error, or the resource does not exist).
 function _get_json(url::AbstractString; use_cache::Bool=true)
     body = fetch_url(url; use_cache = use_cache)
-    body === nothing && error("EDGAR request failed: $url (check USER_AGENT, network, and that the resource exists)")
+    body === nothing && error("EDGAR request failed: $url (network error, SEC rate limit, or the resource does not exist)")
     return JSON3.read(body)
 end
 
@@ -518,10 +545,11 @@ function download_filing(cik::AbstractString, accession::AbstractString; primary
     if !isdir(destdir)
         mkpath(destdir)
     end
+    ua = get_user_agent()   # throws a clear error if unset, before any network call
     for cand in candidates
         full = "https://www.sec.gov/Archives/edgar/data/$(strip(parse(Int, cikp)))/$(acc)" * cand
         try
-            r = HTTP.get(full, headers=["User-Agent"=>get_user_agent()])
+            r = HTTP.get(full, headers=["User-Agent"=>ua])
             if r.status == 200
                 out = joinpath(destdir, basename(cand))
                 open(out, "w") do io
@@ -750,7 +778,7 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
-       set_config, fetch_url, clean_cache, cache_metrics, cache_path_for,
+       set_config, set_user_agent, fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module

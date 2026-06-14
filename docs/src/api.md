@@ -64,6 +64,7 @@ modes, and the freshness and retention limits — is configured entirely through
 [`set_config`](@ref), documented in full below.
 
 ```@docs
+set_user_agent
 set_config
 clean_cache
 cache_metrics

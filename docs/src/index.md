@@ -20,12 +20,15 @@ HTML parsing. EDGAR.jl requires **Julia 1.12 or later**.
 ## Set a User-Agent first
 
 The SEC requires a descriptive `User-Agent` with contact information — requests
-without one are rejected with HTTP 403. Set yours once per session:
+without one are rejected with HTTP 403. Set yours once per session with your name
+and a contact email:
 
 ```julia
 using EDGAR
-set_config(user_agent = "Jane Doe jane@example.com")
+set_user_agent("Jane Doe", "jane@example.com")
 ```
+
+If you forget, EDGAR.jl stops with a clear error before ever contacting the SEC.
 
 ## A first look
 

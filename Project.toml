@@ -1,6 +1,6 @@
 name = "EDGAR"
 uuid = "d2b8c6a1-4b3f-4f1a-a5f8-1b2c3d4e5f6a"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Antonio Saragga Seabra"]
 
 [deps]
