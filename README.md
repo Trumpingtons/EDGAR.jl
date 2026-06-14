@@ -23,7 +23,9 @@ julia --project=. -e 'using EDGAR; EDGAR.main(["0000320193", "5"])'
 julia --project=. scripts/download_and_save.jl 0000320193 0000320193-23-000052 output
 ```
 
-Notes
+-Notes
+
+- **Minimum Julia:** EDGAR.jl requires Julia 1.12 or later; CI runs on Julia 1.12.
 
 - SEC requires a descriptive `User-Agent` with contact information; update `USER_AGENT` accordingly.
 - The parsing is a lightweight HTML -> text conversion. Consider adding `Gumbo.jl` and `Cascadia.jl` for robust extraction.
