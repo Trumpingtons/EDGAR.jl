@@ -1,52 +1,77 @@
-EDGAR.jl — Minimal Julia scaffold for SEC EDGAR ingestion
+# EDGAR.jl
 
-Quick start
+[![CI](https://github.com/Trumpingtons/EDGAR.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/Trumpingtons/EDGAR.jl/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://trumpingtons.github.io/EDGAR.jl/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-1. Activate the project and add dependencies:
+A small Julia package for pulling company filings from the U.S. SEC
+[EDGAR](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
+system: list a filer's submissions, download filings, convert them to text, and
+extract sections such as *Item 7 — Management's Discussion*. It talks to the public
+`data.sec.gov` / `sec.gov` endpoints with `HTTP.jl` + `JSON3.jl`, and uses
+`Gumbo.jl` + `Cascadia.jl` for robust HTML parsing.
 
-```bash
-cd ~/EDGAR.jl
-julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.add(["HTTP","JSON3"])'
+## Installation
+
+EDGAR.jl requires **Julia 1.12 or later**. It is not yet registered, so install it
+straight from GitHub:
+
+```julia
+using Pkg
+Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 ```
 
-2. Edit `src/EDGAR.jl` and set `USER_AGENT` to include your contact email.
+## ⚠️ Set a User-Agent first
 
-3. List recent filings for a CIK (example: Apple `0000320193`):
+> The SEC requires a **descriptive `User-Agent` with contact information**. Requests
+> without one are rejected (HTTP 403). Open `src/EDGAR.jl` and update the
+> `USER_AGENT` constant to include your name and a contact email, for example
+> `"Jane Doe jane@example.com"`.
 
-```bash
-julia --project=. -e 'using EDGAR; EDGAR.main(["0000320193", "5"])'
-```
-
-4. Download, parse and save a filing (example accession):
-
-```bash
-julia --project=. scripts/download_and_save.jl 0000320193 0000320193-23-000052 output
-```
-
--Notes
-
-- **Minimum Julia:** EDGAR.jl requires Julia 1.12 or later; CI runs on Julia 1.12.
-
-- SEC requires a descriptive `User-Agent` with contact information; update `USER_AGENT` accordingly.
-- The parsing is a lightweight HTML -> text conversion. Consider adding `Gumbo.jl` and `Cascadia.jl` for robust extraction.
- - The parsing prefers `Gumbo.jl` + `Cascadia.jl` when available for more robust HTML extraction. To enable:
-
-```bash
-julia --project=. -e 'using Pkg; Pkg.add(["Gumbo","Cascadia"])'
-```
-
-When present, `EDGAR.parse_filing` will use Gumbo to target the document body and then extract visible text; otherwise a safe tag-stripping fallback is used.
-
-Section extraction
-
-You can extract specific sections (for example, "Management's Discussion" or "Item 7") from the parsed filing text using `EDGAR.extract_section`:
+## Quick start
 
 ```julia
 using EDGAR
-text = EDGAR.parse_filing("filings/0000320193-0000000000-sample.html")
-sections = EDGAR.extract_section(text, ["Item 7", "Management's Discussion"])
-println(sections["Item 7"]) # prints the Item 7 text if found
+
+# 1. List a company's recent filings by CIK (Apple = 320193, zero-padded to 10 digits)
+filings = list_recent_filings("0000320193"; count = 5)
+for f in filings
+    println(f.date, "  ", f.form, "  ", f.accession)
+end
+
+# 2. Download the most recent filing's documents into a directory
+latest = first(filings)
+path = download_filing("0000320193", latest.accession; destdir = "filings")
+
+# 3. Convert the filing's HTML to plain text
+text = parse_filing(path)
+
+# 4. Extract specific sections (case-insensitive; heuristic match)
+sections = extract_section(text, ["Item 7", "Management's Discussion"])
+println(get(sections, "Item 7", "(not found)"))
 ```
 
-The extractor searches for the provided names (case-insensitive) and returns the substring up to the next "Item N" boundary. It's a heuristic; for more precise extraction consider enhancing the matcher list or adding Cascadia-based selectors for consistent heading markup.
-- Tests in `test/` make network requests; in CI you may want to mock HTTP responses.
+## API
+
+| Function | Purpose |
+|---|---|
+| `list_recent_filings(cik; count)` | Recent filings as `(accession, form, date)` rows |
+| `fetch_submissions(cik)` | Full submissions JSON for a filer |
+| `download_filing(cik, accession; destdir)` | Download a filing's documents |
+| `parse_filing(path)` | Convert a filing's HTML to text (Gumbo + Cascadia) |
+| `extract_section(text, names)` | Pull named sections (e.g. `"Item 7"`) from filing text |
+| `save_filing(text, metadata; outdir)` | Write extracted text + metadata to disk |
+| `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent |
+| `set_config(; …)` | Override the cache dir/TTL, host whitelist, user agent, … |
+| `cache_metrics()` / `clean_cache()` | Inspect / prune the on-disk cache |
+
+CIKs are the SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`).
+Please stay under the SEC fair-access limit of **10 requests per second**.
+
+## Documentation
+
+Full documentation: **https://trumpingtons.github.io/EDGAR.jl/**
+
+## License
+
+[MIT](LICENSE) © Antonio Saragga Seabra
