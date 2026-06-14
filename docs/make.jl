@@ -25,14 +25,11 @@ makedocs(
 
 println("Docs built to docs/build")
 
-# Only deploy via Documenter when a DOCUMENTER_KEY is provided (SSH key).
-# We rely on the GitHub Pages actions workflow to publish `docs/build` by
-# default, so avoid automatic pushes from Documenter unless an SSH key is
-# explicitly configured in `DOCUMENTER_KEY`.
-if !isempty(get(ENV, "DOCUMENTER_KEY", ""))
-    try
-        deploydocs(repo = "Trumpingtons/EDGAR.jl", branch = "gh-pages")
-    catch err
-        @warn "deploydocs failed; skipping deploy in this environment" error=err
-    end
-end
+# Deploy the versioned docs to the gh-pages branch. deploydocs is a no-op unless
+# it detects a deploying CI build (the right branch/tag plus GITHUB_TOKEN), so it
+# is safe to call unconditionally — local builds simply skip the deploy.
+deploydocs(
+    repo = "github.com/Trumpingtons/EDGAR.jl.git",
+    devbranch = "main",
+    push_preview = false,
+)

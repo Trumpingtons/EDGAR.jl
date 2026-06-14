@@ -3,41 +3,32 @@ name: Docs
 on:
   push:
     branches: [ main, master ]
+    tags: [ '*' ]
   workflow_dispatch:
 
+# Documenter pushes the built docs to the gh-pages branch using GITHUB_TOKEN.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Julia
-        uses: julia-actions/setup-julia@v3
+        uses: julia-actions/setup-julia@v2
         with:
           version: '1.12'
 
+      - uses: julia-actions/cache@v2
+
       # Sanity check that the package itself resolves. The docs/ environment
-      # (Documenter + EDGAR by path) is set up by docs/make.jl, not here.
+      # (Documenter + EDGAR by path) is set up by docs/make.jl.
       - name: Instantiate package
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Build docs
+      - name: Build and deploy docs
         run: julia docs/make.jl
-      - name: Upload pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/build
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
