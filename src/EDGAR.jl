@@ -2,6 +2,8 @@ module EDGAR
 
 using HTTP
 using JSON3
+using Gumbo
+using Cascadia
 # avoid requiring extra stdlib; use built-in hash for cache key
 
 const USER_AGENT = "EDGAR.jl/0.1 (https://github.com/yourname/EDGAR.jl)"
@@ -217,16 +219,6 @@ function similarity_ratio(a::AbstractString, b::AbstractString)
     return 1.0 - d / maxlen
 end
 
-function gumbo_available()
-    try
-        @eval import Gumbo
-        @eval import Cascadia
-        return true
-    catch
-        return false
-    end
-end
-
 function fetch_submissions(cik::AbstractString)
     url = "https://data.sec.gov/submissions/CIK$(strip(cik)).json"
     r = HTTP.get(url, headers = ["User-Agent"=>USER_AGENT])
@@ -415,32 +407,30 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
         end
     end
 
-    # If not found via TOC, try DOM headings when Gumbo available
-    if gumbo_available()
-        try
-            doc = Gumbo.parsehtml(body_html)
-            for name in names
-                nodes = Cascadia.eachmatch(Selector("h1,h2,h3,h4,h5,h6"), doc.root)
-                best_node = nothing; best_score = 0.0
-                for n in nodes
-                    lab = strip(Gumbo.innerText(n))
-                    s = similarity_ratio(name, lab)
-                    if s > best_score
-                        best_score = s; best_node = n
-                    end
-                end
-                if best_node !== nothing && best_score > 0.5
-                    # extract until next heading
-                    # get outerHTML from best_node and siblings
-                    outer = Gumbo.innerHTML(best_node)
-                    # fallback: use text from node
-                    txt = strip(replace(outer, r"<[^>]+>" => " "))
-                    results[name] = txt
+    # If not found via TOC, try DOM headings
+    try
+        doc = Gumbo.parsehtml(body_html)
+        for name in names
+            nodes = Cascadia.eachmatch(Selector("h1,h2,h3,h4,h5,h6"), doc.root)
+            best_node = nothing; best_score = 0.0
+            for n in nodes
+                lab = strip(Gumbo.innerText(n))
+                s = similarity_ratio(name, lab)
+                if s > best_score
+                    best_score = s; best_node = n
                 end
             end
-        catch
-            # ignore
+            if best_node !== nothing && best_score > 0.5
+                # extract until next heading
+                # get outerHTML from best_node and siblings
+                outer = Gumbo.innerHTML(best_node)
+                # fallback: use text from node
+                txt = strip(replace(outer, r"<[^>]+>" => " "))
+                results[name] = txt
+            end
         end
+    catch
+        # ignore
     end
 
     # Final fallback: simple text search for the heading labels

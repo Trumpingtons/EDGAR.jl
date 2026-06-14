@@ -12,3 +12,6 @@
 *.jl.*.cov
 *.jl.mem
 .DS_Store
+
+# Package Manifest — resolve fresh in CI (this is a library, not an app)
+/Manifest.toml
