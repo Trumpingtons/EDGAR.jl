@@ -85,6 +85,54 @@ hits = full_text_search("climate risk"; forms = "10-K")
 println(hits.hits.total.value, " matching filings")
 ```
 
+## Glossary
+
+SEC filings and their structured (XBRL) data come with their own vocabulary. The
+terms that matter here:
+
+- **CIK** — *Central Index Key*, the SEC's unique ID for a filer, zero-padded to
+  10 digits (Apple → `0000320193`). Get one from a ticker with `cik_for_ticker`.
+- **Filing** — a document submitted to the SEC, identified by an **accession
+  number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
+  current report, …). List a filer's filings with `list_recent_filings`.
+- **XBRL** — *eXtensible Business Reporting Language*, the machine-readable format
+  companies tag their financial statements in; it is what makes the numbers
+  queryable rather than locked inside a document.
+- **iXBRL** — *Inline XBRL*: those same tags embedded directly inside the filing's
+  human-readable HTML, so one document is both readable and machine-parseable. The
+  SEC has required it for financial statements since around 2019.
+- **Fact** — a single reported number: one *concept*, for one *period*, in one
+  *unit* (e.g. "net income for FY2023 was 96,995,000,000 USD"). `company_facts`
+  returns every fact a company has reported.
+- **Concept** — the *name* of a reported line item, drawn from a taxonomy (e.g.
+  `NetIncomeLoss`, `Assets`, `Revenues`) — the "what is being measured".
+  `company_concept` returns one concept over time for one filer.
+- **Taxonomy** — a dictionary that defines concepts. The big one is **`us-gaap`**
+  (US accounting standards); **`dei`** (*Document and Entity Information*) holds
+  metadata about the filing itself — entity name, fiscal year-end, document type,
+  shares outstanding. Others you may meet: **`srt`** (shared, common elements),
+  **`ifrs-full`** (filers reporting under IFRS), and each company's own
+  **extension** namespace (e.g. `aapl` for Apple-specific concepts).
+- **Frame** — a cross-section: one concept, one unit, one period, across *every*
+  filer that reported it (e.g. Assets in USD at the end of Q4 2022, for all
+  companies). `xbrl_frames` returns a frame.
+- **Unit** — the unit of measure of a fact: `USD`, `shares`, `USD/shares`
+  (per-share), `pure` (a ratio), …
+- **Period** — the time a fact covers, and how it is written. **Frames** use
+  *calendar* periods: `CY` + year, as in `CY2022` (a full calendar year),
+  `CY2022Q4` (a quarter), or `CY2022Q4I` (a single instant — note the trailing
+  `I`). An **instant** is a point in time (balance-sheet items such as Assets, at
+  quarter-end); a **duration** is a span (income-statement items such as Revenue).
+  By contrast, **`FY`** in a company's own facts is its *fiscal* year, which need
+  not match the calendar (Apple's `FY2023` ended in September 2023).
+
+> [!NOTE]
+> **Concept vs Fact** — a concept is the *label* (`Assets`); a fact is a concrete
+> *value* of that concept for a given period and unit. **The `I` suffix** — in
+> Frames a trailing `I` means an *instant*, which is why
+> `xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")` needs it: a balance is
+> measured at a moment, whereas a flow like revenue uses a plain duration code.
+
 ## API
 
 | Function | Purpose |
