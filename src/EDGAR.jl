@@ -54,23 +54,47 @@ Override the global runtime configuration. Only the keyword arguments you pass
 (anything other than `nothing`) are changed; the rest keep their current values.
 Returns the live configuration object.
 
-- `cache` — caching mode: `:temporary` (default; an ephemeral per-process temp
-  directory that is wiped when Julia exits), `:persistent` (kept in
-  `~/.cache/EDGAR.jl` across sessions), or `:off` (no caching).
-- `cache_dir` — pin a specific directory for the cache (implies persistent storage).
-- `cache_ttl` — seconds a cached response stays fresh (controls re-fetching; independent of deletion).
-- `cache_max_size` — largest response (bytes) that will be cached.
-- `cache_max_age` — seconds a file is kept on disk before being deleted, in
-  persistent storage. Pruning is on by default; this is a separate limit from
-  `cache_ttl` and does not affect freshness.
+- `user_agent` — the `User-Agent` header sent with every request. **Set this to a
+  descriptive value with contact information**, as the SEC requires, or requests
+  are rejected with HTTP 403.
+- `cache` — caching mode, `:temporary` / `:persistent` / `:off`; see *Caching* below.
+- `cache_dir`, `cache_ttl`, `cache_max_size`, `cache_max_age` — cache location and
+  limits; see *Caching* below.
 - `host_whitelist` — hosts that requests are restricted to (empty = no restriction).
 - `allow_file` — whether `file://` URLs are permitted (off by default; used in tests).
-- `user_agent` — the `User-Agent` header sent with every request. **Set this to a
-  descriptive value with contact information**, as the SEC requires.
 
 ```julia
 set_config(user_agent = "Jane Doe jane@example.com", cache = :persistent)
 ```
+
+# Extended help
+
+## Caching
+
+Responses are cached so that repeated calls in a session do not re-download the
+same data. The `cache` keyword selects where the cache lives and how long it
+survives:
+
+- `:temporary` (default) — an ephemeral per-process temporary directory, deleted
+  when the Julia process exits. Nothing persists across sessions or accumulates
+  on disk (an in-memory-database-style lifecycle, but on disk).
+- `:persistent` — kept in `~/.cache/EDGAR.jl` (or `XDG_CACHE_HOME`) across
+  sessions; files older than `cache_max_age` are pruned automatically.
+- `:off` — no caching; every call re-fetches.
+
+`cache_dir` pins a specific directory, which implies persistent storage.
+
+Two **independent** time limits apply:
+
+- `cache_ttl` (default 24 h) is *freshness* — how long a cached response is reused
+  before being re-fetched. It deletes nothing.
+- `cache_max_age` (default 7 days) is *retention* — how long a file is kept on
+  disk in persistent storage before being deleted. Pruning is on by default and
+  runs opportunistically; it never affects freshness.
+
+`cache_max_size` (default 10 MB) caps the size of any single cached response. Use
+[`clean_cache`](@ref) to prune on demand and [`cache_metrics`](@ref) to inspect
+hit/miss counts.
 """
 function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, cache_max_age=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
     if cache !== nothing
@@ -206,18 +230,17 @@ end
 """
     fetch_url(url; use_cache=true, timeout=15, allow_file=false) -> Vector{UInt8} or nothing
 
-Low-level cached HTTP GET. Sends the configured `User-Agent` (see
-[`set_config`](@ref)), returns the response body as bytes, and returns `nothing`
-on any failure (network error, non-200 status, or a disallowed URL).
+The low-level HTTP GET that every higher-level function is built on. Fetches
+`url` and returns the raw response body as bytes, or `nothing` on any failure
+(network error, non-200 status, or a disallowed URL).
 
-A successful response smaller than `cache_max_size` is written to the on-disk
-cache and reused for up to `cache_ttl` seconds. The cache mode set via
-[`set_config`](@ref) (`:temporary`, `:persistent` or `:off`) governs where it
-lives and whether it survives the process. In persistent storage, files older
-than `cache_max_age` are deleted automatically (independent of `cache_ttl`
-freshness); [`clean_cache`](@ref) also prunes on demand, and [`cache_metrics`](@ref)
-reports hit/miss counts. `timeout` is the read timeout in seconds. `file://` URLs
-are only read when `allow_file=true` (for tests).
+Use it as an escape hatch to reach SEC endpoints that EDGAR.jl does not yet wrap:
+you get the configured `User-Agent` and the cache for free, and parse the bytes
+yourself (e.g. with `JSON3.read`). Caching behaviour — where the cache lives and
+when it expires — is configured through [`set_config`](@ref).
+
+`use_cache=false` ignores any cached copy on read, `timeout` is the read timeout
+in seconds, and `file://` URLs are only read when `allow_file=true` (for tests).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
@@ -726,17 +749,7 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
     return results
 end
 
-"""
-    main(argv=ARGS)
-
-Minimal command-line entry point. Prints a hint pointing users at the module's
-functions; the package is intended to be used as a library rather than a CLI.
-"""
-function main(argv::Vector{String}=ARGS)
-    println("EDGAR.jl: simple tool. Use functions from module.")
-end
-
-export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing, main,
+export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
        set_config, fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
