@@ -12,11 +12,12 @@ using EDGAR
 
 makedocs(
     modules = [EDGAR],
-    sitename = "EDGAR.jl",
+    sitename = "EDGAR",
     authors = "Antonio Saragga Seabra",
     format = Documenter.HTML(),
     pages = [
         "Home" => "index.md",
+        "Examples" => "examples.md",
         "API" => "api.md",
     ],
     clean = true,
