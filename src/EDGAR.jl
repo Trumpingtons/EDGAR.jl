@@ -11,16 +11,15 @@ const USER_AGENT = "EDGAR.jl/0.1 (https://github.com/yourname/EDGAR.jl)"
 # HTTP helper (injectable for tests)
 http_get = HTTP.get
 
-# Internal HTTP-response cache defaults (overridable via set_config). The cache
-# lives in a per-user cache directory, never the current working directory.
+# HTTP-response cache defaults (overridable via set_config). CACHE_DIR is the
+# :persistent-mode location — a per-user cache dir, never the working directory.
+# (The default :temporary mode uses a per-process temp dir instead.)
 const CACHE_DIR = joinpath(get(ENV, "XDG_CACHE_HOME", joinpath(homedir(), ".cache")), "EDGAR.jl")
 const CACHE_TTL = 24 * 3600 # seconds
 const CACHE_MAX_SIZE = 10_000_000 # bytes
 
-# Stale entries are pruned opportunistically, at most once per this interval per
-# process, so the on-disk cache cannot grow without bound.
-const CACHE_EVICTION_INTERVAL = 3600 # seconds
-const _LAST_EVICTION = Ref(0.0)
+# Cache hit/miss counters, exposed via cache_metrics().
+const CACHE_METRICS = Dict(:hits=>0, :misses=>0, :requests=>0, :bytes_downloaded=>0)
 
 mutable struct EDGARConfig
     cache_dir::Union{Nothing,String}
@@ -29,18 +28,34 @@ mutable struct EDGARConfig
     host_whitelist::Vector{String}
     allow_file::Bool
     user_agent::Union{Nothing,String}
+    cache_mode::Symbol
 end
 
-const CONFIG = EDGARConfig(nothing, nothing, nothing, String[], false, nothing)
+# cache_mode defaults to :temporary — ephemeral, wiped when the process exits.
+const CONFIG = EDGARConfig(nothing, nothing, nothing, String[], false, nothing, :temporary)
+
+# Lazily-created per-process temp cache directory. mktempdir registers an atexit
+# hook that deletes it when the Julia process exits, so the :temporary cache is
+# discarded automatically (process-scoped, like an in-memory DB but on disk).
+const _TEMP_CACHE_DIR = Ref{String}("")
+function _temp_cache_dir()
+    if isempty(_TEMP_CACHE_DIR[]) || !isdir(_TEMP_CACHE_DIR[])
+        _TEMP_CACHE_DIR[] = mktempdir(; prefix = "EDGAR_jl_")
+    end
+    return _TEMP_CACHE_DIR[]
+end
 
 """
-    set_config(; cache_dir, cache_ttl, cache_max_size, host_whitelist, allow_file, user_agent) -> EDGARConfig
+    set_config(; cache, cache_dir, cache_ttl, cache_max_size, host_whitelist, allow_file, user_agent) -> EDGARConfig
 
 Override the global runtime configuration. Only the keyword arguments you pass
 (anything other than `nothing`) are changed; the rest keep their current values.
 Returns the live configuration object.
 
-- `cache_dir` — directory for the on-disk HTTP cache.
+- `cache` — caching mode: `:temporary` (default; an ephemeral per-process temp
+  directory that is wiped when Julia exits), `:persistent` (kept in
+  `~/.cache/EDGAR.jl` across sessions), or `:off` (no caching).
+- `cache_dir` — pin a specific directory for the cache (implies persistent storage).
 - `cache_ttl` — seconds a cached response stays fresh.
 - `cache_max_size` — largest response (bytes) that will be cached.
 - `host_whitelist` — hosts that requests are restricted to (empty = no restriction).
@@ -49,10 +64,14 @@ Returns the live configuration object.
   descriptive value with contact information**, as the SEC requires.
 
 ```julia
-set_config(user_agent = "Jane Doe jane@example.com", cache_ttl = 3600)
+set_config(user_agent = "Jane Doe jane@example.com", cache = :persistent)
 ```
 """
-function set_config(; cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
+function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
+    if cache !== nothing
+        cache in (:temporary, :persistent, :off) || throw(ArgumentError("cache must be :temporary, :persistent or :off"))
+        CONFIG.cache_mode = cache
+    end
     if cache_dir !== nothing CONFIG.cache_dir = cache_dir end
     if cache_ttl !== nothing CONFIG.cache_ttl = cache_ttl end
     if cache_max_size !== nothing CONFIG.cache_max_size = cache_max_size end
@@ -62,7 +81,10 @@ function set_config(; cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothi
     return CONFIG
 end
 
-get_cache_dir() = CONFIG.cache_dir === nothing ? CACHE_DIR : CONFIG.cache_dir
+function get_cache_dir()
+    CONFIG.cache_dir === nothing || return CONFIG.cache_dir
+    return CONFIG.cache_mode === :temporary ? _temp_cache_dir() : CACHE_DIR
+end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size
 get_user_agent() = CONFIG.user_agent === nothing ? USER_AGENT : CONFIG.user_agent
@@ -79,15 +101,12 @@ function host_allowed(host::AbstractString)
     return false
 end
 
-# Best-effort: create the cache directory. Caching is optional, so a read-only
-# or unavailable location must never stop the package from loading.
-try
-    isdir(get_cache_dir()) || mkpath(get_cache_dir())
-catch
-end
+"""
+    cache_path_for(url) -> String
 
-# Internal: on-disk path (without extension) used to cache `url`. The actual
-# cache files are this path with `.body` and `.meta` suffixes.
+Return the on-disk path (without extension) used to cache `url`. The actual
+cache files are this path with `.body` and `.meta` suffixes.
+"""
 function cache_path_for(url::AbstractString)
     h = string(abs(hash(url)))
     return joinpath(get_cache_dir(), h)
@@ -106,6 +125,7 @@ end
 function _write_cache(path::AbstractString, body::Vector{UInt8}, meta::Dict)
     bodyfile = path * ".body"
     metafile = path * ".meta"
+    mkpath(dirname(bodyfile))
     open(bodyfile, "w") do io
         write(io, body)
     end
@@ -114,30 +134,44 @@ function _write_cache(path::AbstractString, body::Vector{UInt8}, meta::Dict)
     end
 end
 
-# Internal: delete cache entries older than the TTL. Runs at most once per
-# CACHE_EVICTION_INTERVAL per process, so the on-disk cache stays bounded
-# without exposing a public API. Best-effort: corrupt or vanished entries are
-# ignored.
-function _maybe_evict_cache()
-    now = time()
-    now - _LAST_EVICTION[] < CACHE_EVICTION_INTERVAL && return
-    _LAST_EVICTION[] = now
-    dir = get_cache_dir()
-    isdir(dir) || return
-    ttl = get_cache_ttl()
-    for metafile in readdir(dir; join = true)
-        endswith(metafile, ".meta") || continue
-        try
-            meta = JSON3.read(read(metafile, String))
-            if !haskey(meta, "timestamp") || (now - meta["timestamp"] > ttl)
-                rm(metafile; force = true)
-                rm(replace(metafile, ".meta" => ".body"); force = true)
+"""
+    clean_cache(max_age_seconds=CACHE_TTL) -> Int
+
+Delete cached responses whose stored timestamp is older than `max_age_seconds`,
+and return how many entries were removed. Corrupt cache entries are ignored.
+"""
+function clean_cache(max_age_seconds::Int=CACHE_TTL)
+    nowts = time()
+    removed = 0
+    for f in readdir(get_cache_dir())
+        full = joinpath(get_cache_dir(), f)
+        # consider only .meta files
+        if endswith(full, ".meta")
+            try
+                meta = JSON3.read(read(full, String))
+                if haskey(meta, "timestamp") && (nowts - meta["timestamp"] > max_age_seconds)
+                    rm(full)
+                    body = replace(full, ".meta" => ".body")
+                    if isfile(body) rm(body) end
+                    removed += 1
+                end
+            catch
+                # ignore corrupt
             end
-        catch
-            # ignore corrupt entries
         end
     end
-    return
+    @info "clean_cache removed=$removed"
+    return removed
+end
+
+"""
+    cache_metrics() -> Dict
+
+Return a snapshot (copy) of the cache counters: `:hits`, `:misses`,
+`:requests` and `:bytes_downloaded`.
+"""
+function cache_metrics()
+    return deepcopy(CACHE_METRICS)
 end
 
 """
@@ -148,9 +182,12 @@ Low-level cached HTTP GET. Sends the configured `User-Agent` (see
 on any failure (network error, non-200 status, or a disallowed URL).
 
 A successful response smaller than `cache_max_size` is written to the on-disk
-cache and reused for up to `cache_ttl` seconds; entries older than that are
-pruned automatically, so the cache stays bounded. `timeout` is the read timeout
-in seconds. `file://` URLs are only read when `allow_file=true` (for tests).
+cache and reused for up to `cache_ttl` seconds. The cache mode set via
+[`set_config`](@ref) (`:temporary`, `:persistent` or `:off`) governs where it
+lives and whether it survives the process. Use [`clean_cache`](@ref) to prune
+stale entries and [`cache_metrics`](@ref) to inspect hit/miss counts. `timeout`
+is the read timeout in seconds. `file://` URLs are only read when
+`allow_file=true` (for tests).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
@@ -175,17 +212,20 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         url = "https:" * url
     end
 
-    path = cache_path_for(url)
-    if use_cache
+    caching = CONFIG.cache_mode !== :off
+    path = caching ? cache_path_for(url) : ""
+    if caching && use_cache
         cand = _read_cache(path)
         if cand !== nothing
             meta, body = cand
             if haskey(meta, "timestamp") && (time() - meta["timestamp"] <= get_cache_ttl())
+                CACHE_METRICS[:hits] += 1
                 return body
             end
         end
     end
 
+    CACHE_METRICS[:requests] += 1
     r = nothing
     try
         r = http_get(url, headers=["User-Agent"=>get_user_agent()], readtimeout=timeout)
@@ -204,12 +244,11 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
     if body === nothing
         return nothing
     end
-    # Opportunistically prune expired entries (throttled, internal).
-    _maybe_evict_cache()
     nb = length(body)
-    # enforce max size
-    if nb > get_cache_max_size()
-        @info "fetch_url: body too large ($(nb) bytes), skipping cache"
+    CACHE_METRICS[:bytes_downloaded] += nb
+    CACHE_METRICS[:misses] += 1
+    # skip the write when caching is off or the body exceeds the size limit
+    if !caching || nb > get_cache_max_size()
         return body
     end
     status2 = hasproperty(r, :status) ? getproperty(r, :status) : 200
@@ -667,7 +706,7 @@ function main(argv::Vector{String}=ARGS)
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing, main,
-       set_config, fetch_url,
+       set_config, fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module

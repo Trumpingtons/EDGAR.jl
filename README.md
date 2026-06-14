@@ -19,7 +19,7 @@ system:
 
 It talks to the public `data.sec.gov` / `efts.sec.gov` / `sec.gov` endpoints with
 `HTTP.jl` + `JSON3.jl`, uses `Gumbo.jl` + `Cascadia.jl` for robust HTML parsing,
-and caches responses on disk.
+and caches responses (ephemeral by default — see [Caching](#caching)).
 
 ## Installation
 
@@ -102,9 +102,29 @@ println(hits.hits.total.value, " matching filings")
 | `cik_for_ticker(ticker)` / `company_tickers()` | Resolve a ticker to a CIK |
 | `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |
 | `set_config(; user_agent, …)` | Set the User-Agent, cache dir/TTL, host whitelist, … |
+| `cache_metrics()` / `clean_cache()` | Inspect / prune the on-disk cache |
 
 CIKs are the SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`).
 Please stay under the SEC fair-access limit of **10 requests per second**.
+
+## Caching
+
+Responses are cached to avoid re-hitting the SEC. The mode is set with
+`set_config(cache = …)`:
+
+| Mode | Behaviour | Location |
+|---|---|---|
+| `:temporary` *(default)* | Ephemeral — wiped when the Julia process exits | A per-process temp directory |
+| `:persistent` | Survives across sessions; prune with `clean_cache()` | `~/.cache/EDGAR.jl` |
+| `:off` | No caching; every call re-fetches | — |
+
+```julia
+set_config(cache = :persistent)        # keep the cache across sessions
+set_config(cache_dir = "/data/edgar")  # or pin a specific directory
+```
+
+Tune freshness/size with `set_config(cache_ttl = …, cache_max_size = …)`, and
+inspect counters with `cache_metrics()`.
 
 ## Documentation
 
