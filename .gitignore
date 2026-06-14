@@ -7,6 +7,9 @@
 /.github/edgar_doc_deploy_key
 /.github/edgar_doc_deploy_key.*
 
+# On-disk HTTP response cache (created at runtime by fetch_url)
+/.edgar_cache/
+
 # Julia
 *.jl.cov
 *.jl.*.cov

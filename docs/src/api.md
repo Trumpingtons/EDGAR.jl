@@ -1,9 +1,17 @@
 # API
 
-The API documentation is generated from `EDGAR.jl` docstrings. Build the docs locally with:
-
-```bash
-julia --project=docs docs/make.jl
+```@meta
+CurrentModule = EDGAR
 ```
 
-Key exports include `extract_section`, `fetch_url`, `download_filing`, and cache helpers.
+The exported `EDGAR.jl` functions, generated from their docstrings. Build the
+docs locally with:
+
+```bash
+julia docs/make.jl
+```
+
+```@autodocs
+Modules = [EDGAR]
+Private = false
+```

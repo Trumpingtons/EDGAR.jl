@@ -240,6 +240,118 @@ function list_recent_filings(cik::AbstractString; count::Int=10)
     return result
 end
 
+# ── XBRL financial data, full-text search, and ticker lookup ─────────────────
+#
+# These call the public data.sec.gov / efts.sec.gov / sec.gov JSON endpoints
+# through `fetch_url`, so they share the on-disk cache and the configured
+# User-Agent. Each returns the parsed JSON (a `JSON3.Object`/`JSON3.Array`).
+
+# Internal: fetch `url` through the cached, User-Agent-aware `fetch_url` and
+# parse the body as JSON. Throws if the request fails (bad User-Agent, network
+# error, or the resource does not exist).
+function _get_json(url::AbstractString; use_cache::Bool=true)
+    body = fetch_url(url; use_cache = use_cache)
+    body === nothing && error("EDGAR request failed: $url (check USER_AGENT, network, and that the resource exists)")
+    return JSON3.read(body)
+end
+
+"""
+    company_facts(cik) -> JSON3.Object
+
+Every XBRL fact a company has ever reported, in a single document, from the
+`/api/xbrl/companyfacts/` endpoint. `cik` is zero-padded to 10 digits.
+
+```julia
+facts = company_facts("320193")
+keys(facts.facts)              # taxonomies, e.g. :dei and Symbol("us-gaap")
+```
+"""
+function company_facts(cik::AbstractString)
+    c = lpad(strip(cik), 10, '0')
+    return _get_json("https://data.sec.gov/api/xbrl/companyfacts/CIK$(c).json")
+end
+
+"""
+    company_concept(cik, taxonomy, tag) -> JSON3.Object
+
+One XBRL concept over time for a single filer, from `/api/xbrl/companyconcept/`.
+
+```julia
+ni = company_concept("320193", "us-gaap", "NetIncomeLoss")
+ni.units.USD[end].val
+```
+"""
+function company_concept(cik::AbstractString, taxonomy::AbstractString, tag::AbstractString)
+    c = lpad(strip(cik), 10, '0')
+    return _get_json("https://data.sec.gov/api/xbrl/companyconcept/CIK$(c)/$(taxonomy)/$(tag).json")
+end
+
+"""
+    xbrl_frames(taxonomy, tag, unit, period) -> JSON3.Object
+
+One XBRL concept for one period across *every* filer that reported it, from
+`/api/xbrl/frames/`. A trailing `I` on the period denotes an instant (point in
+time, e.g. `"CY2022Q4I"`); drop it for a duration (e.g. `"CY2022"`).
+
+```julia
+fr = xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
+length(fr.data)
+```
+"""
+function xbrl_frames(taxonomy::AbstractString, tag::AbstractString, unit::AbstractString, period::AbstractString)
+    return _get_json("https://data.sec.gov/api/xbrl/frames/$(taxonomy)/$(tag)/$(unit)/$(period).json")
+end
+
+"""
+    full_text_search(query; forms=nothing, startdate=nothing, enddate=nothing, from=0, size=10) -> JSON3.Object
+
+Full-text search across filing *contents* (2001 onward) via the EDGAR full-text
+search (EFTS) API. `forms` may be a single string (`"10-K"`) or a collection;
+`startdate`/`enddate` are `"YYYY-MM-DD"` strings. Results are under `.hits.hits`.
+
+```julia
+res = full_text_search("climate risk"; forms = "10-K")
+res.hits.total.value
+```
+"""
+function full_text_search(query::AbstractString; forms=nothing, startdate=nothing, enddate=nothing, from::Int=0, size::Int=10)
+    url = "https://efts.sec.gov/LATEST/search-index?q=$(HTTP.escapeuri(query))&from=$(from)&size=$(size)"
+    if forms !== nothing
+        url *= "&forms=$(forms isa AbstractString ? forms : join(forms, ","))"
+    end
+    startdate !== nothing && (url *= "&startdt=$(startdate)")
+    enddate !== nothing && (url *= "&enddt=$(enddate)")
+    return _get_json(url)
+end
+
+"""
+    company_tickers() -> JSON3.Object
+
+The SEC's `company_tickers.json`, mapping ticker symbols to CIK numbers and
+company names.
+"""
+company_tickers() = _get_json("https://www.sec.gov/files/company_tickers.json")
+
+"""
+    cik_for_ticker(ticker) -> String or nothing
+
+Resolve a ticker symbol (case-insensitive) to its 10-digit, zero-padded CIK,
+or `nothing` if no match is found.
+
+```julia
+cik_for_ticker("AAPL")     # "0000320193"
+```
+"""
+function cik_for_ticker(ticker::AbstractString)
+    t = uppercase(strip(ticker))
+    for (_, v) in company_tickers()
+        if uppercase(String(v.ticker)) == t
+            return lpad(v.cik_str, 10, '0')
+        end
+    end
+    return nothing
+end
+
 function _cik_dir(cik)
     return joinpath(pwd(), "data", strip(cik))
 end
@@ -459,6 +571,7 @@ function main(argv::Vector{String}=ARGS)
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing, main,
-       set_config, fetch_url, clean_cache, cache_metrics, cache_path_for
+       set_config, fetch_url, clean_cache, cache_metrics, cache_path_for,
+       company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module
