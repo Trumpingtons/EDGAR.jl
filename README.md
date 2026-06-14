@@ -123,13 +123,13 @@ set_config(cache = :persistent)        # keep the cache across sessions
 set_config(cache_dir = "/data/edgar")  # or pin a specific directory
 ```
 
-In persistent storage, files older than `cache_max_age` (default **24 h**) are
+In persistent storage, files older than `cache_max_age` (default **7 days**) are
 deleted automatically, so the cache stays bounded. This is **separate from**
-`cache_ttl` (freshness): `cache_ttl` controls when a response is re-fetched,
-`cache_max_age` controls when a file is removed from disk.
+`cache_ttl` (freshness, default **24 h**): `cache_ttl` controls when a response is
+re-fetched, `cache_max_age` controls when a file is removed from disk.
 
 ```julia
-set_config(cache_ttl = 3600, cache_max_age = 7*24*3600)  # re-fetch hourly, keep files a week
+set_config(cache_ttl = 3600, cache_max_age = 30*24*3600)  # re-fetch hourly, keep files a month
 ```
 
 `clean_cache()` also prunes on demand, and `cache_metrics()` reports hit/miss counts.

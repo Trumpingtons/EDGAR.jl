@@ -17,7 +17,7 @@ http_get = HTTP.get
 const CACHE_DIR = joinpath(get(ENV, "XDG_CACHE_HOME", joinpath(homedir(), ".cache")), "EDGAR.jl")
 const CACHE_TTL = 24 * 3600 # seconds (freshness: how long a response is reused)
 const CACHE_MAX_SIZE = 10_000_000 # bytes
-const CACHE_MAX_AGE = 24 * 3600 # seconds (persistence: delete files older than this)
+const CACHE_MAX_AGE = 7 * 24 * 3600 # seconds (persistence: delete files older than this)
 
 # Cache hit/miss counters, exposed via cache_metrics().
 const CACHE_METRICS = Dict(:hits=>0, :misses=>0, :requests=>0, :bytes_downloaded=>0)
