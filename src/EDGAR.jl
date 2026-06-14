@@ -15,8 +15,9 @@ http_get = HTTP.get
 # :persistent-mode location — a per-user cache dir, never the working directory.
 # (The default :temporary mode uses a per-process temp dir instead.)
 const CACHE_DIR = joinpath(get(ENV, "XDG_CACHE_HOME", joinpath(homedir(), ".cache")), "EDGAR.jl")
-const CACHE_TTL = 24 * 3600 # seconds
+const CACHE_TTL = 24 * 3600 # seconds (freshness: how long a response is reused)
 const CACHE_MAX_SIZE = 10_000_000 # bytes
+const CACHE_MAX_AGE = 24 * 3600 # seconds (persistence: delete files older than this)
 
 # Cache hit/miss counters, exposed via cache_metrics().
 const CACHE_METRICS = Dict(:hits=>0, :misses=>0, :requests=>0, :bytes_downloaded=>0)
@@ -25,6 +26,7 @@ mutable struct EDGARConfig
     cache_dir::Union{Nothing,String}
     cache_ttl::Union{Nothing,Int}
     cache_max_size::Union{Nothing,Int}
+    cache_max_age::Union{Nothing,Int}
     host_whitelist::Vector{String}
     allow_file::Bool
     user_agent::Union{Nothing,String}
@@ -32,7 +34,7 @@ mutable struct EDGARConfig
 end
 
 # cache_mode defaults to :temporary — ephemeral, wiped when the process exits.
-const CONFIG = EDGARConfig(nothing, nothing, nothing, String[], false, nothing, :temporary)
+const CONFIG = EDGARConfig(nothing, nothing, nothing, nothing, String[], false, nothing, :temporary)
 
 # Lazily-created per-process temp cache directory. mktempdir registers an atexit
 # hook that deletes it when the Julia process exits, so the :temporary cache is
@@ -46,7 +48,7 @@ function _temp_cache_dir()
 end
 
 """
-    set_config(; cache, cache_dir, cache_ttl, cache_max_size, host_whitelist, allow_file, user_agent) -> EDGARConfig
+    set_config(; cache, cache_dir, cache_ttl, cache_max_size, cache_max_age, host_whitelist, allow_file, user_agent) -> EDGARConfig
 
 Override the global runtime configuration. Only the keyword arguments you pass
 (anything other than `nothing`) are changed; the rest keep their current values.
@@ -56,8 +58,11 @@ Returns the live configuration object.
   directory that is wiped when Julia exits), `:persistent` (kept in
   `~/.cache/EDGAR.jl` across sessions), or `:off` (no caching).
 - `cache_dir` — pin a specific directory for the cache (implies persistent storage).
-- `cache_ttl` — seconds a cached response stays fresh.
+- `cache_ttl` — seconds a cached response stays fresh (controls re-fetching; independent of deletion).
 - `cache_max_size` — largest response (bytes) that will be cached.
+- `cache_max_age` — seconds a file is kept on disk before being deleted, in
+  persistent storage. Pruning is on by default; this is a separate limit from
+  `cache_ttl` and does not affect freshness.
 - `host_whitelist` — hosts that requests are restricted to (empty = no restriction).
 - `allow_file` — whether `file://` URLs are permitted (off by default; used in tests).
 - `user_agent` — the `User-Agent` header sent with every request. **Set this to a
@@ -67,7 +72,7 @@ Returns the live configuration object.
 set_config(user_agent = "Jane Doe jane@example.com", cache = :persistent)
 ```
 """
-function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
+function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, cache_max_age=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
     if cache !== nothing
         cache in (:temporary, :persistent, :off) || throw(ArgumentError("cache must be :temporary, :persistent or :off"))
         CONFIG.cache_mode = cache
@@ -75,6 +80,7 @@ function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache
     if cache_dir !== nothing CONFIG.cache_dir = cache_dir end
     if cache_ttl !== nothing CONFIG.cache_ttl = cache_ttl end
     if cache_max_size !== nothing CONFIG.cache_max_size = cache_max_size end
+    if cache_max_age !== nothing CONFIG.cache_max_age = cache_max_age end
     if host_whitelist !== nothing CONFIG.host_whitelist = host_whitelist end
     if allow_file !== nothing CONFIG.allow_file = allow_file end
     if user_agent !== nothing CONFIG.user_agent = user_agent end
@@ -87,7 +93,30 @@ function get_cache_dir()
 end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size
+get_cache_max_age() = CONFIG.cache_max_age === nothing ? CACHE_MAX_AGE : CONFIG.cache_max_age
 get_user_agent() = CONFIG.user_agent === nothing ? USER_AGENT : CONFIG.user_agent
+
+# True when the cache is stored persistently (named mode or a pinned directory),
+# as opposed to the ephemeral per-process :temporary dir.
+_is_persistent() = CONFIG.cache_dir !== nothing || CONFIG.cache_mode === :persistent
+
+# In persistent storage, delete files older than cache_max_age. Runs at most once
+# per hour per process, on fetch. This bounds how long files linger on disk; it
+# does NOT touch freshness (cache_ttl) — stale-but-present entries are still
+# re-fetched as before. Uses the public clean_cache.
+const _LAST_PRUNE = Ref(0.0)
+function _maybe_prune_persistent()
+    _is_persistent() || return
+    now = time()
+    now - _LAST_PRUNE[] < 3600 && return
+    _LAST_PRUNE[] = now
+    try
+        clean_cache(get_cache_max_age())
+    catch
+        # best-effort
+    end
+    return
+end
 
 function host_allowed(host::AbstractString)
     if isempty(CONFIG.host_whitelist)
@@ -184,10 +213,11 @@ on any failure (network error, non-200 status, or a disallowed URL).
 A successful response smaller than `cache_max_size` is written to the on-disk
 cache and reused for up to `cache_ttl` seconds. The cache mode set via
 [`set_config`](@ref) (`:temporary`, `:persistent` or `:off`) governs where it
-lives and whether it survives the process. Use [`clean_cache`](@ref) to prune
-stale entries and [`cache_metrics`](@ref) to inspect hit/miss counts. `timeout`
-is the read timeout in seconds. `file://` URLs are only read when
-`allow_file=true` (for tests).
+lives and whether it survives the process. In persistent storage, files older
+than `cache_max_age` are deleted automatically (independent of `cache_ttl`
+freshness); [`clean_cache`](@ref) also prunes on demand, and [`cache_metrics`](@ref)
+reports hit/miss counts. `timeout` is the read timeout in seconds. `file://` URLs
+are only read when `allow_file=true` (for tests).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
@@ -214,6 +244,7 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
 
     caching = CONFIG.cache_mode !== :off
     path = caching ? cache_path_for(url) : ""
+    caching && _maybe_prune_persistent()
     if caching && use_cache
         cand = _read_cache(path)
         if cand !== nothing

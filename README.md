@@ -115,7 +115,7 @@ Responses are cached to avoid re-hitting the SEC. The mode is set with
 | Mode | Behaviour | Location |
 |---|---|---|
 | `:temporary` *(default)* | Ephemeral — wiped when the Julia process exits | A per-process temp directory |
-| `:persistent` | Survives across sessions; prune with `clean_cache()` | `~/.cache/EDGAR.jl` |
+| `:persistent` | Survives across sessions; old files auto-pruned (see below) | `~/.cache/EDGAR.jl` |
 | `:off` | No caching; every call re-fetches | — |
 
 ```julia
@@ -123,8 +123,16 @@ set_config(cache = :persistent)        # keep the cache across sessions
 set_config(cache_dir = "/data/edgar")  # or pin a specific directory
 ```
 
-Tune freshness/size with `set_config(cache_ttl = …, cache_max_size = …)`, and
-inspect counters with `cache_metrics()`.
+In persistent storage, files older than `cache_max_age` (default **24 h**) are
+deleted automatically, so the cache stays bounded. This is **separate from**
+`cache_ttl` (freshness): `cache_ttl` controls when a response is re-fetched,
+`cache_max_age` controls when a file is removed from disk.
+
+```julia
+set_config(cache_ttl = 3600, cache_max_age = 7*24*3600)  # re-fetch hourly, keep files a week
+```
+
+`clean_cache()` also prunes on demand, and `cache_metrics()` reports hit/miss counts.
 
 ## Documentation
 

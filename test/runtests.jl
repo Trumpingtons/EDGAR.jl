@@ -58,3 +58,22 @@ end
     @test_throws ArgumentError set_config(cache = :bogus)
     set_config(cache = :temporary)   # restore the default mode
 end
+
+@testset "persistent auto-prune (offline)" begin
+    # In persistent storage, files older than cache_max_age are auto-deleted;
+    # this is independent of cache_ttl (freshness).
+    dir = mktempdir()
+    set_config(cache = :persistent, cache_dir = dir, cache_max_age = 60)
+    write(joinpath(dir, "fresh.meta"), "{\"timestamp\":$(time())}")
+    write(joinpath(dir, "fresh.body"), "x")
+    write(joinpath(dir, "stale.meta"), "{\"timestamp\":$(time() - 1000)}")
+    write(joinpath(dir, "stale.body"), "y")
+    EDGAR._LAST_PRUNE[] = 0.0   # bypass the throttle for the test
+    EDGAR._maybe_prune_persistent()
+    kept = isfile(joinpath(dir, "fresh.meta")) && isfile(joinpath(dir, "fresh.body"))
+    gone = !isfile(joinpath(dir, "stale.meta")) && !isfile(joinpath(dir, "stale.body"))
+    @test kept && gone
+    EDGAR.CONFIG.cache_dir = nothing
+    EDGAR.CONFIG.cache_max_age = nothing
+    set_config(cache = :temporary)
+end
