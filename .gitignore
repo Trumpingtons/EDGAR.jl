@@ -1,0 +1,13 @@
+# Documenter build output
+/docs/build/
+
+# Secrets — NEVER commit (SSH deploy keys, tokens). Not needed for the
+# GitHub-Actions Pages deploy; safe to delete locally.
+/.github/edgar_doc_deploy_key
+/.github/edgar_doc_deploy_key.*
+
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+.DS_Store
