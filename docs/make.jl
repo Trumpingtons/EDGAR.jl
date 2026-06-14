@@ -34,7 +34,6 @@ println("Docs built to docs/build")
 if get(ENV, "GITHUB_ACTIONS", "") == "true"
     try
         deploydocs(repo = "Trumpingtons/EDGAR.jl", branch = "gh-pages")
-        )
     catch err
         @warn "deploydocs failed; skipping deploy in this environment" error=err
     end
