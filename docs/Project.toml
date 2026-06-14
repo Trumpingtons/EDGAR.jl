@@ -3,7 +3,7 @@ uuid = "c1dacb06-0000-0000-0000-000000000000"
 
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-EDGAR = "d2b8c6a1-4b3f-4f1a-a5f8-1b2c3d4e5f6a"
+EDGAR = { path = ".." }
 
 [compat]
 julia = "1.12"
