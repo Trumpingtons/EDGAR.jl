@@ -30,8 +30,11 @@ makedocs(
 
 println("Docs built to docs/build")
 
-# Only deploy when running in GitHub Actions (avoid accidental local deploys)
-if get(ENV, "GITHUB_ACTIONS", "") == "true"
+# Only deploy via Documenter when a DOCUMENTER_KEY is provided (SSH key).
+# We rely on the GitHub Pages actions workflow to publish `docs/build` by
+# default, so avoid automatic pushes from Documenter unless an SSH key is
+# explicitly configured in `DOCUMENTER_KEY`.
+if !isempty(get(ENV, "DOCUMENTER_KEY", ""))
     try
         deploydocs(repo = "Trumpingtons/EDGAR.jl", branch = "gh-pages")
     catch err

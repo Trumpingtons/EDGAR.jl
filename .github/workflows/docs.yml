@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      DOCUMENTER_KEY: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,3 +28,10 @@ jobs:
 
       - name: Build and deploy docs (Documenter will push)
         run: julia docs/make.jl
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: docs/build
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v1
