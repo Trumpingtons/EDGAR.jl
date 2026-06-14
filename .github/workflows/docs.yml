@@ -3,20 +3,16 @@ name: Docs
 on:
   push:
     branches: [ main, master, edgar-ci-update ]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Setup Julia
+        uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.12'
+
+      - name: Instantiate project
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Build and deploy docs (Documenter will push)
+        run: julia docs/make.jl
         uses: julia-actions/setup-julia@v1
         with:
           version: '1.12'
