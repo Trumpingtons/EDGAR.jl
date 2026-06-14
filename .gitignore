@@ -1,5 +1,6 @@
-# Documenter build output
+# Documenter build output + resolved docs environment (regenerated each build)
 /docs/build/
+/docs/Manifest.toml
 
 # Secrets — NEVER commit (SSH deploy keys, tokens). Not needed for the
 # GitHub-Actions Pages deploy; safe to delete locally.

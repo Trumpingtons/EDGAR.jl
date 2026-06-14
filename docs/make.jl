@@ -1,19 +1,13 @@
 using Pkg
 
-# When developing locally, activate the package project so Documenter can find
-# the package source. In CI we may prefer a separate docs project, but to keep
-# instantiation robust we activate the root project for both cases.
-root = normpath(joinpath(@__DIR__, ".."))
-Pkg.activate(root)
+# Build the docs in the dedicated docs/ environment (docs/Project.toml carries
+# Documenter). EDGAR is developed from the repo root by path, so Documenter and
+# its dependencies stay OUT of the package's own Project.toml/Manifest.toml.
+Pkg.activate(@__DIR__)
+Pkg.develop(PackageSpec(path = dirname(@__DIR__)))
+Pkg.instantiate()
 
-# Ensure Documenter is available in this environment
-try
-    @eval using Documenter
-catch
-    Pkg.add("Documenter")
-    @eval using Documenter
-end
-
+using Documenter
 using EDGAR
 
 makedocs(
