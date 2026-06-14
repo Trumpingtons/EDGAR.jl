@@ -3,6 +3,19 @@ name: Docs
 on:
   push:
     branches: [ main, master, edgar-ci-update ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup Julia
         uses: julia-actions/setup-julia@v1
         with:
@@ -13,18 +26,3 @@ on:
 
       - name: Build and deploy docs (Documenter will push)
         run: julia docs/make.jl
-        uses: julia-actions/setup-julia@v1
-        with:
-          version: '1.12'
-
-      - name: Register package for docs
-        run: julia -e 'using Pkg; Pkg.develop(path=pwd());'
-
-      - name: Install docs dependencies
-        run: julia --project=docs -e 'using Pkg; Pkg.activate("docs"); Pkg.add("Documenter");'
-
-      - name: Build docs
-        run: julia --project=docs docs/make.jl
-
-      - name: (optional) Completed - deploy handled by Documenter
-        run: echo "If running in GitHub Actions, Documenter deploydocs() will push to gh-pages."
