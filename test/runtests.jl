@@ -31,3 +31,20 @@ end
         @test true
     end
 end
+
+@testset "cache eviction (offline)" begin
+    # Stale entries (older than the TTL) are pruned; fresh ones are kept.
+    dir = mktempdir()
+    set_config(cache_dir = dir, cache_ttl = 60)
+    write(joinpath(dir, "fresh.meta"), "{\"timestamp\":$(time())}")
+    write(joinpath(dir, "fresh.body"), "x")
+    write(joinpath(dir, "stale.meta"), "{\"timestamp\":$(time() - 1000)}")
+    write(joinpath(dir, "stale.body"), "y")
+    EDGAR._LAST_EVICTION[] = 0.0   # bypass the throttle for the test
+    EDGAR._maybe_evict_cache()
+    kept = isfile(joinpath(dir, "fresh.meta")) && isfile(joinpath(dir, "fresh.body"))
+    gone = !isfile(joinpath(dir, "stale.meta")) && !isfile(joinpath(dir, "stale.body"))
+    @test kept && gone
+    EDGAR.CONFIG.cache_dir = nothing   # restore default for any later use
+    EDGAR.CONFIG.cache_ttl = nothing
+end

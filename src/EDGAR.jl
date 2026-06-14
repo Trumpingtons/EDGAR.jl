@@ -17,6 +17,11 @@ const CACHE_DIR = joinpath(get(ENV, "XDG_CACHE_HOME", joinpath(homedir(), ".cach
 const CACHE_TTL = 24 * 3600 # seconds
 const CACHE_MAX_SIZE = 10_000_000 # bytes
 
+# Stale entries are pruned opportunistically, at most once per this interval per
+# process, so the on-disk cache cannot grow without bound.
+const CACHE_EVICTION_INTERVAL = 3600 # seconds
+const _LAST_EVICTION = Ref(0.0)
+
 mutable struct EDGARConfig
     cache_dir::Union{Nothing,String}
     cache_ttl::Union{Nothing,Int}
@@ -109,6 +114,32 @@ function _write_cache(path::AbstractString, body::Vector{UInt8}, meta::Dict)
     end
 end
 
+# Internal: delete cache entries older than the TTL. Runs at most once per
+# CACHE_EVICTION_INTERVAL per process, so the on-disk cache stays bounded
+# without exposing a public API. Best-effort: corrupt or vanished entries are
+# ignored.
+function _maybe_evict_cache()
+    now = time()
+    now - _LAST_EVICTION[] < CACHE_EVICTION_INTERVAL && return
+    _LAST_EVICTION[] = now
+    dir = get_cache_dir()
+    isdir(dir) || return
+    ttl = get_cache_ttl()
+    for metafile in readdir(dir; join = true)
+        endswith(metafile, ".meta") || continue
+        try
+            meta = JSON3.read(read(metafile, String))
+            if !haskey(meta, "timestamp") || (now - meta["timestamp"] > ttl)
+                rm(metafile; force = true)
+                rm(replace(metafile, ".meta" => ".body"); force = true)
+            end
+        catch
+            # ignore corrupt entries
+        end
+    end
+    return
+end
+
 """
     fetch_url(url; use_cache=true, timeout=15, allow_file=false) -> Vector{UInt8} or nothing
 
@@ -117,8 +148,9 @@ Low-level cached HTTP GET. Sends the configured `User-Agent` (see
 on any failure (network error, non-200 status, or a disallowed URL).
 
 A successful response smaller than `cache_max_size` is written to the on-disk
-cache and reused for up to `cache_ttl` seconds. `timeout` is the read timeout in
-seconds. `file://` URLs are only read when `allow_file=true` (intended for tests).
+cache and reused for up to `cache_ttl` seconds; entries older than that are
+pruned automatically, so the cache stays bounded. `timeout` is the read timeout
+in seconds. `file://` URLs are only read when `allow_file=true` (for tests).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
@@ -172,6 +204,8 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
     if body === nothing
         return nothing
     end
+    # Opportunistically prune expired entries (throttled, internal).
+    _maybe_evict_cache()
     nb = length(body)
     # enforce max size
     if nb > get_cache_max_size()
