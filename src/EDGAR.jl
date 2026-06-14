@@ -30,6 +30,25 @@ end
 
 const CONFIG = EDGARConfig(nothing, nothing, nothing, String[], false, nothing)
 
+"""
+    set_config(; cache_dir, cache_ttl, cache_max_size, host_whitelist, allow_file, user_agent) -> EDGARConfig
+
+Override the global runtime configuration. Only the keyword arguments you pass
+(anything other than `nothing`) are changed; the rest keep their current values.
+Returns the live configuration object.
+
+- `cache_dir` — directory for the on-disk HTTP cache.
+- `cache_ttl` — seconds a cached response stays fresh.
+- `cache_max_size` — largest response (bytes) that will be cached.
+- `host_whitelist` — hosts that requests are restricted to (empty = no restriction).
+- `allow_file` — whether `file://` URLs are permitted (off by default; used in tests).
+- `user_agent` — the `User-Agent` header sent with every request. **Set this to a
+  descriptive value with contact information**, as the SEC requires.
+
+```julia
+set_config(user_agent = "Jane Doe jane@example.com", cache_ttl = 3600)
+```
+"""
 function set_config(; cache_dir=nothing, cache_ttl=nothing, cache_max_size=nothing, host_whitelist=nothing, allow_file=nothing, user_agent=nothing)
     if cache_dir !== nothing CONFIG.cache_dir = cache_dir end
     if cache_ttl !== nothing CONFIG.cache_ttl = cache_ttl end
@@ -61,6 +80,12 @@ if !isdir(get_cache_dir())
     mkpath(get_cache_dir())
 end
 
+"""
+    cache_path_for(url) -> String
+
+Return the on-disk path (without extension) used to cache `url`. The actual
+cache files are this path with `.body` and `.meta` suffixes.
+"""
 function cache_path_for(url::AbstractString)
     h = string(abs(hash(url)))
     return joinpath(get_cache_dir(), h)
@@ -87,6 +112,12 @@ function _write_cache(path::AbstractString, body::Vector{UInt8}, meta::Dict)
     end
 end
 
+"""
+    clean_cache(max_age_seconds=CACHE_TTL) -> Int
+
+Delete cached responses whose stored timestamp is older than `max_age_seconds`,
+and return how many entries were removed. Corrupt cache entries are ignored.
+"""
 function clean_cache(max_age_seconds::Int=CACHE_TTL)
     nowts = time()
     removed = 0
@@ -112,10 +143,27 @@ function clean_cache(max_age_seconds::Int=CACHE_TTL)
     return removed
 end
 
+"""
+    cache_metrics() -> Dict
+
+Return a snapshot (copy) of the cache counters: `:hits`, `:misses`,
+`:requests` and `:bytes_downloaded`.
+"""
 function cache_metrics()
     return deepcopy(CACHE_METRICS)
 end
 
+"""
+    fetch_url(url; use_cache=true, timeout=15, allow_file=false) -> Vector{UInt8} or nothing
+
+Low-level cached HTTP GET. Sends the configured `User-Agent` (see
+[`set_config`](@ref)), returns the response body as bytes, and returns `nothing`
+on any failure (network error, non-200 status, or a disallowed URL).
+
+A successful response smaller than `cache_max_size` is written to the on-disk
+cache and reused for up to `cache_ttl` seconds. `timeout` is the read timeout in
+seconds. `file://` URLs are only read when `allow_file=true` (intended for tests).
+"""
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
     if startswith(url, "file://")
@@ -219,12 +267,32 @@ function similarity_ratio(a::AbstractString, b::AbstractString)
     return 1.0 - d / maxlen
 end
 
+"""
+    fetch_submissions(cik) -> JSON3.Object
+
+Fetch a filer's complete submissions document from `data.sec.gov/submissions/`:
+company metadata plus its recent filings index. `cik` should be the 10-digit,
+zero-padded Central Index Key (e.g. `"0000320193"`). See [`list_recent_filings`](@ref)
+for a tidied view of just the recent filings.
+"""
 function fetch_submissions(cik::AbstractString)
     url = "https://data.sec.gov/submissions/CIK$(strip(cik)).json"
     r = HTTP.get(url, headers = ["User-Agent"=>USER_AGENT])
     return JSON3.read(String(r.body))
 end
 
+"""
+    list_recent_filings(cik; count=10) -> Vector{NamedTuple}
+
+Return a filer's most recent filings as up to `count` rows of
+`(accession, form, date)`, newest first. Built on [`fetch_submissions`](@ref).
+
+```julia
+for f in list_recent_filings("0000320193"; count = 5)
+    println(f.date, "  ", f.form, "  ", f.accession)
+end
+```
+"""
 function list_recent_filings(cik::AbstractString; count::Int=10)
     subs = fetch_submissions(cik)
     filings = get(subs, "filings", Dict())
@@ -356,6 +424,15 @@ function _cik_dir(cik)
     return joinpath(pwd(), "data", strip(cik))
 end
 
+"""
+    download_filing(cik, accession; primary=true, destdir=".") -> String
+
+Download a filing's document from the EDGAR `Archives` into `destdir`, creating
+the directory if needed, and return the local file path. The accession number may
+be given with or without dashes. Several common document/index URL patterns are
+tried in turn; the first that responds with HTTP 200 is saved. Throws if none of
+them succeed.
+"""
 function download_filing(cik::AbstractString, accession::AbstractString; primary::Bool=true, destdir=".")
     acc = replace(accession, "-"=>"")
     cikp = lpad(strip(cik), 10, '0')
@@ -393,11 +470,23 @@ function html_to_text(html::AbstractString)
     return strip(txt)
 end
 
+"""
+    parse_filing(path) -> String
+
+Read a downloaded filing from `path` and return its raw HTML. The extraction
+functions (such as [`extract_section`](@ref)) operate directly on this HTML.
+"""
 function parse_filing(path::AbstractString)
     # Return raw HTML string; extraction functions operate on HTML
     return read(path, String)
 end
 
+"""
+    save_filing(text, metadata; outdir="out") -> String
+
+Write `text` to `<outdir>/<accession>.txt`, taking the accession number from
+`metadata[:accession]` and creating `outdir` if needed. Returns the path written.
+"""
 function save_filing(text::AbstractString, metadata::Dict; outdir="out")
     if !isdir(outdir)
         mkpath(outdir)
@@ -409,6 +498,24 @@ function save_filing(text::AbstractString, metadata::Dict; outdir="out")
     return fn
 end
 
+"""
+    extract_section(html, names; max_chars=200_000, base_path=nothing) -> Dict{String,String}
+
+Pull one or more named sections out of a filing's `html`, returning a dictionary
+that maps each requested name to the matched text. Names that cannot be located
+are simply absent from the result, so look them up with `get`.
+
+Matching is heuristic and tried in order: the document's table of contents
+(following anchor links), then DOM headings (`h1`–`h6`, via Gumbo + Cascadia),
+then a plain-text search as a last resort. `base_path` lets table-of-contents
+links that point to sibling files be resolved relative to it; `max_chars` bounds
+the size of the plain-text fallback window.
+
+```julia
+sections = extract_section(html, ["Item 7", "Management's Discussion"])
+println(get(sections, "Item 7", "(not found)"))
+```
+"""
 function extract_section(html::AbstractString, names::Vector{String}; max_chars::Int=200_000, base_path::Union{Nothing,String}=nothing)
     results = Dict{String,String}()
     body_html = match(r"(?is)<body.*?</body>", html)
@@ -566,6 +673,12 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
     return results
 end
 
+"""
+    main(argv=ARGS)
+
+Minimal command-line entry point. Prints a hint pointing users at the module's
+functions; the package is intended to be used as a library rather than a CLI.
+"""
 function main(argv::Vector{String}=ARGS)
     println("EDGAR.jl: simple tool. Use functions from module.")
 end

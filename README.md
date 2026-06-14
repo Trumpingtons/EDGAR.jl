@@ -53,11 +53,11 @@ end
 latest = first(filings)
 path = download_filing("0000320193", latest.accession; destdir = "filings")
 
-# 3. Convert the filing's HTML to plain text
-text = parse_filing(path)
+# 3. Read the filing's HTML (the extraction functions operate on HTML)
+html = parse_filing(path)
 
-# 4. Extract specific sections (case-insensitive; heuristic match)
-sections = extract_section(text, ["Item 7", "Management's Discussion"])
+# 4. Extract specific sections (heuristic, case-insensitive)
+sections = extract_section(html, ["Item 7", "Management's Discussion"])
 println(get(sections, "Item 7", "(not found)"))
 ```
 
