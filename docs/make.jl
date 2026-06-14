@@ -35,8 +35,7 @@ if get(ENV, "GITHUB_ACTIONS", "") == "true"
     try
         deploydocs(
             repo = "https://github.com/Trumpingtons/EDGAR.jl.git",
-            branch = "gh-pages",
-            provider = Documenter.GitHubActions()
+            branch = "gh-pages"
         )
     catch err
         @warn "deploydocs failed; skipping deploy in this environment" error=err
