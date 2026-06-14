@@ -8,12 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-      strategy:
+    strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         julia-version: ["1.10", "1.12"]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -36,25 +36,3 @@ jobs:
 
       - name: Run tests
         run: julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
-name: CI
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v1
-        with:
-          version: '1.12'
-
-      - name: Install dependencies and run tests
-        run: |
-          julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.add(["Gumbo","Cascadia"]); Pkg.test()'
