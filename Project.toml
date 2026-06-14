@@ -1,6 +1,6 @@
 name = "EDGAR"
 uuid = "d2b8c6a1-4b3f-4f1a-a5f8-1b2c3d4e5f6a"
-authors = ["Your Name <you@example.com>"]
+authors = ["Antonio Saragga Seabra"]
 version = "0.1.1"
 
 [compat]

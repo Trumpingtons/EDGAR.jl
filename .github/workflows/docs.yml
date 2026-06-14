@@ -26,7 +26,9 @@ jobs:
         with:
           version: '1.12'
 
-      - name: Instantiate project
+      # Sanity check that the package itself resolves. The docs/ environment
+      # (Documenter + EDGAR by path) is set up by docs/make.jl, not here.
+      - name: Instantiate package
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
       - name: Build docs

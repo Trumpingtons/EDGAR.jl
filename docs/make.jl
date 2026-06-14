@@ -13,7 +13,7 @@ using EDGAR
 makedocs(
     modules = [EDGAR],
     sitename = "EDGAR.jl",
-    authors = "Your Name",
+    authors = "Antonio Saragga Seabra",
     format = Documenter.HTML(),
     pages = [
         "Home" => "index.md",
