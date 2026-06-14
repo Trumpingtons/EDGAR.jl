@@ -17,3 +17,14 @@ makedocs(
 )
 
 println("Docs built to docs/build")
+
+# Deploy to GitHub Pages when running in CI (GitHub Actions)
+try
+    deploydocs(
+        repo = "https://github.com/Trumpingtons/EDGAR.jl.git",
+        branch = "gh-pages",
+        provider = Documenter.GitHubActions()
+    )
+catch err
+    @warn "deploydocs failed; skipping deploy in this environment" error=err
+end

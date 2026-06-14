@@ -27,14 +27,5 @@ jobs:
       - name: Build docs
         run: julia --project=docs docs/make.jl
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v2
-        with:
-          path: docs/build
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v1
+      - name: (optional) Completed - deploy handled by Documenter
+        run: echo "If running in GitHub Actions, Documenter deploydocs() will push to gh-pages."
