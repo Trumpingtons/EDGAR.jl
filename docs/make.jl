@@ -33,7 +33,9 @@ println("Docs built to docs/build")
 # Only deploy when running in GitHub Actions (avoid accidental local deploys)
 if get(ENV, "GITHUB_ACTIONS", "") == "true"
     try
-        deploydocs(repo = "Trumpingtons/EDGAR.jl", branch = "gh-pages")
+        token = get(ENV, "DOCUMENTER_KEY", "")
+        deploy_repo = "https://x-access-token:$token@github.com/Trumpingtons/EDGAR.jl.git"
+        deploydocs(repo = "Trumpingtons/EDGAR.jl", deploy_repo = deploy_repo, branch = "gh-pages")
     catch err
         @warn "deploydocs failed; skipping deploy in this environment" error=err
     end
