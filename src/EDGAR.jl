@@ -11,13 +11,11 @@ const USER_AGENT = "EDGAR.jl/0.1 (https://github.com/yourname/EDGAR.jl)"
 # HTTP helper (injectable for tests)
 http_get = HTTP.get
 
-# Simple cache defaults (can be overridden via set_config)
-const CACHE_DIR = joinpath(pwd(), ".edgar_cache")
+# Internal HTTP-response cache defaults (overridable via set_config). The cache
+# lives in a per-user cache directory, never the current working directory.
+const CACHE_DIR = joinpath(get(ENV, "XDG_CACHE_HOME", joinpath(homedir(), ".cache")), "EDGAR.jl")
 const CACHE_TTL = 24 * 3600 # seconds
 const CACHE_MAX_SIZE = 10_000_000 # bytes
-
-# Simple metrics
-const CACHE_METRICS = Dict(:hits=>0, :misses=>0, :requests=>0, :bytes_downloaded=>0)
 
 mutable struct EDGARConfig
     cache_dir::Union{Nothing,String}
@@ -76,16 +74,15 @@ function host_allowed(host::AbstractString)
     return false
 end
 
-if !isdir(get_cache_dir())
-    mkpath(get_cache_dir())
+# Best-effort: create the cache directory. Caching is optional, so a read-only
+# or unavailable location must never stop the package from loading.
+try
+    isdir(get_cache_dir()) || mkpath(get_cache_dir())
+catch
 end
 
-"""
-    cache_path_for(url) -> String
-
-Return the on-disk path (without extension) used to cache `url`. The actual
-cache files are this path with `.body` and `.meta` suffixes.
-"""
+# Internal: on-disk path (without extension) used to cache `url`. The actual
+# cache files are this path with `.body` and `.meta` suffixes.
 function cache_path_for(url::AbstractString)
     h = string(abs(hash(url)))
     return joinpath(get_cache_dir(), h)
@@ -110,47 +107,6 @@ function _write_cache(path::AbstractString, body::Vector{UInt8}, meta::Dict)
     open(metafile, "w") do io
         write(io, JSON3.write(meta))
     end
-end
-
-"""
-    clean_cache(max_age_seconds=CACHE_TTL) -> Int
-
-Delete cached responses whose stored timestamp is older than `max_age_seconds`,
-and return how many entries were removed. Corrupt cache entries are ignored.
-"""
-function clean_cache(max_age_seconds::Int=CACHE_TTL)
-    nowts = time()
-    removed = 0
-    for f in readdir(get_cache_dir())
-        full = joinpath(get_cache_dir(), f)
-        # consider only .meta files
-        if endswith(full, ".meta")
-            try
-                meta = JSON3.read(read(full, String))
-                if haskey(meta, "timestamp") && (nowts - meta["timestamp"] > max_age_seconds)
-                    # remove meta and body
-                    rm(full)
-                    body = replace(full, ".meta" => ".body")
-                    if isfile(body) rm(body) end
-                    removed += 1
-                end
-            catch
-                # ignore corrupt
-            end
-        end
-    end
-    @info "clean_cache removed=$removed"
-    return removed
-end
-
-"""
-    cache_metrics() -> Dict
-
-Return a snapshot (copy) of the cache counters: `:hits`, `:misses`,
-`:requests` and `:bytes_downloaded`.
-"""
-function cache_metrics()
-    return deepcopy(CACHE_METRICS)
 end
 
 """
@@ -192,15 +148,12 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         cand = _read_cache(path)
         if cand !== nothing
             meta, body = cand
-            if haskey(meta, "timestamp") && (time() - meta["timestamp"] <= CACHE_TTL)
-                CACHE_METRICS[:hits] += 1
+            if haskey(meta, "timestamp") && (time() - meta["timestamp"] <= get_cache_ttl())
                 return body
             end
         end
     end
 
-    # perform HTTP request
-    CACHE_METRICS[:requests] += 1
     r = nothing
     try
         r = http_get(url, headers=["User-Agent"=>get_user_agent()], readtimeout=timeout)
@@ -220,10 +173,8 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         return nothing
     end
     nb = length(body)
-    CACHE_METRICS[:bytes_downloaded] += nb
-    CACHE_METRICS[:misses] += 1
     # enforce max size
-    if nb > CACHE_MAX_SIZE
+    if nb > get_cache_max_size()
         @info "fetch_url: body too large ($(nb) bytes), skipping cache"
         return body
     end
@@ -276,9 +227,7 @@ zero-padded Central Index Key (e.g. `"0000320193"`). See [`list_recent_filings`]
 for a tidied view of just the recent filings.
 """
 function fetch_submissions(cik::AbstractString)
-    url = "https://data.sec.gov/submissions/CIK$(strip(cik)).json"
-    r = HTTP.get(url, headers = ["User-Agent"=>USER_AGENT])
-    return JSON3.read(String(r.body))
+    return _get_json("https://data.sec.gov/submissions/CIK$(strip(cik)).json")
 end
 
 """
@@ -445,7 +394,7 @@ function download_filing(cik::AbstractString, accession::AbstractString; primary
     for cand in candidates
         full = "https://www.sec.gov/Archives/edgar/data/$(strip(parse(Int, cikp)))/$(acc)" * cand
         try
-            r = HTTP.get(full, headers=["User-Agent"=>USER_AGENT])
+            r = HTTP.get(full, headers=["User-Agent"=>get_user_agent()])
             if r.status == 200
                 out = joinpath(destdir, basename(cand))
                 open(out, "w") do io
@@ -684,7 +633,7 @@ function main(argv::Vector{String}=ARGS)
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing, main,
-       set_config, fetch_url, clean_cache, cache_metrics, cache_path_for,
+       set_config, fetch_url,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module

@@ -100,9 +100,8 @@ println(hits.hits.total.value, " matching filings")
 | `xbrl_frames(taxonomy, tag, unit, period)` | One concept across all filers for a period |
 | `full_text_search(query; forms, startdate, enddate)` | Search filing contents (2001+) |
 | `cik_for_ticker(ticker)` / `company_tickers()` | Resolve a ticker to a CIK |
-| `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent |
-| `set_config(; …)` | Override the cache dir/TTL, host whitelist, user agent, … |
-| `cache_metrics()` / `clean_cache()` | Inspect / prune the on-disk cache |
+| `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |
+| `set_config(; user_agent, …)` | Set the User-Agent, cache dir/TTL, host whitelist, … |
 
 CIKs are the SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`).
 Please stay under the SEC fair-access limit of **10 requests per second**.
