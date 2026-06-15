@@ -116,12 +116,20 @@ end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size
 get_cache_max_age() = CONFIG.cache_max_age === nothing ? CACHE_MAX_AGE : CONFIG.cache_max_age
-# Returns the configured User-Agent, or throws a clear, actionable error if none
-# has been set — the SEC rejects requests without a descriptive User-Agent.
+# Returns the configured User-Agent. Resolution order: an explicit value set via
+# set_user_agent/set_config wins; otherwise the SEC_USER_AGENT environment variable
+# is used (this is how hosts like Pollis inject the contact into the session); if
+# neither is set we throw a clear, actionable error, since the SEC rejects requests
+# without a descriptive User-Agent.
 function get_user_agent()
-    CONFIG.user_agent === nothing && throw(ArgumentError(
-        "No SEC User-Agent set. The SEC requires a descriptive User-Agent with " *
-        "contact information. Set one with:\n    set_user_agent(\"Your Name\", \"you@example.com\")"))
+    if CONFIG.user_agent === nothing
+        env_ua = get(ENV, "SEC_USER_AGENT", "")
+        isempty(env_ua) || return env_ua
+        throw(ArgumentError(
+            "No SEC User-Agent set. The SEC requires a descriptive User-Agent with " *
+            "contact information. Set one with:\n    set_user_agent(\"Your Name\", \"you@example.com\")\n" *
+            "or set the SEC_USER_AGENT environment variable."))
+    end
     return CONFIG.user_agent
 end
 
@@ -317,7 +325,7 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         return nothing
     end
     status = hasproperty(r, :status) ? getproperty(r, :status) : nothing
-    if status !== 200
+    if status != 200
         @info "fetch_url non-200: $status for $url"
         return nothing
     end
