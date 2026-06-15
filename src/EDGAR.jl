@@ -116,40 +116,52 @@ end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size
 get_cache_max_age() = CONFIG.cache_max_age === nothing ? CACHE_MAX_AGE : CONFIG.cache_max_age
-# Returns the configured User-Agent. Resolution order: an explicit value set via
-# set_user_agent/set_config wins; otherwise the SEC_USER_AGENT environment variable
-# is used (this is how hosts like Pollis inject the contact into the session); if
-# neither is set we throw a clear, actionable error, since the SEC rejects requests
-# without a descriptive User-Agent.
+"""
+    get_user_agent() -> String
+
+Return the SEC `User-Agent` string that will be sent with every request. The
+resolution order is: an explicit value set via [`set_user_agent`](@ref) or
+[`set_config`](@ref) wins; otherwise the `SEC_USER_AGENT` environment variable is
+used (how hosts such as a notebook env or an editor extension can inject the
+contact into the session); if neither is set, an `ArgumentError` is thrown, since
+the SEC rejects requests without a descriptive User-Agent.
+
+```julia
+set_user_agent("Jane Doe jane@example.com")
+get_user_agent()     # "Jane Doe jane@example.com"
+```
+"""
 function get_user_agent()
     if CONFIG.user_agent === nothing
         env_ua = get(ENV, "SEC_USER_AGENT", "")
         isempty(env_ua) || return env_ua
         throw(ArgumentError(
             "No SEC User-Agent set. The SEC requires a descriptive User-Agent with " *
-            "contact information. Set one with:\n    set_user_agent(\"Your Name\", \"you@example.com\")\n" *
+            "contact information. Set one with:\n    set_user_agent(\"Your Name you@example.com\")\n" *
             "or set the SEC_USER_AGENT environment variable."))
     end
     return CONFIG.user_agent
 end
 
 """
-    set_user_agent(name, email) -> String
+    set_user_agent(user_agent) -> String
 
-Set the SEC `User-Agent` from your `name` and contact `email`. The SEC requires a
-descriptive User-Agent with contact information; requests without one are rejected
-with HTTP 403. Returns the User-Agent string that will be sent.
+Set the SEC `User-Agent` from a single string containing your name and a contact
+email, e.g. `"Jane Doe jane@example.com"`. The SEC requires a descriptive
+User-Agent with contact information; requests without one are rejected with HTTP
+403. This is the validated counterpart to [`get_user_agent`](@ref): it checks the
+string is non-empty and contains an email before storing it, then returns it.
 
 ```julia
-set_user_agent("Jane Doe", "jane@example.com")
+set_user_agent("Jane Doe jane@example.com")
 ```
 """
-function set_user_agent(name::AbstractString, email::AbstractString)
-    name = strip(name)
-    email = strip(email)
-    isempty(name) && throw(ArgumentError("name must not be empty"))
-    occursin('@', email) || throw(ArgumentError("\"$email\" does not look like an email address"))
-    ua = "$(name) $(email)"
+function set_user_agent(user_agent::AbstractString)
+    ua = strip(user_agent)
+    isempty(ua) && throw(ArgumentError("User-Agent must not be empty"))
+    occursin('@', ua) || throw(ArgumentError(
+        "\"$ua\" does not contain a contact email. The SEC requires a descriptive " *
+        "User-Agent with contact information, e.g. \"Jane Doe jane@example.com\"."))
     set_config(user_agent = ua)
     return ua
 end
@@ -786,7 +798,7 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
-       set_config, set_user_agent, fetch_url, clean_cache, cache_metrics, cache_path_for,
+       set_config, set_user_agent, get_user_agent, fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module

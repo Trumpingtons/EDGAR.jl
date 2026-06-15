@@ -39,7 +39,7 @@ Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 >
 > ```julia
 > using EDGAR
-> set_user_agent("Jane Doe", "jane@example.com")
+> set_user_agent("Jane Doe jane@example.com")
 > ```
 >
 > EDGAR.jl will otherwise stop with a clear error before contacting the SEC.

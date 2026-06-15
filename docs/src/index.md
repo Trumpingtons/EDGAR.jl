@@ -25,7 +25,7 @@ and a contact email:
 
 ```julia
 using EDGAR
-set_user_agent("Jane Doe", "jane@example.com")
+set_user_agent("Jane Doe jane@example.com")
 ```
 
 If you forget, EDGAR.jl stops with a clear error before ever contacting the SEC.
