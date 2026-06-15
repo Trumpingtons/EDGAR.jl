@@ -65,6 +65,9 @@ modes, and the freshness and retention limits — is configured entirely through
 
 ```@docs
 set_user_agent
+get_user_agent
+persist_user_agent
+unpersist_user_agent
 set_config
 clean_cache
 cache_metrics
