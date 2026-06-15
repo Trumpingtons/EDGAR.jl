@@ -613,10 +613,10 @@ be given with or without dashes. Several common document/index URL patterns are
 tried in turn; the first that responds with HTTP 200 is saved. Throws if none of
 them succeed.
 """
-function download_filing(cik::AbstractString, accession::AbstractString; primary::Bool=true, destdir=".")
+function download_filing(cik::AbstractString, accession::AbstractString; destdir=".")
     acc = replace(accession, "-"=>"")
     cik_path = string(parse(Int, strip(cik)))
-    url = "https://www.sec.gov/Archives/edgar/data/$cik_path/$acc/"
+    url = "https://www.sec.gov/Archives/edgar/data/$(cik_path)/$(acc)/"
     # Best-effort: try common filename patterns
     candidates = ["/" * accession * "-index.htm", "/" * accession * ".txt", "/" * accession * ".html", "/index.htm"]
     if !isdir(destdir)
@@ -624,7 +624,7 @@ function download_filing(cik::AbstractString, accession::AbstractString; primary
     end
     ua = get_user_agent()   # throws a clear error if unset, before any network call
     for cand in candidates
-        full = "https://www.sec.gov/Archives/edgar/data/$cik_path/$(acc)" * cand
+        full = url * cand
         try
             r = HTTP.get(full, headers=["User-Agent"=>ua])
             if r.status == 200

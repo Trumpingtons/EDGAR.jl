@@ -9,13 +9,12 @@
 system:
 
 - **Filings** — list a filer's submissions, download filings, convert them to
-  text, and extract sections such as *Item 7 — Management's Discussion*.
+  text, and extract sections such as *Financial Statements* and *Management's Discussion*.
 - **XBRL financial data** — a filer's full set of reported facts
   (`company_facts`), one concept over time (`company_concept`), or one concept
   across every filer for a period (`xbrl_frames`).
 - **Full-text search** — search the contents of filings since 2001
   (`full_text_search`).
-- **Ticker lookup** — resolve a ticker symbol to its CIK (`cik_for_ticker`).
 
 It talks to the public `data.sec.gov` / `efts.sec.gov` / `sec.gov` endpoints with
 `HTTP.jl` + `JSON3.jl`, uses `Gumbo.jl` + `Cascadia.jl` for robust HTML parsing,
