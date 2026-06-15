@@ -624,7 +624,7 @@ function download_filing(cik::AbstractString, accession::AbstractString; primary
     end
     ua = get_user_agent()   # throws a clear error if unset, before any network call
     for cand in candidates
-        full = "https://www.sec.gov/Archives/edgar/data/$(strip(parse(Int, cikp)))/$(acc)" * cand
+        full = "https://www.sec.gov/Archives/edgar/data/$cik_path/$(acc)" * cand
         try
             r = HTTP.get(full, headers=["User-Agent"=>ua])
             if r.status == 200
