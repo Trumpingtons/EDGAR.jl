@@ -166,6 +166,61 @@ function set_user_agent(user_agent::AbstractString)
     return ua
 end
 
+# Marker comment tagging the line that persist_user_agent writes to startup.jl, so
+# the write can be updated or removed idempotently without touching the user's own lines.
+const _PERSIST_MARKER = "# added by EDGAR.persist_user_agent"
+
+"""
+    persist_user_agent(user_agent; depot = first(DEPOT_PATH)) -> String
+
+Persist the SEC `User-Agent` across Julia sessions by writing it into the depot's
+`config/startup.jl`, so `ENV["SEC_USER_AGENT"]` is set every time Julia starts and
+EDGAR.jl reads it automatically — no per-session [`set_user_agent`](@ref) call. The
+string is validated as in [`set_user_agent`](@ref) and also applied to the current
+session. The write is idempotent: it replaces the line a previous call added rather
+than appending a duplicate, and it leaves any `SEC_USER_AGENT` line you wrote
+yourself untouched. Returns the path it modified. Undo with [`unpersist_user_agent`](@ref).
+
+```julia
+persist_user_agent("Jane Doe jane@example.com")
+```
+"""
+function persist_user_agent(user_agent::AbstractString; depot::AbstractString=first(DEPOT_PATH))
+    ua = set_user_agent(user_agent)          # validate + set for the current session
+    path = joinpath(depot, "config", "startup.jl")
+    mkpath(dirname(path))
+    line = "ENV[\"SEC_USER_AGENT\"] = $(repr(ua))   $(_PERSIST_MARKER)"
+    lines = isfile(path) ? readlines(path) : String[]
+    filter!(l -> !occursin(_PERSIST_MARKER, l), lines)   # drop our previous line, if any
+    push!(lines, line)
+    open(path, "w") do io
+        foreach(l -> println(io, l), lines)
+    end
+    @info "Persisted SEC_USER_AGENT to $path (effective in new Julia sessions)."
+    return path
+end
+
+"""
+    unpersist_user_agent(; depot = first(DEPOT_PATH)) -> Bool
+
+Remove the `SEC_USER_AGENT` line that [`persist_user_agent`](@ref) added to the
+depot's `config/startup.jl`. Returns `true` if a line was removed, `false` if there
+was nothing to remove. Only lines written by `persist_user_agent` are affected; the
+current session's User-Agent is left unchanged.
+"""
+function unpersist_user_agent(; depot::AbstractString=first(DEPOT_PATH))
+    path = joinpath(depot, "config", "startup.jl")
+    isfile(path) || return false
+    lines = readlines(path)
+    kept = filter(l -> !occursin(_PERSIST_MARKER, l), lines)
+    length(kept) < length(lines) || return false
+    open(path, "w") do io
+        foreach(l -> println(io, l), kept)
+    end
+    @info "Removed persisted SEC_USER_AGENT from $path."
+    return true
+end
+
 # True when the cache is stored persistently (named mode or a pinned directory),
 # as opposed to the ephemeral per-process :temporary dir.
 _is_persistent() = CONFIG.cache_dir !== nothing || CONFIG.cache_mode === :persistent
@@ -285,8 +340,10 @@ you get the configured `User-Agent` and the cache for free, and parse the bytes
 yourself (e.g. with `JSON3.read`). Caching behaviour — where the cache lives and
 when it expires — is configured through [`set_config`](@ref).
 
-`use_cache=false` ignores any cached copy on read, `timeout` is the read timeout
-in seconds, and `file://` URLs are only read when `allow_file=true` (for tests).
+`use_cache=false` ignores any cached copy on read, `timeout` is the read-inactivity
+timeout in seconds (a stalled connection is abandoned after this long with no data,
+so it does not cut off slow-but-steady large downloads), and `file://` URLs are only
+read when `allow_file=true` (for tests).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
     # Support file: for tests only when allow_file=true
@@ -329,7 +386,7 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
     CACHE_METRICS[:requests] += 1
     r = nothing
     try
-        r = http_get(url, headers=["User-Agent"=>ua], readtimeout=timeout)
+        r = http_get(url, headers=["User-Agent"=>ua], read_idle_timeout=timeout)
     catch e
         @info "fetch_url error: $e"
     end
@@ -798,7 +855,8 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
 end
 
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
-       set_config, set_user_agent, get_user_agent, fetch_url, clean_cache, cache_metrics, cache_path_for,
+       set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
+       fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
 
 end # module

@@ -91,3 +91,25 @@ end
     EDGAR.CONFIG.user_agent = nothing
     @test_throws ArgumentError EDGAR.get_user_agent()
 end
+
+@testset "persist/unpersist user-agent (offline)" begin
+    depot = mktempdir()   # never touch the real startup.jl
+    path = persist_user_agent("Jane Doe jane@example.com"; depot = depot)
+    @test path == joinpath(depot, "config", "startup.jl")
+    @test EDGAR.get_user_agent() == "Jane Doe jane@example.com"   # also set for this session
+    @test occursin("ENV[\"SEC_USER_AGENT\"] = \"Jane Doe jane@example.com\"", read(path, String))
+
+    # Idempotent: re-persisting with a new value replaces rather than duplicating.
+    persist_user_agent("New Name new@example.com"; depot = depot)
+    persisted = filter(l -> occursin(EDGAR._PERSIST_MARKER, l), readlines(path))
+    @test length(persisted) == 1
+    @test occursin("new@example.com", only(persisted))
+
+    # A line the user wrote themselves (no marker) is left untouched on removal.
+    open(path, "a") do io; println(io, "ENV[\"SEC_USER_AGENT\"] = \"hand written\""); end
+    @test unpersist_user_agent(; depot = depot)
+    remaining = read(path, String)
+    @test occursin("hand written", remaining)
+    @test !occursin(EDGAR._PERSIST_MARKER, remaining)
+    @test unpersist_user_agent(; depot = depot) == false   # nothing left to remove
+end

@@ -44,6 +44,12 @@ Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 >
 > EDGAR.jl will otherwise stop with a clear error before contacting the SEC.
 
+**Per session.** `set_user_agent` (and `set_config`) set the User-Agent only for the
+current Julia process; a new REPL or notebook kernel starts without one. To avoid
+setting it every session, define the `SEC_USER_AGENT` environment variable — EDGAR.jl
+reads it automatically. Put it in `~/.julia/config/startup.jl`
+(`ENV["SEC_USER_AGENT"] = "Jane Doe jane@example.com"`) so every Julia session has it.
+
 ## Quick start
 
 ```julia
