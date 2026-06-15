@@ -1,0 +1,475 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------------------
+% EDGAR.jl — User Manual
+% Compile with: pdflatex EDGAR.tex  (run twice for the table of contents /
+% cross-references). No --shell-escape required (uses `listings`, not minted).
+% ---------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[colorlinks=true,linkcolor=BlueViolet,urlcolor=BlueViolet,
+            citecolor=BlueViolet]{hyperref}
+\usepackage[dvipsnames]{xcolor}
+
+% ---- Julia code listing style ---------------------------------------------
+\definecolor{codebg}{rgb}{0.97,0.97,0.98}
+\definecolor{codekw}{rgb}{0.55,0.10,0.55}
+\definecolor{codestr}{rgb}{0.10,0.45,0.20}
+\definecolor{codecom}{rgb}{0.45,0.45,0.45}
+\definecolor{coderule}{rgb}{0.85,0.85,0.88}
+
+\lstdefinelanguage{Julia}{
+  morekeywords={function,end,using,import,module,for,in,if,else,elseif,while,
+    return,begin,struct,mutable,const,true,false,nothing,do,let,global,local},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+}
+
+\lstdefinestyle{julia}{
+  language=Julia,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestr},
+  commentstyle=\color{codecom}\itshape,
+  frame=single,
+  rulecolor=\color{coderule},
+  framesep=6pt,
+  xleftmargin=10pt,
+  xrightmargin=4pt,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+}
+\lstset{style=julia}
+
+% inline code shortcut
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\titleformat{\section}{\Large\bfseries\color{BlueViolet}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+
+% ---------------------------------------------------------------------------
+\title{\textbf{EDGAR.jl}\\[0.3em]
+       \large A Julia interface to the U.S.\ SEC EDGAR system}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\textbf{EDGAR.jl} pulls company data from the U.S.\ Securities and Exchange
+Commission's \href{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}{EDGAR}
+system into Julia: a filer's \emph{submission history}, the \emph{XBRL financial
+facts} extracted from its filings, cross-filer \emph{frames}, and \emph{full-text
+search} of filing contents. It talks to the public
+\code{data.sec.gov} / \code{efts.sec.gov} / \code{sec.gov} endpoints with
+\code{HTTP.jl} and \code{JSON3.jl}, parses HTML with \code{Gumbo.jl} and
+\code{Cascadia.jl}, and caches responses so an interactive session does not
+re-download the same data. No API key is required --- only a descriptive
+\code{User-Agent} (see \S\ref{sec:ua}).
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+
+% ===========================================================================
+\section{Introduction}
+\label{sec:intro}
+
+EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the SEC's
+filing system. Every public company in the United States files its disclosures
+there, and since 2009 the financial statements in those filings are tagged in
+\textbf{XBRL}, which is what makes them machine-readable. The SEC publishes this
+data through open JSON REST APIs that require no registration and no key.
+
+EDGAR.jl wraps those endpoints behind a small, typed API and stops at plain Julia
+values (\code{JSON3} objects and \code{NamedTuple}s), which you can pipe into
+\code{DataFrames.jl}, \code{TimeSeries.jl}, or a database. It covers four kinds of
+task:
+
+\begin{itemize}[nosep]
+  \item \textbf{Filings} --- list a filer's submissions, download a filing's
+        documents, convert them to text, and extract sections such as
+        \emph{Financial Statements} and \emph{Management's Discussion}.
+  \item \textbf{XBRL financial data} --- a filer's full set of reported facts
+        (\code{company\_facts}), one concept over time (\code{company\_concept}),
+        or one concept across every filer for a period (\code{xbrl\_frames}).
+  \item \textbf{Full-text search} --- search the contents of filings since 2001
+        (\code{full\_text\_search}).
+  \item \textbf{Company lookup} --- resolve a ticker symbol to its CIK
+        (\code{cik\_for\_ticker}).
+\end{itemize}
+
+\noindent
+The SEC asks for \textbf{fair use}: at most ten requests per second. EDGAR.jl's
+cache (\S\ref{sec:caching}) helps you stay well under that.
+
+% ===========================================================================
+\section{Installation}
+\label{sec:install}
+
+EDGAR.jl requires \textbf{Julia 1.12 or later}. It is not yet registered, so
+install it straight from GitHub:
+
+\begin{lstlisting}
+using Pkg
+Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
+\end{lstlisting}
+
+\subsection{Setting a User-Agent}
+\label{sec:ua}
+
+The SEC's fair-access policy requires every request to identify you with a
+\code{User-Agent} header containing your \textbf{name and a contact email}.
+\textbf{Without it the SEC returns HTTP 403.} There is no key and no
+registration --- just be honest about who is calling. Set yours once with a
+single \code{"name email"} string:
+
+\begin{lstlisting}
+using EDGAR
+set_user_agent("Jane Doe jane@example.com")
+\end{lstlisting}
+
+\noindent
+\code{set\_user\_agent} validates the string (non-empty, contains an email) and
+returns it. If you forget, EDGAR.jl stops with a clear error \emph{before} ever
+contacting the SEC.
+
+\paragraph{Per session vs.\ persistent.}
+\code{set\_user\_agent} (and \code{set\_config}) set the User-Agent only for the
+\emph{current} Julia process --- a new REPL or notebook kernel starts without
+one. The resolution order EDGAR.jl uses is:
+
+\begin{enumerate}[nosep]
+  \item an explicit value from \code{set\_user\_agent} / \code{set\_config}; else
+  \item the \code{SEC\_USER\_AGENT} environment variable; else
+  \item an error.
+\end{enumerate}
+
+\noindent
+So to avoid setting it every session, define the environment variable once.
+\code{persist\_user\_agent} writes it into your Julia startup file for you, which
+every future Julia process (REPL, script, \emph{and} notebook kernel) reads:
+
+\begin{lstlisting}
+persist_user_agent("Jane Doe jane@example.com")  # writes ~/.julia/config/startup.jl
+# unpersist_user_agent()                          # removes it again
+\end{lstlisting}
+
+\noindent
+Equivalently, set \code{ENV["SEC\_USER\_AGENT"] = "Jane Doe jane@example.com"} in
+\code{\textasciitilde/.julia/config/startup.jl} (or export it from your shell)
+yourself. The User-Agent is \emph{not} a secret --- it is exactly the information
+you are transmitting to the SEC --- so storing it in a startup file is fine.
+
+% ===========================================================================
+\section{Quick Start}
+\label{sec:quickstart}
+
+\subsection{Searching}
+\label{sec:qs-search}
+
+Resolve a ticker to a CIK, then search the text of filings:
+
+\begin{lstlisting}
+using EDGAR
+set_user_agent("Jane Doe jane@example.com")
+
+# Ticker -> 10-digit, zero-padded CIK
+cik = cik_for_ticker("AAPL")            # "0000320193"
+
+# Full-text search across filing contents (2001 onward), restricted to 10-K forms
+res = full_text_search("climate risk"; forms = "10-K")
+println(res.hits.total.value, " matching filings")
+for h in first(res.hits.hits, 5)
+    s = h._source
+    println(s.file_date, "  ", s.form, "  ", first(s.display_names))
+end
+\end{lstlisting}
+
+\subsection{Financial Data}
+\label{sec:qs-findata}
+
+The three XBRL endpoints share the \code{us-gaap} vocabulary and return JSON:
+
+\begin{lstlisting}
+# Every XBRL fact a company has reported, in one document
+facts = company_facts("320193")
+gaap  = facts.facts[Symbol("us-gaap")]      # us-gaap has a hyphen: index by Symbol
+
+# One concept over time (net income, grouped by unit)
+ni = company_concept("320193", "us-gaap", "NetIncomeLoss")
+println(ni.units.USD[end].val)
+
+# The same concept across every filer for one period (a cross-section)
+assets = xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
+println(length(assets.data), " filers reported Assets")
+\end{lstlisting}
+
+\noindent
+A trailing \code{I} on the frame period (\code{"CY2022Q4I"}) denotes an
+\emph{instant} (a balance-sheet point in time); drop it for a \emph{duration}
+(a flow such as revenue). See the Glossary (\S\ref{sec:glossary}).
+
+\subsection{Financial Reports}
+\label{sec:qs-reports}
+
+\emph{Structured extraction of financial statements from inline XBRL (iXBRL) is
+planned and not yet available.} The SEC tags the financial statements directly
+inside each filing's primary HTML document; a future release will parse those
+\code{<ix:\dots>} tags into tidy tables.
+
+In the meantime you can already work with the filing \emph{documents}: list a
+filer's filings, download a filing, convert it to text, and pull named sections
+(see \S\ref{sec:api-filings}). For the \emph{tagged numbers} that underlie the
+statements today, use the XBRL data API above (\S\ref{sec:qs-findata}) --- the
+SEC has already extracted those facts for you, so you rarely need to parse the
+iXBRL by hand.
+
+% ===========================================================================
+\section{Glossary}
+\label{sec:glossary}
+
+SEC filings and their structured (XBRL) data come with their own vocabulary.
+The terms that matter here:
+
+\begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
+  \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
+    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Get one from a
+    ticker with \code{cik\_for\_ticker}.
+  \item[Filing] a document submitted to the SEC, identified by an
+    \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
+    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). List a
+    filer's filings with \code{list\_recent\_filings}.
+  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable
+    format companies tag their financial statements in; it is what makes the
+    numbers queryable rather than locked inside a document.
+  \item[iXBRL] \emph{Inline XBRL}: those same tags embedded directly inside the
+    filing's human-readable HTML, so one document is both readable and
+    machine-parseable. The SEC has required it for financial statements since
+    around 2019.
+  \item[Fact] a single reported number: one \emph{concept}, for one
+    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
+    96{,}995{,}000{,}000 USD''). \code{company\_facts} returns every fact a
+    company has reported.
+  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
+    (e.g.\ \code{NetIncomeLoss}, \code{Assets}, \code{Revenues}) --- ``what is
+    being measured''. \code{company\_concept} returns one concept over time.
+  \item[Taxonomy] a dictionary that defines concepts. The big one is
+    \textbf{\code{us-gaap}} (US accounting standards); \textbf{\code{dei}}
+    (\emph{Document and Entity Information}) holds metadata about the filing
+    itself; \textbf{\code{srt}} holds shared elements; \textbf{\code{ifrs-full}}
+    is for filers reporting under IFRS; and each company has its own
+    \textbf{extension} namespace (e.g.\ \code{aapl} for Apple-specific concepts).
+  \item[Frame] a cross-section: one concept, one unit, one period, across
+    \emph{every} filer that reported it. \code{xbrl\_frames} returns a frame.
+  \item[Unit] the unit of measure of a fact: \code{USD}, \code{shares},
+    \code{USD/shares} (per-share), \code{pure} (a ratio), \dots
+  \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
+    use \emph{calendar} periods: \code{CY} + year, as in \code{CY2022} (a full
+    calendar year), \code{CY2022Q4} (a quarter), or \code{CY2022Q4I} (a single
+    instant --- note the trailing \code{I}). An \textbf{instant} is a point in
+    time (balance-sheet items such as Assets, at quarter-end); a
+    \textbf{duration} is a span (income-statement items such as Revenue). By
+    contrast, \textbf{\code{FY}} in a company's own facts is its \emph{fiscal}
+    year, which need not match the calendar (Apple's \code{FY2023} ended in
+    September 2023).
+\end{description}
+
+% ===========================================================================
+\section{API}
+\label{sec:api}
+
+CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
+\code{0000320193}); the helper functions pad for you where noted. Every data
+call goes through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
+
+\subsection{Searching and Company Lookup}
+\label{sec:api-search}
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\code{cik\_for\_ticker(ticker)} & Resolve a ticker (case-insensitive) to its
+  10-digit CIK, or \code{nothing}. \\
+\code{company\_tickers()} & The SEC's ticker $\to$ CIK $\to$ name map. \\
+\code{full\_text\_search(query; forms, startdate, enddate, from, size)} &
+  Full-text search of filing contents (2001+) via the EDGAR full-text search
+  (EFTS) API. \code{forms} may be a string or a collection; dates are
+  \code{"YYYY-MM-DD"}. Results are under \code{.hits.hits}. \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+cik_for_ticker("AAPL")                                  # "0000320193"
+res = full_text_search("supply chain disruption";
+                       forms = "10-K",
+                       startdate = "2023-01-01", enddate = "2023-12-31")
+res.hits.total.value
+\end{lstlisting}
+
+\subsection{Filings: List, Download, Extract}
+\label{sec:api-filings}
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\code{fetch\_submissions(cik)} & Full submissions JSON for a filer (company
+  metadata + recent filings index). \\
+\code{list\_recent\_filings(cik; count)} & Recent filings as up to \code{count}
+  rows of \code{(accession, form, date)}, newest first. \\
+\code{download\_filing(cik, accession; destdir)} & Download a filing's primary
+  document into \code{destdir}; tries common URL patterns, saving the first that
+  returns HTTP 200. \\
+\code{parse\_filing(path)} & Convert a filing's HTML to text (\code{Gumbo} +
+  \code{Cascadia}). \\
+\code{extract\_section(html, names; max\_chars)} & Pull named sections (e.g.\
+  \code{"Item 7"}, \code{"Management's Discussion"}) from filing HTML/text. \\
+\code{save\_filing(text, metadata; outdir)} & Write extracted text + metadata to
+  disk. \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+# List a company's recent filings, then download the most recent one
+filings = list_recent_filings("0000320193"; count = 5)
+for f in filings
+    println(f.date, "  ", f.form, "  ", f.accession)
+end
+
+latest = first(filings)
+path   = download_filing("0000320193", latest.accession; destdir = "filings")
+
+# Convert to text and extract named sections
+html     = parse_filing(path)
+sections = extract_section(html, ["Item 7", "Management's Discussion"])
+println(get(sections, "Item 7", "(not found)"))
+\end{lstlisting}
+
+\subsection{Financial Data (XBRL)}
+\label{sec:api-xbrl}
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\code{company\_facts(cik)} & Every XBRL fact a filer has reported, in one
+  (large) document. \\
+\code{company\_concept(cik, taxonomy, tag)} & One concept over time for a single
+  filer (lighter than \code{company\_facts}). \\
+\code{xbrl\_frames(taxonomy, tag, unit, period)} & One concept for one period
+  across every filer that reported it (a cross-section). \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+facts   = company_facts("320193")
+concept = company_concept("320193", "us-gaap", "NetIncomeLoss")
+frame   = xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
+
+# Each observation carries: start, end, val, fy/fp, form, filed, accn, frame?
+for o in filter(o -> o.form == "10-K", concept.units.USD)
+    println(o.fy, "  ", o.val)
+end
+\end{lstlisting}
+
+\subsection{Credentials and Caching}
+\label{sec:caching}
+
+\paragraph{Credentials (the User-Agent).}
+There is no API key; the only credential is the SEC \code{User-Agent}
+(\S\ref{sec:ua}).
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\code{set\_user\_agent(user\_agent)} & Set the User-Agent from a single
+  \code{"name email"} string (validated). \\
+\code{get\_user\_agent()} & Return the User-Agent that will be sent (explicit
+  value $\to$ \code{SEC\_USER\_AGENT} env var $\to$ error). \\
+\code{persist\_user\_agent(user\_agent; depot)} & Validate, set for this session,
+  and write \code{SEC\_USER\_AGENT} into the depot's \code{startup.jl} so every
+  future session has it. \\
+\code{unpersist\_user\_agent(; depot)} & Remove the line that
+  \code{persist\_user\_agent} wrote. \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Caching.}
+Responses are cached so repeated calls in a session do not re-download the same
+data. The \code{cache} keyword of \code{set\_config} selects where the cache
+lives and how long it survives:
+
+\begin{itemize}[nosep]
+  \item \code{:temporary} (default) --- an ephemeral per-process directory,
+    deleted when Julia exits. Nothing persists across sessions.
+  \item \code{:persistent} --- kept in \code{\textasciitilde/.cache/EDGAR.jl}
+    (or \code{XDG\_CACHE\_HOME}) across sessions; files older than
+    \code{cache\_max\_age} are pruned automatically.
+  \item \code{:off} --- no caching; every call re-fetches.
+\end{itemize}
+
+\noindent
+Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
+\emph{freshness} --- how long a cached response is reused before being re-fetched
+(it deletes nothing); \code{cache\_max\_age} (default 7\,days) is \emph{retention}
+--- how long a file is kept on disk before being pruned. \code{cache\_max\_size}
+(default 10\,MB) caps the size of any single cached response.
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\code{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size,
+  cache\_max\_age, host\_whitelist, allow\_file, user\_agent)} & Override the
+  global runtime configuration (only the keywords you pass change). \\
+\code{clean\_cache()} & Prune the cache on demand. \\
+\code{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
+\code{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+set_config(cache = :persistent, cache_ttl = 3600)   # keep across sessions, 1h freshness
+m = cache_metrics()                                  # (; hits, misses, requests, ...)
+clean_cache()
+\end{lstlisting}
+
+\subsection{Low-Level Requests}
+\label{sec:api-lowlevel}
+
+\code{fetch\_url(url; use\_cache, timeout, allow\_file)} is the primitive every
+function above is built on: it returns the raw response body as bytes (or
+\code{nothing} on failure), with the configured \code{User-Agent} and the cache
+applied. Use it as an escape hatch to reach SEC endpoints EDGAR.jl does not yet
+wrap, then parse the bytes yourself (e.g.\ with \code{JSON3.read}).
+
+\begin{lstlisting}
+body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")
+data = JSON3.read(body)
+\end{lstlisting}
+
+\end{document}
