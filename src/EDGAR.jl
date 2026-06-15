@@ -605,7 +605,7 @@ function _cik_dir(cik)
 end
 
 """
-    download_filing(cik, accession; primary=true, destdir=".") -> String
+    download_filing(cik, accession; destdir=".") -> String
 
 Download a filing's document from the EDGAR `Archives` into `destdir`, creating
 the directory if needed, and return the local file path. The accession number may
