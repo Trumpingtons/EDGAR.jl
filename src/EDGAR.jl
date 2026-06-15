@@ -615,8 +615,8 @@ them succeed.
 """
 function download_filing(cik::AbstractString, accession::AbstractString; primary::Bool=true, destdir=".")
     acc = replace(accession, "-"=>"")
-    cikp = lpad(strip(cik), 10, '0')
-    url = "https://www.sec.gov/Archives/edgar/data/$(strip(parse(Int, cikp)))/$(acc)/$(primary ? "" : "")"
+    cik_path = string(parse(Int, strip(cik)))
+    url = "https://www.sec.gov/Archives/edgar/data/$cik_path/$acc/"
     # Best-effort: try common filename patterns
     candidates = ["/" * accession * "-index.htm", "/" * accession * ".txt", "/" * accession * ".html", "/index.htm"]
     if !isdir(destdir)
