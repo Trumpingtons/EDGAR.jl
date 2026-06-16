@@ -467,38 +467,19 @@ end
 Fetch a filer's complete submissions document from `data.sec.gov/submissions/`:
 company metadata plus its recent filings index. `cik` may be an integer or a
 string, with or without leading zeros (e.g. `320193`, `"320193"` or
-`"0000320193"`). See [`list_recent_filings`](@ref) for a tidied view of just the
-recent filings.
+`"0000320193"`).
+
+The recent filings live under `.filings.recent` as index-aligned column arrays
+(`accessionNumber`, `form`, `filingDate`, `primaryDocument`, `isXBRL`, …). For
+example, the most recent filing's accession and primary document are:
+
+```julia
+r = fetch_submissions("0000320193").filings.recent
+acc, doc = r.accessionNumber[1], r.primaryDocument[1]
+```
 """
 function fetch_submissions(cik::Union{Integer,AbstractString})
     return _get_json("https://data.sec.gov/submissions/CIK$(_normalize_cik(cik)).json")
-end
-
-"""
-    list_recent_filings(cik; count=10) -> Vector{NamedTuple}
-
-Return a filer's most recent filings as up to `count` rows of
-`(accession, form, date)`, newest first. Built on [`fetch_submissions`](@ref).
-
-```julia
-for f in list_recent_filings("0000320193"; count = 5)
-    println(f.date, "  ", f.form, "  ", f.accession)
-end
-```
-"""
-function list_recent_filings(cik::Union{Integer,AbstractString}; count::Int=10)
-    subs = fetch_submissions(cik)
-    filings = get(subs, "filings", Dict())
-    recent = get(filings, "recent", Dict())
-    accnos = get(recent, "accessionNumber", [])
-    types = get(recent, "form", [])
-    dates = get(recent, "filingDate", [])
-    n = min(count, length(accnos))
-    result = []
-    for i in 1:n
-        push!(result, (accession=accnos[i], form=types[i], date=dates[i]))
-    end
-    return result
 end
 
 # ── XBRL financial data, full-text search, and ticker lookup ─────────────────
@@ -586,7 +567,8 @@ end
     full_text_search(query; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
 
 Search filing *contents* (2001 onward) for `query` via the EDGAR full-text search
-(EFTS) API. To look up a filer's filings by CIK instead, use [`filings_by_cik`](@ref).
+(EFTS) API. Also exported as `filings_by_text`, to pair with [`filings_by_cik`](@ref)
+(which looks up a filer's filings by CIK instead).
 
 By default `query` is matched as an **exact phrase** (it is wrapped in quotes for
 you), so `supply chain disruption` finds only filings with those three words
@@ -602,9 +584,15 @@ not by date.
 The return value is the search engine's raw response. The matches live under
 `.hits`: `.hits.total.value` is the number of matching filings (capped at 10000),
 and `.hits.hits` is the current page of results — each element has a `._source`
-with fields like `file_date`, `file_type`, `display_names`, `ciks` and `adsh` (the
-accession number). The other top-level keys (`took`, `timed_out`, `_shards`,
-`aggregations`, `query`) are search-engine metadata you can usually ignore.
+with fields like `file_date` (filed), `period_ending` (the report date),
+`file_type`, `display_names`, `ciks` and `adsh` (the accession number). The other
+top-level keys (`took`, `timed_out`, `_shards`, `aggregations`, `query`) are
+search-engine metadata you can usually ignore.
+
+EFTS does **not** carry a filing's `acceptanceDateTime` or XBRL flags (`isXBRL`,
+`isInlineXBRL`, `isXBRLNumeric`) — those live in the submissions API. Get them from
+[`fetch_submissions`](@ref), joining on the accession number (`adsh` here ↔
+`accessionNumber` there).
 
 EFTS returns a **fixed page of 100** results per request, so to page through more
 than the first 100 advance `from` (the 0-based offset) in steps of 100 until you
@@ -633,6 +621,9 @@ function full_text_search(query::AbstractString; exact::Bool=true, forms=nothing
     return _efts_search(; q, forms, startdate, enddate, from)
 end
 
+"Alias for [`full_text_search`](@ref); pairs with [`filings_by_cik`](@ref)."
+const filings_by_text = full_text_search
+
 """
     filings_by_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
 
@@ -645,6 +636,9 @@ for the CIK as document text (which also matches filings that merely *mention* i
 `forms`, `startdate`/`enddate`, `from` and the result structure are exactly as in
 [`full_text_search`](@ref); see there for the `.hits` layout and paging. To search a
 filer's *text*, full-text search and then filter on `h._source.ciks`.
+
+Because there is no text to rank, results come back **newest-first** and carry no
+relevance score: `res.hits.max_score` and each `h._score` are `nothing`.
 
 ```julia
 res = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01")
@@ -972,9 +966,9 @@ function extract_section(html::AbstractString, names::Vector{String}; max_chars:
     return results
 end
 
-export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
+export fetch_submissions, download_filing, parse_filing, extract_section, save_filing,
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
-       company_facts, company_concept, xbrl_frames, full_text_search, filings_by_cik, cik
+       company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik, cik
 
 end # module

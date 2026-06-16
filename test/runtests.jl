@@ -5,10 +5,10 @@ using EDGAR
 set_user_agent("EDGAR.jl test suite noreply@example.com")
 
 @testset "EDGAR basic" begin
-    # Smoke test: list recent filings (network request). Wrapped so CI/offline doesn't fail.
+    # Smoke test: fetch a filer's submissions (network request). Wrapped so CI/offline doesn't fail.
     try
-        res = EDGAR.list_recent_filings("0000320193"; count = 1)
-        @test isa(res, Array)
+        subs = EDGAR.fetch_submissions("0000320193")
+        @test !isempty(subs.filings.recent.accessionNumber)
     catch e
         @info "Skipping network smoke test: $e"
         @test true

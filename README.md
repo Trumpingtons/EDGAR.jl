@@ -54,15 +54,15 @@ reads it automatically. Put it in `~/.julia/config/startup.jl`
 ```julia
 using EDGAR
 
-# 1. List a company's recent filings by CIK (Apple = 320193, zero-padded to 10 digits)
-filings = list_recent_filings("0000320193"; count = 5)
-for f in filings
-    println(f.date, "  ", f.form, "  ", f.accession)
+# 1. Fetch a company's submissions by CIK (Apple = 320193); recent filings are
+#    index-aligned column arrays under .filings.recent
+r = fetch_submissions("0000320193").filings.recent
+for i in 1:5
+    println(r.filingDate[i], "  ", r.form[i], "  ", r.accessionNumber[i])
 end
 
 # 2. Download the most recent filing's documents into a directory
-latest = first(filings)
-path = download_filing("0000320193", latest.accession; destdir = "filings")
+path = download_filing("0000320193", r.accessionNumber[1]; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
@@ -107,7 +107,7 @@ terms that matter here:
   ticker or company name with `cik`.
 - **Filing** — a document submitted to the SEC, identified by an **accession
   number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
-  current report, …). List a filer's filings with `list_recent_filings`.
+  current report, …). Get a filer's filings index with `fetch_submissions`.
 - **XBRL** — *eXtensible Business Reporting Language*, the machine-readable format
   companies tag their financial statements in; it is what makes the numbers
   queryable rather than locked inside a document.
@@ -150,8 +150,7 @@ terms that matter here:
 
 | Function | Purpose |
 |---|---|
-| `list_recent_filings(cik; count)` | Recent filings as `(accession, form, date)` rows |
-| `fetch_submissions(cik)` | Full submissions JSON for a filer |
+| `fetch_submissions(cik)` | Full submissions JSON for a filer (company profile + recent filings index) |
 | `download_filing(cik, accession; destdir)` | Download a filing's documents |
 | `parse_filing(path)` | Convert a filing's HTML to text (Gumbo + Cascadia) |
 | `extract_section(text, names)` | Pull named sections (e.g. `"Item 7"`) from filing text |

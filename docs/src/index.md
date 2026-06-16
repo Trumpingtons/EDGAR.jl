@@ -40,7 +40,7 @@ reads it automatically. Put it in `~/.julia/config/startup.jl`
 
 ```julia
 # Apple's Central Index Key is 320193 (zero-padded to 10 digits)
-filings = list_recent_filings("0000320193"; count = 5)
+subs = fetch_submissions("0000320193")    # company profile + recent filings index
 
 # Net income over time, straight from XBRL
 ni = company_concept("0000320193", "us-gaap", "NetIncomeLoss")
@@ -60,7 +60,7 @@ terms that matter here:
   ticker or company name with `cik`.
 - **Filing** — a document submitted to the SEC, identified by an **accession
   number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
-  current report, …). List a filer's filings with `list_recent_filings`.
+  current report, …). Get a filer's filings index with `fetch_submissions`.
 - **XBRL** — *eXtensible Business Reporting Language*, the machine-readable format
   companies tag their financial statements in; it is what makes the numbers
   queryable rather than locked inside a document.

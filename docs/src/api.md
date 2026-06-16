@@ -16,7 +16,6 @@ padded string.
 List a filer's submissions, download filings, and turn them into text.
 
 ```@docs
-list_recent_filings
 fetch_submissions
 download_filing
 parse_filing
@@ -38,6 +37,7 @@ xbrl_frames
 
 Search the contents of filings (2001 onward) via the EDGAR full-text search API,
 or list a single filer's filings through the same endpoint by CIK.
+`full_text_search` is also exported as `filings_by_text`, to pair with `filings_by_cik`.
 
 ```@docs
 full_text_search

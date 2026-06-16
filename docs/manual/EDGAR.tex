@@ -199,7 +199,7 @@ set_user_agent("Jane Doe jane@example.com")
 id = only(cik("AAPL"; by = :ticker)).cik   # "0000320193"
 
 # Full-text search across filing contents (2001 onward), restricted to 10-K forms
-res = full_text_search("climate risk"; forms = "10-K")
+res = filings_by_text("climate risk"; forms = "10-K")
 println(res.hits.total.value, " matching filings")
 for h in first(res.hits.hits, 5)
     s = h._source
@@ -261,8 +261,8 @@ The terms that matter here:
     \code{cik}.
   \item[Filing] a document submitted to the SEC, identified by an
     \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
-    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). List a
-    filer's filings with \code{list\_recent\_filings}.
+    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). Get a
+    filer's filings index with \code{fetch\_submissions}.
   \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable
     format companies tag their financial statements in; it is what makes the
     numbers queryable rather than locked inside a document.
@@ -395,12 +395,13 @@ julia> cik()[1:5]                # first 5 rows
  (company = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
 \end{lstlisting}
 
-\subsubsection{full\_text\_search}
+\subsubsection{filings\_by\_text}
 
-\sig{full\_text\_search(phrase; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}
+\sig{filings\_by\_text(phrase; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}
 
-\noindent The function
-\texttt{full\_text\_search} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{phrase} through the EDGAR
+\noindent Also exported as \code{full\_text\_search} --- the SEC's own name for this
+endpoint (EFTS) --- and pairs with \code{filings\_by\_cik}. The function
+\texttt{filings\_by\_text} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{phrase} through the EDGAR
 full-text search (EFTS) API, returning parsed JSON. \code{forms} may be a single string (\code{"10-K"})\footnote{Form 10-K is a detailed \textbf{annual} filing submitted by public companies to the SEC. It provides a comprehensive overview of the company's business activities, financial health, and key risks. The filing includes audited financial statements, management's discussion of financial results, information about the company's operations and strategy, disclosures on legal and regulatory issues, and an assessment of risk factors that could affect future performance.} or a collection; \code{startdate} and \code{enddate}
 are \code{"YYYY-MM-DD"} strings; and \code{from} defines the offset used by EFTS to return a fixed page of 100 results per
 request. By default the \texttt{phrase} is matched \textbf{exactly} (it is quoted
@@ -410,7 +411,7 @@ Results come back ranked by relevance, not by date. To search by filer instead o
 text, use \code{filings\_by\_cik} (below).
 
 \begin{lstlisting}
-julia> res = full_text_search("supply chain disruption"; forms = "10-K", startdate = "2026-01-01", )
+julia> res = filings_by_text("supply chain disruption"; forms = "10-K", startdate = "2026-01-01")
 JSON3.Object{Vector{UInt8}, Vector{UInt64}} with 6 entries:
   :took         => 2600
   :timed_out    => false
@@ -466,7 +467,7 @@ Matches are stored in the (\texttt{hits.hits}) field, which contains an array of
 
 \begin{lstlisting}
 julia> using JSON3
-julia> pretty(res.hits.hits[1])
+julia> JSON3.pretty(res.hits.hits[1])
 {
     "_index": "edgar_file",
     "_id": "0001640334-26-000241:acbm_10k.htm",
@@ -514,6 +515,13 @@ julia> pretty(res.hits.hits[1])
 \end{lstlisting}
 \medskip
 
+\noindent In \code{\_source}, \code{file\_date} is when the filing was filed and
+\code{period\_ending} is the report date. EFTS does \emph{not} carry a filing's
+\code{acceptanceDateTime} or XBRL flags (\code{isXBRL}, \code{isInlineXBRL},
+\code{isXBRLNumeric}); those live in the submissions API --- get them from
+\code{fetch\_submissions}, joining on the accession number (\code{adsh} here
+$\leftrightarrow$ \code{accessionNumber} there).
+
 \subsubsection{filings\_by\_cik}
 
 \sig{filings\_by\_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, from=0)}
@@ -524,11 +532,80 @@ EDGAR's \emph{entity} filter --- the web form's company/CIK field. This is a tru
 ``filed by this filer'' query, unlike full-text searching for the CIK as document
 text, which also matches filings that merely \emph{mention} it (e.g.\ a fund listing
 the company among its holdings). \code{forms}, the dates, \code{from} and the
-\code{.hits} result layout are exactly as for \code{full\_text\_search}.
+\code{.hits} result layout are exactly as for \code{full\_text\_search}. 
 
 \begin{lstlisting}
-julia> filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01").hits.total.value
+julia> res = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01")
+JSON3.Object{Vector{UInt8}, Vector{UInt64}} with 6 entries:
+  :took         => 3648
+  :timed_out    => false
+  :_shards      => {...
+  :hits         => {...
+  :aggregations => {...
+  :query        => {...
+\end{lstlisting}
+
+Because no
+text is matched, results come back \textbf{newest-first} and carry no relevance
+score --- \code{res.hits.max\_score} and each \code{h.\_score} are \code{nothing}.
+
+\begin{lstlisting}
+julia> res.hits.total.value
 5
+\end{lstlisting}
+
+\begin{lstlisting}
+julia> JSON3.pretty(res.hits.hits[1])
+{
+    "_index": "edgar_file",
+    "_id": "0000320193-26-000011:aapl-20260430.htm",
+    "_score": null,
+    "_source": {
+        "ciks": [
+            "0000320193"
+        ],
+        "period_ending": "2026-04-30",
+        "file_num": [
+            "001-36743"
+        ],
+        "display_names": [
+            "Apple Inc.  (AAPL)  (CIK 0000320193)"
+        ],
+        "xsl": null,
+        "sequence": 1,
+        "root_forms": [
+            "8-K"
+        ],
+        "file_date": "2026-04-30",
+        "biz_states": [
+            "CA"
+        ],
+        "sics": [
+            "3571"
+        ],
+        "form": "8-K",
+        "adsh": "0000320193-26-000011",
+        "film_num": [
+            "26926130"
+        ],
+        "biz_locations": [
+            "Cupertino, CA"
+        ],
+        "file_type": "8-K",
+        "file_description": "8-K",
+        "inc_states": [
+            "CA"
+        ],
+        "items": [
+            "2.02",
+            "9.01"
+        ]
+    },
+    "sort": [
+        1777507200000,
+        "0000320193-26-000011:aapl-20260430.htm"
+    ]
+}
 \end{lstlisting}
 
 \subsection{Filings: List, Download, Extract}
@@ -540,9 +617,7 @@ julia> filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01").hits.tota
 \midrule
 \endhead
 \code{fetch\_submissions(cik)} & Full submissions JSON for a filer (company
-  metadata + recent filings index). \\
-\code{list\_recent\_filings(cik; count)} & Recent filings as up to \code{count}
-  rows of \code{(accession, form, date)}, newest first. \\
+  metadata + recent filings index under \code{.filings.recent}). \\
 \code{download\_filing(cik, accession; destdir)} & Download a filing's primary
   document into \code{destdir}; tries common URL patterns, saving the first that
   returns HTTP 200. \\
@@ -562,15 +637,10 @@ julia> filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01").hits.tota
 \noindent Fetch a filer's complete submissions document from
 \code{data.sec.gov/submissions/} --- company metadata plus its recent-filings
 index --- as parsed JSON. \code{cik} may be an integer or a string, with or
-without leading zeros. See \code{list\_recent\_filings} for a tidied view of just
-the recent filings.
-
-\subsubsection{list\_recent\_filings}
-
-\sig{list\_recent\_filings(cik; count = 10)}
-
-\noindent Return a filer's most recent filings as up to \code{count} rows of
-\code{(accession, form, date)}, newest first. Built on \code{fetch\_submissions}.
+without leading zeros. The recent filings sit under \code{.filings.recent} as
+index-aligned column arrays (\code{accessionNumber}, \code{form},
+\code{filingDate}, \code{primaryDocument}, \code{isXBRL}, \dots); e.g.\ the most
+recent filing's accession is \code{fetch\_submissions(cik).filings.recent.accessionNumber[1]}.
 
 \subsubsection{download\_filing}
 
@@ -607,13 +677,12 @@ under \code{outdir}, returning the path written.
 
 \begin{lstlisting}
 # List a company's recent filings, then download the most recent one
-filings = list_recent_filings("0000320193"; count = 5)
-for f in filings
-    println(f.date, "  ", f.form, "  ", f.accession)
+r = fetch_submissions("0000320193").filings.recent
+for i in 1:5
+    println(r.filingDate[i], "  ", r.form[i], "  ", r.accessionNumber[i])
 end
 
-latest = first(filings)
-path   = download_filing("0000320193", latest.accession; destdir = "filings")
+path = download_filing("0000320193", r.accessionNumber[1]; destdir = "filings")
 
 # Convert to text and extract named sections
 html     = parse_filing(path)

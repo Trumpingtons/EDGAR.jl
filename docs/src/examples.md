@@ -10,15 +10,15 @@ set_config(user_agent = "Jane Doe jane@example.com")
 ## Filings: list, download, extract
 
 ```julia
-# 1. List a company's recent filings by CIK (Apple = 320193)
-filings = list_recent_filings("0000320193"; count = 5)
-for f in filings
-    println(f.date, "  ", f.form, "  ", f.accession)
+# 1. Fetch a company's submissions by CIK (Apple = 320193); recent filings are
+#    index-aligned column arrays under .filings.recent
+r = fetch_submissions("0000320193").filings.recent
+for i in 1:5
+    println(r.filingDate[i], "  ", r.form[i], "  ", r.accessionNumber[i])
 end
 
 # 2. Download the most recent filing's documents into a directory
-latest = first(filings)
-path = download_filing("0000320193", latest.accession; destdir = "filings")
+path = download_filing("0000320193", r.accessionNumber[1]; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
