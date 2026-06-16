@@ -26,8 +26,9 @@ end
         concept = EDGAR.company_concept("0000320193", "us-gaap", "NetIncomeLoss")
         frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
         search = EDGAR.full_text_search("climate risk"; forms = "10-K")
+        byfiler = EDGAR.filings_by_cik(320193; forms = "8-K")
         tk = EDGAR.cik("AAPL"; by = :ticker)
-        @test all(x -> x !== nothing, (facts, concept, frames, search))
+        @test all(x -> x !== nothing, (facts, concept, frames, search, byfiler))
         @test isempty(tk) || length(only(tk).cik) == 10
     catch e
         @info "Skipping XBRL/search network smoke test: $e"

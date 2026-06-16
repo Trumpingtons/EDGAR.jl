@@ -159,7 +159,8 @@ terms that matter here:
 | `company_facts(cik)` | Every XBRL fact a filer has reported |
 | `company_concept(cik, taxonomy, tag)` | One XBRL concept over time for a filer |
 | `xbrl_frames(taxonomy, tag, unit, period)` | One concept across all filers for a period |
-| `full_text_search(query; forms, startdate, enddate)` | Search filing contents (2001+) |
+| `full_text_search(query; exact, forms, startdate, enddate)` | Search filing contents (2001+) |
+| `filings_by_cik(cik; forms, startdate, enddate)` | One filer's filings (2001+) via the EFTS entity filter |
 | `cik()` | Every company as a row table |
 | `cik(query; by = :company \| :ticker \| :any)` | Rows matching a company name (substring), an exact ticker, or either |
 | `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |

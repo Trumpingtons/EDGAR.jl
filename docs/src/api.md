@@ -36,10 +36,12 @@ xbrl_frames
 
 ## Full-text search
 
-Search the contents of filings (2001 onward) via the EDGAR full-text search API.
+Search the contents of filings (2001 onward) via the EDGAR full-text search API,
+or list a single filer's filings through the same endpoint by CIK.
 
 ```@docs
 full_text_search
+filings_by_cik
 ```
 
 ## Company lookup

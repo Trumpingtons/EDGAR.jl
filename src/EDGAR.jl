@@ -564,13 +564,40 @@ function xbrl_frames(taxonomy::AbstractString, tag::AbstractString, unit::Abstra
     return _get_json("https://data.sec.gov/api/xbrl/frames/$(taxonomy)/$(tag)/$(unit)/$(period).json")
 end
 
-"""
-    full_text_search(query; forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
+# Internal: build and run an EDGAR full-text-search (EFTS) query. `q` is the
+# already-prepared query string (quoted or not); `ciks` filters by filer. EFTS
+# only applies a date filter when BOTH bounds are present, so a lone `startdate`
+# or `enddate` is completed with the edge of EDGAR's coverage (2001 onward).
+function _efts_search(; q::AbstractString="", ciks=nothing, forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
+    url = "https://efts.sec.gov/LATEST/search-index?q=$(HTTP.escapeuri(q))&from=$(from)"
+    ciks !== nothing && (url *= "&ciks=$(_normalize_cik(ciks))")
+    if forms !== nothing
+        url *= "&forms=$(forms isa AbstractString ? forms : join(forms, ","))"
+    end
+    if startdate !== nothing || enddate !== nothing
+        sd = startdate === nothing ? "2001-01-01" : startdate
+        ed = enddate === nothing ? "2099-12-31" : enddate
+        url *= "&startdt=$(sd)&enddt=$(ed)"
+    end
+    return _get_json(url)
+end
 
-Full-text search across filing *contents* (2001 onward) via the EDGAR full-text
-search (EFTS) API. `forms` may be a single string (`"10-K"`) or a collection;
-`startdate`/`enddate` are `"YYYY-MM-DD"` strings (passing only one still filters —
-the other bound defaults to the edge of EDGAR's coverage).
+"""
+    full_text_search(query; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
+
+Search filing *contents* (2001 onward) for `query` via the EDGAR full-text search
+(EFTS) API. To look up a filer's filings by CIK instead, use [`filings_by_cik`](@ref).
+
+By default `query` is matched as an **exact phrase** (it is wrapped in quotes for
+you), so `supply chain disruption` finds only filings with those three words
+adjacent — the same as quoting the phrase in the EDGAR web UI. Pass `exact=false`
+to send the query verbatim instead, matching the words loosely and letting you use
+EDGAR's own operators (e.g. `word1 word2`).
+
+`forms` may be a single string (`"10-K"`) or a collection; `startdate`/`enddate`
+are `"YYYY-MM-DD"` strings (passing only one still filters — the other bound
+defaults to the edge of EDGAR's coverage). Results come back ranked by relevance,
+not by date.
 
 The return value is the search engine's raw response. The matches live under
 `.hits`: `.hits.total.value` is the number of matching filings (capped at 10000),
@@ -599,21 +626,33 @@ for off in 0:100:min(res.hits.total.value, 10_000) - 1
 end
 ```
 """
-function full_text_search(query::AbstractString; forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
-    url = "https://efts.sec.gov/LATEST/search-index?q=$(HTTP.escapeuri(query))&from=$(from)"
-    if forms !== nothing
-        url *= "&forms=$(forms isa AbstractString ? forms : join(forms, ","))"
-    end
-    # EFTS only applies a date filter when BOTH bounds are present; a lone bound is
-    # silently ignored. So if the caller passes just one, fill the other with the
-    # edge of EDGAR's full-text coverage (it starts in 2001) so the filter still
-    # takes effect.
-    if startdate !== nothing || enddate !== nothing
-        sd = startdate === nothing ? "2001-01-01" : startdate
-        ed = enddate === nothing ? "2099-12-31" : enddate
-        url *= "&startdt=$(sd)&enddt=$(ed)"
-    end
-    return _get_json(url)
+function full_text_search(query::AbstractString; exact::Bool=true, forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
+    # Quote the query for an exact-phrase match unless `exact=false` or it is
+    # already quoted.
+    q = (exact && !(startswith(query, '"') && endswith(query, '"'))) ? "\"" * query * "\"" : query
+    return _efts_search(; q, forms, startdate, enddate, from)
+end
+
+"""
+    filings_by_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
+
+List a single filer's filings (2001 onward) via the EDGAR full-text search (EFTS)
+API, using its **entity filter** rather than a text query. `cik` may be an integer
+or a string, with or without leading zeros. This is the EFTS counterpart of the web
+search's company/CIK field — a true "filed *by* this filer" query, unlike searching
+for the CIK as document text (which also matches filings that merely *mention* it).
+
+`forms`, `startdate`/`enddate`, `from` and the result structure are exactly as in
+[`full_text_search`](@ref); see there for the `.hits` layout and paging. To search a
+filer's *text*, full-text search and then filter on `h._source.ciks`.
+
+```julia
+res = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01")
+res.hits.total.value                       # how many of this filer's filings matched
+```
+"""
+function filings_by_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
+    return _efts_search(; ciks = cik, forms, startdate, enddate, from)
 end
 
 _company_tickers_raw() = _get_json("https://www.sec.gov/files/company_tickers.json")
@@ -936,6 +975,6 @@ end
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
-       company_facts, company_concept, xbrl_frames, full_text_search, cik
+       company_facts, company_concept, xbrl_frames, full_text_search, filings_by_cik, cik
 
 end # module
