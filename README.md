@@ -77,14 +77,14 @@ println(get(sections, "Item 7", "(not found)"))
 ```julia
 using EDGAR
 
-# Resolve a ticker to a CIK
-cik = cik_for_ticker("AAPL")                       # "0000320193"
+# Resolve a ticker to a CIK (exact match -> 0 or 1 row)
+id = only(cik("AAPL"; by = :ticker)).cik           # "0000320193"
 
 # All XBRL facts a company has reported
-facts = company_facts(cik)
+facts = company_facts(id)
 
 # One concept over time (net income, in USD)
-ni = company_concept(cik, "us-gaap", "NetIncomeLoss")
+ni = company_concept(id, "us-gaap", "NetIncomeLoss")
 println(ni.units.USD[end].val)
 
 # The same concept across every filer for one period
@@ -102,7 +102,9 @@ SEC filings and their structured (XBRL) data come with their own vocabulary. The
 terms that matter here:
 
 - **CIK** — *Central Index Key*, the SEC's unique ID for a filer, zero-padded to
-  10 digits (Apple → `0000320193`). Get one from a ticker with `cik_for_ticker`.
+  10 digits (Apple → `0000320193`). Functions accept it as an integer or a string,
+  with or without leading zeros (`320193` ≡ `"0000320193"`). Look one up from a
+  ticker or company name with `cik`.
 - **Filing** — a document submitted to the SEC, identified by an **accession
   number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
   current report, …). List a filer's filings with `list_recent_filings`.
@@ -158,12 +160,14 @@ terms that matter here:
 | `company_concept(cik, taxonomy, tag)` | One XBRL concept over time for a filer |
 | `xbrl_frames(taxonomy, tag, unit, period)` | One concept across all filers for a period |
 | `full_text_search(query; forms, startdate, enddate)` | Search filing contents (2001+) |
-| `cik_for_ticker(ticker)` / `company_tickers()` | Resolve a ticker to a CIK |
+| `cik()` | Every company as a row table |
+| `cik(query; by = :company \| :ticker \| :any)` | Rows matching a company name (substring), an exact ticker, or either |
 | `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |
 | `set_config(; user_agent, …)` | Set the User-Agent, cache dir/TTL, host whitelist, … |
 | `cache_metrics()` / `clean_cache()` | Inspect / prune the on-disk cache |
 
 CIKs are the SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`).
+Any `cik` argument accepts an integer or a string, with or without leading zeros.
 Please stay under the SEC fair-access limit of **10 requests per second**.
 
 ## Caching

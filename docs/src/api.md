@@ -5,7 +5,11 @@ CurrentModule = EDGAR
 ```
 
 The complete reference for the exported functions, grouped by topic. CIKs are the
-SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`).
+SEC **Central Index Key**, zero-padded to 10 digits (Apple → `0000320193`). Any
+`cik` argument accepts an integer or a string, with or without leading zeros
+(`320193`, `"320193"` and `"0000320193"` are equivalent); functions normalize to
+the 10-digit form, and the `cik` column returned by [`cik`](@ref) always holds the
+padded string.
 
 ## Filings
 
@@ -40,11 +44,10 @@ full_text_search
 
 ## Company lookup
 
-Resolve ticker symbols to CIK numbers.
+Resolve a CIK from a ticker symbol, or search for companies by name.
 
 ```@docs
-cik_for_ticker
-company_tickers
+cik
 ```
 
 ## Configuration and caching
@@ -53,8 +56,8 @@ Responses are cached so that an interactive session does not repeatedly hammer
 the SEC, which asks for fair use (no more than 10 requests per second). Some
 responses are both large and fetched again and again — for example:
 
-- the ~1 MB `company_tickers.json`, which [`cik_for_ticker`](@ref) downloads on
-  every lookup, and
+- the ~1 MB `company_tickers.json`, which [`cik`](@ref) downloads on every
+  lookup, and
 - [`company_facts`](@ref), which can return several megabytes for a single company.
 
 Caching keeps these from being downloaded more than once.

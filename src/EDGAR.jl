@@ -449,16 +449,29 @@ function similarity_ratio(a::AbstractString, b::AbstractString)
     return 1.0 - d / maxlen
 end
 
+# Internal: normalize a CIK given as an integer or a string (with or without
+# leading zeros) to the SEC's canonical 10-digit, zero-padded string form,
+# e.g. 320193, "320193" and "0000320193" all become "0000320193". Throws on
+# empty, non-numeric, or over-long input.
+function _normalize_cik(cik::Union{Integer,AbstractString})
+    s = cik isa Integer ? string(cik) : strip(cik)
+    isempty(s) && throw(ArgumentError("CIK must not be empty"))
+    all(isdigit, s) || throw(ArgumentError("CIK must contain only digits, got $(repr(cik))"))
+    length(s) > 10 && throw(ArgumentError("CIK has more than 10 digits: $(repr(cik))"))
+    return lpad(s, 10, '0')
+end
+
 """
     fetch_submissions(cik) -> JSON3.Object
 
 Fetch a filer's complete submissions document from `data.sec.gov/submissions/`:
-company metadata plus its recent filings index. `cik` should be the 10-digit,
-zero-padded Central Index Key (e.g. `"0000320193"`). See [`list_recent_filings`](@ref)
-for a tidied view of just the recent filings.
+company metadata plus its recent filings index. `cik` may be an integer or a
+string, with or without leading zeros (e.g. `320193`, `"320193"` or
+`"0000320193"`). See [`list_recent_filings`](@ref) for a tidied view of just the
+recent filings.
 """
-function fetch_submissions(cik::AbstractString)
-    return _get_json("https://data.sec.gov/submissions/CIK$(strip(cik)).json")
+function fetch_submissions(cik::Union{Integer,AbstractString})
+    return _get_json("https://data.sec.gov/submissions/CIK$(_normalize_cik(cik)).json")
 end
 
 """
@@ -473,7 +486,7 @@ for f in list_recent_filings("0000320193"; count = 5)
 end
 ```
 """
-function list_recent_filings(cik::AbstractString; count::Int=10)
+function list_recent_filings(cik::Union{Integer,AbstractString}; count::Int=10)
     subs = fetch_submissions(cik)
     filings = get(subs, "filings", Dict())
     recent = get(filings, "recent", Dict())
@@ -507,15 +520,16 @@ end
     company_facts(cik) -> JSON3.Object
 
 Every XBRL fact a company has ever reported, in a single document, from the
-`/api/xbrl/companyfacts/` endpoint. `cik` is zero-padded to 10 digits.
+`/api/xbrl/companyfacts/` endpoint. `cik` may be an integer or a string, with or
+without leading zeros; it is normalized to the 10-digit form.
 
 ```julia
 facts = company_facts("320193")
 keys(facts.facts)              # taxonomies, e.g. :dei and Symbol("us-gaap")
 ```
 """
-function company_facts(cik::AbstractString)
-    c = lpad(strip(cik), 10, '0')
+function company_facts(cik::Union{Integer,AbstractString})
+    c = _normalize_cik(cik)
     return _get_json("https://data.sec.gov/api/xbrl/companyfacts/CIK$(c).json")
 end
 
@@ -529,8 +543,8 @@ ni = company_concept("320193", "us-gaap", "NetIncomeLoss")
 ni.units.USD[end].val
 ```
 """
-function company_concept(cik::AbstractString, taxonomy::AbstractString, tag::AbstractString)
-    c = lpad(strip(cik), 10, '0')
+function company_concept(cik::Union{Integer,AbstractString}, taxonomy::AbstractString, tag::AbstractString)
+    c = _normalize_cik(cik)
     return _get_json("https://data.sec.gov/api/xbrl/companyconcept/CIK$(c)/$(taxonomy)/$(tag).json")
 end
 
@@ -572,32 +586,66 @@ function full_text_search(query::AbstractString; forms=nothing, startdate=nothin
     return _get_json(url)
 end
 
-"""
-    company_tickers() -> JSON3.Object
-
-The SEC's `company_tickers.json`, mapping ticker symbols to CIK numbers and
-company names.
-"""
-company_tickers() = _get_json("https://www.sec.gov/files/company_tickers.json")
+_company_tickers_raw() = _get_json("https://www.sec.gov/files/company_tickers.json")
 
 """
-    cik_for_ticker(ticker) -> String or nothing
+    cik() -> Vector{@NamedTuple{company::String, ticker::String, cik::String}}
+    cik(query::AbstractString; by::Symbol = :company) -> Vector{…}
 
-Resolve a ticker symbol (case-insensitive) to its 10-digit, zero-padded CIK,
-or `nothing` if no match is found.
+Look up companies in the SEC's `company_tickers.json`, always returned as a
+Tables.jl *row table* — a `Vector` of `NamedTuple`s with fields `company` (title),
+`ticker` and the 10-digit, zero-padded `cik`.
+
+- `cik()` returns every company.
+- `cik(query; by = :company)` (the default) returns the rows whose company name
+  contains `query` (case-insensitive substring) — use it when you know part of a
+  name but not the ticker.
+- `cik(query; by = :ticker)` returns the row for an exact (case-insensitive)
+  ticker match — `0` or `1` row.
+- `cik(query; by = :any)` returns the rows matching *either* the company name
+  (substring) or the ticker (exact) — handy when a short string like `"IBM"` could
+  be either. Each row is tested once, so a row matching both is returned only once.
+
+The result type is the same for every form, so it stays type-stable. A query may
+match several rows, since one company can have multiple tickers (e.g. share
+classes like `GOOGL`/`GOOG`) and a loose name can match more than one filer. For a
+ticker match the row table holds at most one row; pull the bare CIK with
+`only(cik("AAPL"; by = :ticker)).cik`.
+
+Being a valid [Tables.jl](https://github.com/JuliaData/Tables.jl) source, the
+result ingests directly into `DataFrames`, `CSV`, Arrow and SQL sinks, and as a
+plain `Vector` it indexes and slices naturally.
 
 ```julia
-cik_for_ticker("AAPL")     # "0000320193"
+cik()[1:5]                          # first 5 of every company
+cik("nvidia")                      # by = :company (default)
+cik("AAPL"; by = :ticker)          # 0 or 1 row
+cik("IBM"; by = :any)              # name OR ticker
+
+using CSV
+CSV.write("tickers.csv", cik())
 ```
 """
-function cik_for_ticker(ticker::AbstractString)
-    t = uppercase(strip(ticker))
-    for (_, v) in company_tickers()
-        if uppercase(String(v.ticker)) == t
-            return lpad(v.cik_str, 10, '0')
-        end
+function cik()
+    raw = _company_tickers_raw()
+    return [(company = String(v.title), ticker = String(v.ticker), cik = lpad(v.cik_str, 10, '0'))
+            for (_, v) in raw]
+end
+
+function cik(query::AbstractString; by::Symbol = :company)
+    if by === :company
+        needle = lowercase(strip(query))
+        return filter!(r -> occursin(needle, lowercase(r.company)), cik())
+    elseif by === :ticker
+        t = uppercase(strip(query))
+        return filter!(r -> uppercase(r.ticker) == t, cik())
+    elseif by === :any
+        needle = lowercase(strip(query))
+        t = uppercase(strip(query))
+        return filter!(r -> occursin(needle, lowercase(r.company)) || uppercase(r.ticker) == t, cik())
+    else
+        throw(ArgumentError("`by` must be :company, :ticker or :any, got $(repr(by))"))
     end
-    return nothing
 end
 
 function _cik_dir(cik)
@@ -613,9 +661,9 @@ be given with or without dashes. Several common document/index URL patterns are
 tried in turn; the first that responds with HTTP 200 is saved. Throws if none of
 them succeed.
 """
-function download_filing(cik::AbstractString, accession::AbstractString; destdir=".")
+function download_filing(cik::Union{Integer,AbstractString}, accession::AbstractString; destdir=".")
     acc = replace(accession, "-"=>"")
-    cik_path = string(parse(Int, strip(cik)))
+    cik_path = string(parse(Int, _normalize_cik(cik)))
     url = "https://www.sec.gov/Archives/edgar/data/$(cik_path)/$(acc)/"
     # Best-effort: try common filename patterns
     candidates = ["/" * accession * "-index.htm", "/" * accession * ".txt", "/" * accession * ".html", "/index.htm"]
@@ -857,6 +905,6 @@ end
 export fetch_submissions, list_recent_filings, download_filing, parse_filing, extract_section, save_filing,
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
-       company_facts, company_concept, xbrl_frames, full_text_search, company_tickers, cik_for_ticker
+       company_facts, company_concept, xbrl_frames, full_text_search, cik
 
 end # module

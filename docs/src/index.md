@@ -55,7 +55,9 @@ SEC filings and their structured (XBRL) data come with their own vocabulary. The
 terms that matter here:
 
 - **CIK** — *Central Index Key*, the SEC's unique ID for a filer, zero-padded to
-  10 digits (Apple → `0000320193`). Get one from a ticker with `cik_for_ticker`.
+  10 digits (Apple → `0000320193`). Functions accept it as an integer or a string,
+  with or without leading zeros (`320193` ≡ `"0000320193"`). Look one up from a
+  ticker or company name with `cik`.
 - **Filing** — a document submitted to the SEC, identified by an **accession
   number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
   current report, …). List a filer's filings with `list_recent_filings`.

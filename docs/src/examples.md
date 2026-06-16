@@ -31,13 +31,13 @@ println(get(sections, "Item 7", "(not found)"))
 ## XBRL financial data
 
 ```julia
-cik = cik_for_ticker("AAPL")                  # "0000320193"
+id = only(cik("AAPL"; by = :ticker)).cik      # "0000320193"
 
 # Every XBRL fact a company has reported, in one document
-facts = company_facts(cik)
+facts = company_facts(id)
 
 # One concept over time (net income, in USD)
-ni = company_concept(cik, "us-gaap", "NetIncomeLoss")
+ni = company_concept(id, "us-gaap", "NetIncomeLoss")
 println(ni.units.USD[end].val)
 
 # The same concept across every filer for one period

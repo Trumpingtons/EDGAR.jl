@@ -99,7 +99,7 @@ data through open JSON REST APIs that require no registration and no key.
 
 EDGAR.jl wraps those endpoints behind a small, typed API and stops at plain Julia
 values (\code{JSON3} objects and \code{NamedTuple}s), which you can pipe into
-\code{DataFrames.jl}, \code{TimeSeries.jl}, or a database. It covers four kinds of
+\code{Tables.jl}, \code{TimeSeries.jl}, or a database. It covers three kinds of
 task:
 
 \begin{itemize}[nosep]
@@ -111,8 +111,6 @@ task:
         or one concept across every filer for a period (\code{xbrl\_frames}).
   \item \textbf{Full-text search} --- search the contents of filings since 2001
         (\code{full\_text\_search}).
-  \item \textbf{Company lookup} --- resolve a ticker symbol to its CIK
-        (\code{cik\_for\_ticker}).
 \end{itemize}
 
 \noindent
@@ -150,7 +148,7 @@ set_user_agent("Jane Doe jane@example.com")
 returns it. If you forget, EDGAR.jl stops with a clear error \emph{before} ever
 contacting the SEC.
 
-\paragraph{Per session vs.\ persistent.}
+\subsection{Per Session User-Agent vs. Persistent}
 \code{set\_user\_agent} (and \code{set\_config}) set the User-Agent only for the
 \emph{current} Julia process --- a new REPL or notebook kernel starts without
 one. The resolution order EDGAR.jl uses is:
@@ -190,8 +188,8 @@ Resolve a ticker to a CIK, then search the text of filings:
 using EDGAR
 set_user_agent("Jane Doe jane@example.com")
 
-# Ticker -> 10-digit, zero-padded CIK
-cik = cik_for_ticker("AAPL")            # "0000320193"
+# Ticker -> 10-digit, zero-padded CIK (exact match -> 0 or 1 row)
+id = only(cik("AAPL"; by = :ticker)).cik   # "0000320193"
 
 # Full-text search across filing contents (2001 onward), restricted to 10-K forms
 res = full_text_search("climate risk"; forms = "10-K")
@@ -250,8 +248,10 @@ The terms that matter here:
 
 \begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
   \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
-    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Get one from a
-    ticker with \code{cik\_for\_ticker}.
+    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Functions accept it
+    as an integer or a string, with or without leading zeros (\code{320193}
+    $\equiv$ \code{0000320193}). Look one up from a ticker or company name with
+    \code{cik}.
   \item[Filing] a document submitted to the SEC, identified by an
     \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
     report, \code{10-Q} quarterly, \code{8-K} current report, \dots). List a
@@ -296,8 +296,10 @@ The terms that matter here:
 \label{sec:api}
 
 CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
-\code{0000320193}); the helper functions pad for you where noted. Every data
-call goes through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
+\code{0000320193}). Any \code{cik} argument accepts an integer or a string, with
+or without leading zeros (\code{320193}, \code{"320193"} and \code{"0000320193"}
+are equivalent); functions normalize to the 10-digit form. Every data call goes
+through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
 
 \subsection{Searching and Company Lookup}
 \label{sec:api-search}
@@ -307,9 +309,11 @@ call goes through the cached, User-Agent-aware request layer (\S\ref{sec:caching
 \textbf{Function} & \textbf{Purpose} \\
 \midrule
 \endhead
-\code{cik\_for\_ticker(ticker)} & Resolve a ticker (case-insensitive) to its
-  10-digit CIK, or \code{nothing}. \\
-\code{company\_tickers()} & The SEC's ticker $\to$ CIK $\to$ name map. \\
+\code{cik()} & Every company as a row table. \\
+\code{cik(query; by = :company | :ticker | :any)} & The rows matching
+  \code{query} by company name (case-insensitive substring, the default), exact
+  (case-insensitive) ticker, or either (\code{:any}). Same row-table type in every
+  case. \\
 \code{full\_text\_search(query; forms, startdate, enddate, from, size)} &
   Full-text search of filing contents (2001+) via the EDGAR full-text search
   (EFTS) API. \code{forms} may be a string or a collection; dates are
@@ -317,8 +321,69 @@ call goes through the cached, User-Agent-aware request layer (\S\ref{sec:caching
 \bottomrule
 \end{longtable}
 
+\subsubsection{cik}
+
+\noindent\code{cik()}\\
+\code{cik(query; by = :company | :ticker | :any)}
+
+\noindent A single lookup function that always returns a Tables.jl \emph{row
+table} --- a \texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company},
+\texttt{ticker} and \texttt{cik} (one record per ticker). \code{cik()} returns
+every company; with a \code{query}, \code{by} selects which column to match:
+
+\begin{itemize}[nosep]
+  \item \code{:company} (the default) --- rows whose company name contains
+    \code{query} (case-insensitive substring).
+  \item \code{:ticker} --- the exact (case-insensitive) ticker match
+    (\code{0} or \code{1} row).
+  \item \code{:any} --- rows matching by company name \emph{or} ticker; handy when
+    a short string like \code{"IBM"} could be either. Each row is tested once, so a
+    row matching both columns appears only once.
+\end{itemize}
+
+\noindent The result type is the same for every form, so it stays type-stable, and
+as a plain vector it indexes, filters and ingests straight into
+\texttt{DataFrames}, \texttt{CSV}, Arrow and SQL sinks. A company query may yield
+several rows, since one company can have multiple tickers (e.g. share classes
+\code{GOOGL}/\code{GOOG}), although there is just one \texttt{company} and
+\texttt{cik} among them.
 \begin{lstlisting}
-cik_for_ticker("AAPL")                                  # "0000320193"
+julia> cik("alphabet")              # by = :company is omitted since is the default
+# Output:
+6-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
+ (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
+ (company = "Alphabet Inc.", ticker = "GOOG", cik = "0001652044")
+ (company = "Alphabet Inc.", ticker = "GOOGN", cik = "0001652044")
+ (company = "Alphabet Inc.", ticker = "GGLAP", cik = "0001652044")
+ (company = "Alphabet Inc.", ticker = "GOOGM", cik = "0001652044")
+ (company = "Alphabet Inc.", ticker = "GGLBP", cik = "0001652044")
+
+julia> cik()[1:5]                   # first 5 of every company
+# Output:
+5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
+ (company = "NVIDIA CORP", ticker = "NVDA", cik = "0001045810")
+ (company = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
+ (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
+ (company = "MICROSOFT CORP", ticker = "MSFT", cik = "0000789019")
+ (company = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
+
+julia> only(cik("AAPL"; by = :ticker)).cik   # bare CIK from a ticker
+# Output:
+"0000320193"
+\end{lstlisting}
+
+\subsubsection{full\_text\_search}
+
+\noindent\code{full\_text\_search(query; forms = nothing, startdate = nothing, enddate = nothing, from = 0, size = 10)}
+
+\noindent Search the \emph{contents} of filings (2001 onward) through the EDGAR
+full-text search (EFTS) API, returning the parsed JSON. \code{forms} may be a
+single string (\code{"10-K"}) or a collection; \code{startdate} and \code{enddate}
+are \code{"YYYY-MM-DD"} strings; \code{from} and \code{size} page the results.
+Matches are under \code{.hits.hits}, and \code{.hits.total.value} is the total
+count.
+
+\begin{lstlisting}
 res = full_text_search("supply chain disruption";
                        forms = "10-K",
                        startdate = "2023-01-01", enddate = "2023-12-31")
@@ -348,6 +413,56 @@ res.hits.total.value
   disk. \\
 \bottomrule
 \end{longtable}
+
+\subsubsection{fetch\_submissions}
+
+\noindent\code{fetch\_submissions(cik)}
+
+\noindent Fetch a filer's complete submissions document from
+\code{data.sec.gov/submissions/} --- company metadata plus its recent-filings
+index --- as parsed JSON. \code{cik} may be an integer or a string, with or
+without leading zeros. See \code{list\_recent\_filings} for a tidied view of just
+the recent filings.
+
+\subsubsection{list\_recent\_filings}
+
+\noindent\code{list\_recent\_filings(cik; count = 10)}
+
+\noindent Return a filer's most recent filings as up to \code{count} rows of
+\code{(accession, form, date)}, newest first. Built on \code{fetch\_submissions}.
+
+\subsubsection{download\_filing}
+
+\noindent\code{download\_filing(cik, accession; destdir = ".")}
+
+\noindent Download a filing's document from the EDGAR \code{Archives} into
+\code{destdir} (created if needed) and return the local file path. The accession
+number may be given with or without dashes. Several common document/index URL
+patterns are tried in turn; the first that responds with HTTP 200 is saved, and
+the function throws if none succeed.
+
+\subsubsection{parse\_filing}
+
+\noindent\code{parse\_filing(path)}
+
+\noindent Convert the filing HTML at \code{path} to plain text, using \code{Gumbo}
+and \code{Cascadia} to strip markup. The extraction helpers operate on this text.
+
+\subsubsection{extract\_section}
+
+\noindent\code{extract\_section(html, names; max\_chars = 200\_000, base\_path = nothing)}
+
+\noindent Pull named sections from filing HTML/text by heuristic,
+case-insensitive matching --- e.g.\ \code{"Item 7"} or
+\code{"Management's Discussion"}. Returns a \code{Dict} mapping each requested name
+to its extracted text; \code{max\_chars} caps the length kept per section.
+
+\subsubsection{save\_filing}
+
+\noindent\code{save\_filing(text, metadata; outdir = "out")}
+
+\noindent Write extracted \code{text} together with its \code{metadata} to disk
+under \code{outdir}, returning the path written.
 
 \begin{lstlisting}
 # List a company's recent filings, then download the most recent one
@@ -381,6 +496,35 @@ println(get(sections, "Item 7", "(not found)"))
   across every filer that reported it (a cross-section). \\
 \bottomrule
 \end{longtable}
+
+\subsubsection{company\_facts}
+
+\noindent\code{company\_facts(cik)}
+
+\noindent Every XBRL fact a company has ever reported, in a single (often several
+megabyte) document from the \code{/api/xbrl/companyfacts/} endpoint, as parsed
+JSON. \code{cik} may be an integer or a string, with or without leading zeros.
+Facts are grouped by taxonomy under \code{.facts} (e.g.\ \code{:dei},
+\code{Symbol("us-gaap")}).
+
+\subsubsection{company\_concept}
+
+\noindent\code{company\_concept(cik, taxonomy, tag)}
+
+\noindent One XBRL concept over time for a single filer, from
+\code{/api/xbrl/companyconcept/} --- lighter than \code{company\_facts} when you
+want a single line item. Observations live under \code{.units} keyed by unit (e.g.
+\code{.units.USD}), each carrying \code{start}/\code{end}, \code{val}, \code{fy},
+\code{fp}, \code{form} and \code{filed}.
+
+\subsubsection{xbrl\_frames}
+
+\noindent\code{xbrl\_frames(taxonomy, tag, unit, period)}
+
+\noindent One XBRL concept for one period across \emph{every} filer that reported
+it, from \code{/api/xbrl/frames/} --- a cross-section rather than a time series. A
+trailing \code{I} on \code{period} denotes an instant (e.g.\ \code{"CY2022Q4I"});
+drop it for a duration (e.g.\ \code{"CY2022"}). Rows are under \code{.data}.
 
 \begin{lstlisting}
 facts   = company_facts("320193")
@@ -417,6 +561,39 @@ There is no API key; the only credential is the SEC \code{User-Agent}
 \bottomrule
 \end{longtable}
 
+\subsubsection{set\_user\_agent}
+
+\noindent\code{set\_user\_agent(user\_agent)}
+
+\noindent Set the SEC \code{User-Agent} for the current process from a single
+\code{"name email"} string. It is validated (non-empty, contains an email) and
+returned. A User-Agent is required before any request; without one EDGAR.jl stops
+with a clear error \emph{before} contacting the SEC.
+
+\subsubsection{get\_user\_agent}
+
+\noindent\code{get\_user\_agent()}
+
+\noindent Return the \code{User-Agent} that will be sent, following the resolution
+order: an explicit value from \code{set\_user\_agent}/\code{set\_config}, else the
+\code{SEC\_USER\_AGENT} environment variable, else an error.
+
+\subsubsection{persist\_user\_agent}
+
+\noindent\code{persist\_user\_agent(user\_agent; depot = first(DEPOT\_PATH))}
+
+\noindent Validate and set the User-Agent for this session, \emph{and} write
+\code{SEC\_USER\_AGENT} into the depot's \code{startup.jl} so every future Julia
+session has it. \code{depot} selects which Julia depot's startup file to write.
+
+\subsubsection{unpersist\_user\_agent}
+
+\noindent\code{unpersist\_user\_agent(; depot = first(DEPOT\_PATH))}
+
+\noindent Remove the \code{SEC\_USER\_AGENT} line that \code{persist\_user\_agent}
+wrote from the depot's \code{startup.jl}. Returns \code{true} if a line was
+removed, \code{false} if there was nothing to remove.
+
 \paragraph{Caching.}
 Responses are cached so repeated calls in a session do not re-download the same
 data. The \code{cache} keyword of \code{set\_config} selects where the cache
@@ -452,6 +629,38 @@ Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
 \bottomrule
 \end{longtable}
 
+\subsubsection{set\_config}
+
+\noindent\code{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist, allow\_file, user\_agent)}
+
+\noindent Override the global runtime configuration, returning the updated
+\code{EDGARConfig}. Only the keywords you pass are changed; the rest keep their
+current values. \code{cache} selects the mode (\code{:temporary} / \code{:persistent}
+/ \code{:off}); \code{cache\_ttl} sets freshness and \code{cache\_max\_age}
+retention; \code{cache\_max\_size} caps a single response; \code{user\_agent} is an
+alternative to \code{set\_user\_agent}.
+
+\subsubsection{clean\_cache}
+
+\noindent\code{clean\_cache(max\_age\_seconds = CACHE\_TTL)}
+
+\noindent Prune the on-disk cache on demand, deleting entries older than
+\code{max\_age\_seconds} and returning the number removed.
+
+\subsubsection{cache\_metrics}
+
+\noindent\code{cache\_metrics()}
+
+\noindent Return a \code{Dict} of the session's cache counters --- hits, misses,
+requests and bytes --- for inspecting cache effectiveness.
+
+\subsubsection{cache\_path\_for}
+
+\noindent\code{cache\_path\_for(url)}
+
+\noindent Return the on-disk cache path EDGAR.jl would use for \code{url}, whether
+or not it is currently cached.
+
 \begin{lstlisting}
 set_config(cache = :persistent, cache_ttl = 3600)   # keep across sessions, 1h freshness
 m = cache_metrics()                                  # (; hits, misses, requests, ...)
@@ -461,11 +670,15 @@ clean_cache()
 \subsection{Low-Level Requests}
 \label{sec:api-lowlevel}
 
-\code{fetch\_url(url; use\_cache, timeout, allow\_file)} is the primitive every
-function above is built on: it returns the raw response body as bytes (or
-\code{nothing} on failure), with the configured \code{User-Agent} and the cache
-applied. Use it as an escape hatch to reach SEC endpoints EDGAR.jl does not yet
-wrap, then parse the bytes yourself (e.g.\ with \code{JSON3.read}).
+\subsubsection{fetch\_url}
+
+\noindent\code{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
+
+\noindent The primitive every function above is built on: it returns the raw
+response body as bytes (or \code{nothing} on failure), with the configured
+\code{User-Agent} and the cache applied. Use it as an escape hatch to reach SEC
+endpoints EDGAR.jl does not yet wrap, then parse the bytes yourself (e.g.\ with
+\code{JSON3.read}).
 
 \begin{lstlisting}
 body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")

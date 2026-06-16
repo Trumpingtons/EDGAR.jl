@@ -26,13 +26,45 @@ end
         concept = EDGAR.company_concept("0000320193", "us-gaap", "NetIncomeLoss")
         frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
         search = EDGAR.full_text_search("climate risk"; forms = "10-K", size = 1)
-        cik = EDGAR.cik_for_ticker("AAPL")
+        tk = EDGAR.cik("AAPL"; by = :ticker)
         @test all(x -> x !== nothing, (facts, concept, frames, search))
-        @test cik === nothing || (cik isa AbstractString && length(cik) == 10)
+        @test isempty(tk) || length(only(tk).cik) == 10
     catch e
         @info "Skipping XBRL/search network smoke test: $e"
         @test true
     end
+end
+
+@testset "cik table" begin
+    # cik() returns a Tables.jl row table (Vector of NamedTuples with String
+    # fields); cik(q; by) filters it by name (substring), ticker (exact) or :any
+    # (either), always returning the same type. :any tests each row once, so a row
+    # matching both columns is not duplicated. Network-wrapped for CI/offline.
+    try
+        rows = EDGAR.cik()
+        byname = EDGAR.cik("nvidia"; by = :company)
+        byticker = EDGAR.cik("nvda"; by = :ticker)
+        anyrows = EDGAR.cik("MA"; by = :any)   # "ma" in many names AND ticker MA -> no dup
+        shape = (rows isa Vector, eltype(rows), !isempty(rows),
+            all(r -> occursin("nvidia", lowercase(r.company)), byname),
+            length(byticker) <= 1 && eltype(byticker) === eltype(rows),
+            allunique(anyrows))
+        @test shape == (true, @NamedTuple{company::String, ticker::String, cik::String}, true, true, true, true)
+    catch e
+        @info "Skipping cik network smoke test: $e"
+        @test true
+    end
+end
+
+@testset "_normalize_cik (offline)" begin
+    # Integers and strings, padded or not, normalize to the 10-digit form;
+    # empty, non-numeric and over-long inputs throw ArgumentError.
+    n = EDGAR._normalize_cik
+    ok = (n(320193), n("320193"), n("0000320193"), n("  320193 "))
+    bad = map(("", "32a193", "123456789012")) do x
+        try; n(x); false; catch e; e isa ArgumentError; end
+    end
+    @test (ok, bad) == (("0000320193", "0000320193", "0000320193", "0000320193"), (true, true, true))
 end
 
 @testset "clean_cache (offline)" begin
