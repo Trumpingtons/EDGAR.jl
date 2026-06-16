@@ -13,10 +13,10 @@ padded string.
 
 ## Filings
 
-List a filer's submissions, download filings, and turn them into text.
+Download filings and turn them into text. (To *list* a filer's filings, see
+[`filings_by_cik`](@ref) under Full-text search.)
 
 ```@docs
-fetch_submissions
 download_filing
 parse_filing
 extract_section

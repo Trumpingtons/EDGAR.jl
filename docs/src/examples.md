@@ -10,15 +10,14 @@ set_config(user_agent = "Jane Doe jane@example.com")
 ## Filings: list, download, extract
 
 ```julia
-# 1. Fetch a company's submissions by CIK (Apple = 320193); recent filings are
-#    index-aligned column arrays under .filings.recent
-r = fetch_submissions("0000320193").filings.recent
-for i in 1:5
-    println(r.filingDate[i], "  ", r.form[i], "  ", r.accessionNumber[i])
+# 1. List a company's filings by CIK (Apple = 320193) as a row table
+res = filings_by_cik("0000320193"; forms = "8-K")
+for f in res.rows[1:min(5, end)]
+    println(f.filed, "  ", f.form, "  ", f.accession, "  isXBRL=", f.isXBRL)
 end
 
 # 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", r.accessionNumber[1]; destdir = "filings")
+path = download_filing("0000320193", res.rows[1].accession; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
@@ -48,6 +47,9 @@ println(length(assets.data), " filers reported Assets")
 ## Full-text search
 
 ```julia
-hits = full_text_search("climate risk"; forms = "10-K")
-println(hits.hits.total.value, " matching filings")
+res = full_text_search("climate risk"; forms = "10-K")
+println(res.total, " matching filings")
+for f in res.rows[1:min(5, end)]
+    println(f.filed, "  ", f.form, "  ", f.company)
+end
 ```

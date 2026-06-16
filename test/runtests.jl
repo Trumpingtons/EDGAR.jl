@@ -5,10 +5,10 @@ using EDGAR
 set_user_agent("EDGAR.jl test suite noreply@example.com")
 
 @testset "EDGAR basic" begin
-    # Smoke test: fetch a filer's submissions (network request). Wrapped so CI/offline doesn't fail.
+    # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try
-        subs = EDGAR.fetch_submissions("0000320193")
-        @test !isempty(subs.filings.recent.accessionNumber)
+        res = EDGAR.filings_by_cik("0000320193"; forms = "8-K")
+        @test res.total >= 0 && res.rows isa Vector
     catch e
         @info "Skipping network smoke test: $e"
         @test true
@@ -28,7 +28,10 @@ end
         search = EDGAR.full_text_search("climate risk"; forms = "10-K")
         byfiler = EDGAR.filings_by_cik(320193; forms = "8-K")
         tk = EDGAR.cik("AAPL"; by = :ticker)
-        @test all(x -> x !== nothing, (facts, concept, frames, search, byfiler))
+        @test all(x -> x !== nothing, (facts, concept, frames))
+        # both searches return (; total, rows); filings_by_cik rows carry the XBRL flag
+        @test search.total >= 0 && haskey(search.rows[1], :score)
+        @test byfiler.total >= 0 && haskey(byfiler.rows[1], :isXBRL)
         @test isempty(tk) || length(only(tk).cik) == 10
     catch e
         @info "Skipping XBRL/search network smoke test: $e"

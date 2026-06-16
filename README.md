@@ -54,15 +54,14 @@ reads it automatically. Put it in `~/.julia/config/startup.jl`
 ```julia
 using EDGAR
 
-# 1. Fetch a company's submissions by CIK (Apple = 320193); recent filings are
-#    index-aligned column arrays under .filings.recent
-r = fetch_submissions("0000320193").filings.recent
-for i in 1:5
-    println(r.filingDate[i], "  ", r.form[i], "  ", r.accessionNumber[i])
+# 1. List a company's filings by CIK (Apple = 320193) as a row table
+res = filings_by_cik("0000320193"; forms = "8-K")
+for f in res.rows[1:min(5, end)]
+    println(f.filed, "  ", f.form, "  ", f.accession, "  isXBRL=", f.isXBRL)
 end
 
 # 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", r.accessionNumber[1]; destdir = "filings")
+path = download_filing("0000320193", res.rows[1].accession; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
@@ -91,9 +90,9 @@ println(ni.units.USD[end].val)
 assets = xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
 println(length(assets.data), " filers reported Assets")
 
-# Full-text search the contents of filings
-hits = full_text_search("climate risk"; forms = "10-K")
-println(hits.hits.total.value, " matching filings")
+# Full-text search the contents of filings -> (; total, rows)
+res = full_text_search("climate risk"; forms = "10-K")
+println(res.total, " matching filings; first: ", res.rows[1].company)
 ```
 
 ## Glossary
@@ -107,7 +106,7 @@ terms that matter here:
   ticker or company name with `cik`.
 - **Filing** — a document submitted to the SEC, identified by an **accession
   number** and a **form type** (`10-K` annual report, `10-Q` quarterly, `8-K`
-  current report, …). Get a filer's filings index with `fetch_submissions`.
+  current report, …). List a filer's filings with `filings_by_cik`.
 - **XBRL** — *eXtensible Business Reporting Language*, the machine-readable format
   companies tag their financial statements in; it is what makes the numbers
   queryable rather than locked inside a document.
@@ -150,7 +149,6 @@ terms that matter here:
 
 | Function | Purpose |
 |---|---|
-| `fetch_submissions(cik)` | Full submissions JSON for a filer (company profile + recent filings index) |
 | `download_filing(cik, accession; destdir)` | Download a filing's documents |
 | `parse_filing(path)` | Convert a filing's HTML to text (Gumbo + Cascadia) |
 | `extract_section(text, names)` | Pull named sections (e.g. `"Item 7"`) from filing text |
@@ -158,8 +156,8 @@ terms that matter here:
 | `company_facts(cik)` | Every XBRL fact a filer has reported |
 | `company_concept(cik, taxonomy, tag)` | One XBRL concept over time for a filer |
 | `xbrl_frames(taxonomy, tag, unit, period)` | One concept across all filers for a period |
-| `full_text_search(query; exact, forms, startdate, enddate)` | Search filing contents (2001+) |
-| `filings_by_cik(cik; forms, startdate, enddate)` | One filer's filings (2001+) via the EFTS entity filter |
+| `full_text_search(query; exact, forms, startdate, enddate)` | Search filing contents (2001+); returns `(; total, rows)` |
+| `filings_by_cik(cik; forms, startdate, enddate)` | One filer's filings (2001+) as `(; total, rows)`, enriched with XBRL flags + acceptanceDateTime |
 | `cik()` | Every company as a row table |
 | `cik(query; by = :company \| :ticker \| :any)` | Rows matching a company name (substring), an exact ticker, or either |
 | `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |
