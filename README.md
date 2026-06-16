@@ -55,13 +55,13 @@ reads it automatically. Put it in `~/.julia/config/startup.jl`
 using EDGAR
 
 # 1. List a company's filings by CIK (Apple = 320193) as a row table
-res = filings_by_cik("0000320193"; forms = "8-K")
-for f in res.rows[1:min(5, end)]
+rows = filings_by_cik("0000320193"; forms = "8-K")
+for f in rows[1:min(5, end)]
     println(f.filed, "  ", f.form, "  ", f.accession, "  isXBRL=", f.isXBRL)
 end
 
 # 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", res.rows[1].accession; destdir = "filings")
+path = download_filing("0000320193", rows[1].accession; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
@@ -90,9 +90,9 @@ println(ni.units.USD[end].val)
 assets = xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
 println(length(assets.data), " filers reported Assets")
 
-# Full-text search the contents of filings -> (; total, rows)
-res = full_text_search("climate risk"; forms = "10-K")
-println(res.total, " matching filings; first: ", res.rows[1].company)
+# Full-text search the contents of filings -> row table
+rows = full_text_search("climate risk"; forms = "10-K")
+println(length(rows), " filings on this page; first: ", rows[1].entity)
 ```
 
 ## Glossary
@@ -156,10 +156,11 @@ terms that matter here:
 | `company_facts(cik)` | Every XBRL fact a filer has reported |
 | `company_concept(cik, taxonomy, tag)` | One XBRL concept over time for a filer |
 | `xbrl_frames(taxonomy, tag, unit, period)` | One concept across all filers for a period |
-| `full_text_search(query; exact, forms, startdate, enddate)` | Search filing contents (2001+); returns `(; total, rows)` |
-| `filings_by_cik(cik; forms, startdate, enddate)` | One filer's filings (2001+) as `(; total, rows)`, enriched with XBRL flags + acceptanceDateTime |
+| `full_text_search(query; exact, forms, startdate, enddate)` | Search filing contents (2001+); returns a row table |
+| `filings_by_cik(cik; forms, startdate, enddate)` | One filer's filings (2001+) as a row table (per-filing, with XBRL flags + acceptanceDateTime) |
+| `profile(cik)` | A filer's row-invariant data (name, entityType, SIC, fiscal year-end, tickers, …) |
 | `cik()` | Every company as a row table |
-| `cik(query; by = :company \| :ticker \| :any)` | Rows matching a company name (substring), an exact ticker, or either |
+| `cik(entity; by = :name \| :ticker \| :any)` | Rows matching by company name (substring), exact ticker, or either (default `:any`) |
 | `fetch_url(url; use_cache)` | Cached HTTP GET with the SEC User-Agent (for endpoints not wrapped above) |
 | `set_config(; user_agent, …)` | Set the User-Agent, cache dir/TTL, host whitelist, … |
 | `cache_metrics()` / `clean_cache()` | Inspect / prune the on-disk cache |

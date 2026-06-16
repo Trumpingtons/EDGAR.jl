@@ -40,7 +40,7 @@ reads it automatically. Put it in `~/.julia/config/startup.jl`
 
 ```julia
 # Apple's Central Index Key is 320193 (zero-padded to 10 digits)
-filings = filings_by_cik("0000320193"; forms = "8-K")   # (; total, rows) table
+filings = filings_by_cik("0000320193"; forms = "8-K")   # row table of this filer's filings
 
 # Net income over time, straight from XBRL
 ni = company_concept("0000320193", "us-gaap", "NetIncomeLoss")

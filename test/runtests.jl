@@ -8,7 +8,7 @@ set_user_agent("EDGAR.jl test suite noreply@example.com")
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try
         res = EDGAR.filings_by_cik("0000320193"; forms = "8-K")
-        @test res.total >= 0 && res.rows isa Vector
+        @test res isa Vector && (isempty(res) || haskey(res[1], :form))
     catch e
         @info "Skipping network smoke test: $e"
         @test true
@@ -27,11 +27,13 @@ end
         frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
         search = EDGAR.full_text_search("climate risk"; forms = "10-K")
         byfiler = EDGAR.filings_by_cik(320193; forms = "8-K")
+        prof = EDGAR.profile(320193)
         tk = EDGAR.cik("AAPL"; by = :ticker)
         @test all(x -> x !== nothing, (facts, concept, frames))
-        # both searches return (; total, rows); filings_by_cik rows carry the XBRL flag
-        @test search.total >= 0 && haskey(search.rows[1], :score)
-        @test byfiler.total >= 0 && haskey(byfiler.rows[1], :isXBRL)
+        # both searches return plain row tables; text rows carry score, filer rows isXBRL
+        @test search isa Vector && haskey(search[1], :score)
+        @test byfiler isa Vector && haskey(byfiler[1], :isXBRL)
+        @test prof.entityType in ("operating", "investment") && !isempty(prof.name)
         @test isempty(tk) || length(only(tk).cik) == 10
     catch e
         @info "Skipping XBRL/search network smoke test: $e"
@@ -46,14 +48,14 @@ end
     # matching both columns is not duplicated. Network-wrapped for CI/offline.
     try
         rows = EDGAR.cik()
-        byname = EDGAR.cik("nvidia"; by = :company)
+        byname = EDGAR.cik("nvidia"; by = :name)
         byticker = EDGAR.cik("nvda"; by = :ticker)
-        anyrows = EDGAR.cik("MA"; by = :any)   # "ma" in many names AND ticker MA -> no dup
+        anyrows = EDGAR.cik("MA")   # default :any; "ma" in many names AND ticker MA -> no dup
         shape = (rows isa Vector, eltype(rows), !isempty(rows),
-            all(r -> occursin("nvidia", lowercase(r.company)), byname),
+            all(r -> occursin("nvidia", lowercase(r.entity)), byname),
             length(byticker) <= 1 && eltype(byticker) === eltype(rows),
             allunique(anyrows))
-        @test shape == (true, @NamedTuple{company::String, ticker::String, cik::String}, true, true, true, true)
+        @test shape == (true, @NamedTuple{entity::String, ticker::String, cik::String}, true, true, true, true)
     catch e
         @info "Skipping cik network smoke test: $e"
         @test true

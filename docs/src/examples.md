@@ -11,13 +11,14 @@ set_config(user_agent = "Jane Doe jane@example.com")
 
 ```julia
 # 1. List a company's filings by CIK (Apple = 320193) as a row table
-res = filings_by_cik("0000320193"; forms = "8-K")
-for f in res.rows[1:min(5, end)]
+rows = filings_by_cik("0000320193"; forms = "8-K")
+for f in rows[1:min(5, end)]
     println(f.filed, "  ", f.form, "  ", f.accession, "  isXBRL=", f.isXBRL)
 end
+profile("0000320193").entityType   # filer-level data: "operating", SIC, tickers, …
 
 # 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", res.rows[1].accession; destdir = "filings")
+path = download_filing("0000320193", rows[1].accession; destdir = "filings")
 
 # 3. Read the filing's HTML (the extraction functions operate on HTML)
 html = parse_filing(path)
@@ -47,9 +48,8 @@ println(length(assets.data), " filers reported Assets")
 ## Full-text search
 
 ```julia
-res = full_text_search("climate risk"; forms = "10-K")
-println(res.total, " matching filings")
-for f in res.rows[1:min(5, end)]
-    println(f.filed, "  ", f.form, "  ", f.company)
+rows = full_text_search("climate risk"; forms = "10-K")
+for f in rows[1:min(5, end)]
+    println(f.filed, "  ", f.form, "  ", f.entity)
 end
 ```
