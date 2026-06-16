@@ -565,24 +565,54 @@ function xbrl_frames(taxonomy::AbstractString, tag::AbstractString, unit::Abstra
 end
 
 """
-    full_text_search(query; forms=nothing, startdate=nothing, enddate=nothing, from=0, size=10) -> JSON3.Object
+    full_text_search(query; forms=nothing, startdate=nothing, enddate=nothing, from=0) -> JSON3.Object
 
 Full-text search across filing *contents* (2001 onward) via the EDGAR full-text
 search (EFTS) API. `forms` may be a single string (`"10-K"`) or a collection;
-`startdate`/`enddate` are `"YYYY-MM-DD"` strings. Results are under `.hits.hits`.
+`startdate`/`enddate` are `"YYYY-MM-DD"` strings (passing only one still filters —
+the other bound defaults to the edge of EDGAR's coverage).
+
+The return value is the search engine's raw response. The matches live under
+`.hits`: `.hits.total.value` is the number of matching filings (capped at 10000),
+and `.hits.hits` is the current page of results — each element has a `._source`
+with fields like `file_date`, `file_type`, `display_names`, `ciks` and `adsh` (the
+accession number). The other top-level keys (`took`, `timed_out`, `_shards`,
+`aggregations`, `query`) are search-engine metadata you can usually ignore.
+
+EFTS returns a **fixed page of 100** results per request, so to page through more
+than the first 100 advance `from` (the 0-based offset) in steps of 100 until you
+have covered `.hits.total.value`:
 
 ```julia
-res = full_text_search("climate risk"; forms = "10-K")
-res.hits.total.value
+res = full_text_search("climate risk"; forms = "10-K", startdate = "2024-01-01")
+res.hits.total.value                       # how many filings matched (caps at 10000)
+for h in res.hits.hits                     # the first page (up to 100 hits)
+    s = h._source
+    println(s.file_date, "  ", s.file_type, "  ", first(s.display_names))
+end
+
+# Collect every match, 100 per page
+allhits = []
+for off in 0:100:min(res.hits.total.value, 10_000) - 1
+    append!(allhits, full_text_search("climate risk"; forms = "10-K",
+                                      startdate = "2024-01-01", from = off).hits.hits)
+end
 ```
 """
-function full_text_search(query::AbstractString; forms=nothing, startdate=nothing, enddate=nothing, from::Int=0, size::Int=10)
-    url = "https://efts.sec.gov/LATEST/search-index?q=$(HTTP.escapeuri(query))&from=$(from)&size=$(size)"
+function full_text_search(query::AbstractString; forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
+    url = "https://efts.sec.gov/LATEST/search-index?q=$(HTTP.escapeuri(query))&from=$(from)"
     if forms !== nothing
         url *= "&forms=$(forms isa AbstractString ? forms : join(forms, ","))"
     end
-    startdate !== nothing && (url *= "&startdt=$(startdate)")
-    enddate !== nothing && (url *= "&enddt=$(enddate)")
+    # EFTS only applies a date filter when BOTH bounds are present; a lone bound is
+    # silently ignored. So if the caller passes just one, fill the other with the
+    # edge of EDGAR's full-text coverage (it starts in 2001) so the filter still
+    # takes effect.
+    if startdate !== nothing || enddate !== nothing
+        sd = startdate === nothing ? "2001-01-01" : startdate
+        ed = enddate === nothing ? "2099-12-31" : enddate
+        url *= "&startdt=$(sd)&enddt=$(ed)"
+    end
     return _get_json(url)
 end
 

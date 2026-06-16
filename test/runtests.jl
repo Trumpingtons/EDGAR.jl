@@ -25,7 +25,7 @@ end
         facts = EDGAR.company_facts("0000320193")
         concept = EDGAR.company_concept("0000320193", "us-gaap", "NetIncomeLoss")
         frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
-        search = EDGAR.full_text_search("climate risk"; forms = "10-K", size = 1)
+        search = EDGAR.full_text_search("climate risk"; forms = "10-K")
         tk = EDGAR.cik("AAPL"; by = :ticker)
         @test all(x -> x !== nothing, (facts, concept, frames, search))
         @test isempty(tk) || length(only(tk).cik) == 10
