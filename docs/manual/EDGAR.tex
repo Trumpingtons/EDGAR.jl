@@ -350,11 +350,11 @@ every company; with a \code{query}, \code{by} selects which column to match:
 as a plain vector it indexes, filters and feeds straight into any tool that reads
 tables --- \texttt{DataFrames}, a \texttt{CSV} file, Arrow, a SQL database. A
 company query may yield
-several rows, since one company can have multiple tickers (e.g. share classes
-\code{GOOGL}/\code{GOOG}), although there is just one \texttt{company} and
-\texttt{cik} among them.
+several rows, because (a) one company can have multiple tickers (e.g. share classes
+\code{GOOGL}/\code{GOOG}), and (b) several companies may contain the query text in
+their name.
 \begin{lstlisting}
-julia> cik("alphabet")              # by = :company is omitted since is the default
+julia> cik("alphabet")              # by = :company is omitted since it is the default
 # Output:
 6-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
  (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
@@ -364,6 +364,20 @@ julia> cik("alphabet")              # by = :company is omitted since is the defa
  (company = "Alphabet Inc.", ticker = "GOOGM", cik = "0001652044")
  (company = "Alphabet Inc.", ticker = "GGLBP", cik = "0001652044")
 
+julia> cik("master")
+# Output:
+5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
+ (company = "Mastercard Inc", ticker = "MA", cik = "0001141391")
+ (company = "MasterBrand, Inc.", ticker = "MBC", cik = "0001941365")
+ (company = "MasterCraft Boat Holdings, Inc.", ticker = "MCFT", cik = "0001638290")
+ (company = "PUTNAM MASTER INTERMEDIATE INCOME TRUST", ticker = "PIM", cik = "0000830622")
+ (company = "MASTERBEEF GROUP", ticker = "MB", cik = "0002027265")
+
+julia> cik("AAPL"; by = :ticker)
+# Output:
+1-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
+ (company = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
+
 julia> cik()[1:5]                   # first 5 of every company
 # Output:
 5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
@@ -372,10 +386,6 @@ julia> cik()[1:5]                   # first 5 of every company
  (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
  (company = "MICROSOFT CORP", ticker = "MSFT", cik = "0000789019")
  (company = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
-
-julia> only(cik("AAPL"; by = :ticker)).cik   # bare CIK from a ticker
-# Output:
-"0000320193"
 \end{lstlisting}
 
 \subsubsection{full\_text\_search}
