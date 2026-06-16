@@ -27,6 +27,7 @@
 \definecolor{codestr}{rgb}{0.10,0.45,0.20}
 \definecolor{codecom}{rgb}{0.45,0.45,0.45}
 \definecolor{coderule}{rgb}{0.85,0.85,0.88}
+\definecolor{juliaprompt}{rgb}{0.10,0.40,0.80}   % bold blue REPL prompt (distinct from string-green)
 
 \lstdefinelanguage{Julia}{
   morekeywords={function,end,using,import,module,for,in,if,else,elseif,while,
@@ -52,6 +53,9 @@
   showstringspaces=false,
   columns=fullflexible,
   keepspaces=true,
+  % colour the REPL prompt green to match a real Julia session
+  % colour the REPL prompt blue (bold) to stand apart from the green strings
+  literate={julia>}{{\textcolor{juliaprompt}{\textbf{julia>}}}}{6},
 }
 \lstset{style=julia}
 
@@ -317,7 +321,7 @@ through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
   \code{query} by company name (case-insensitive substring, the default), exact
   (case-insensitive) ticker, or either (\code{:any}). Same row-table type in every
   case. \\
-\code{full\_text\_search(query; forms, startdate, enddate, from, size)} &
+\code{full\_text\_search(query; forms, startdate, enddate, from)} &
   Full-text search of filing contents (2001+) via the EDGAR full-text search
   (EFTS) API. \code{forms} may be a string or a collection; dates are
   \code{"YYYY-MM-DD"}. Results are under \code{.hits.hits}. \\
@@ -332,15 +336,14 @@ through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
 \par\medskip
 
 \noindent A single lookup function that always returns a Tables.jl \emph{row
-table} --- a \texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company},
-\texttt{ticker} and \texttt{cik} (one record per ticker). \code{cik()} returns
+table}, which is a \texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company},
+\texttt{ticker} and \texttt{cik}, with one record per ticker. \code{cik()} returns
 every company; with a \code{query}, \code{by} selects which column to match:
 
 \begin{itemize}[nosep]
   \item \code{:company} (the default) --- rows whose company name contains
     \code{query} (case-insensitive substring).
-  \item \code{:ticker} --- the exact (case-insensitive) ticker match
-    (\code{0} or \code{1} row).
+  \item \code{:ticker} --- \code{0} or \code{1} row matching the exact (case-insensitive) ticker.
   \item \code{:any} --- rows matching by company name \emph{or} ticker; handy when
     a short string like \code{"IBM"} could be either. Each row is tested once, so a
     row matching both columns appears only once.
@@ -348,13 +351,13 @@ every company; with a \code{query}, \code{by} selects which column to match:
 
 \noindent The result type is the same for every form, so it stays type-stable, and
 as a plain vector it indexes, filters and feeds straight into any tool that reads
-tables --- \texttt{DataFrames}, a \texttt{CSV} file, Arrow, a SQL database. A
-company query may yield
+tables, including \texttt{DataFrames}, \texttt{CSV} and \texttt{Parquet} files, or a \texttt{SQLite} database. A
+\texttt{:company} query may yield
 several rows, because (a) one company can have multiple tickers (e.g. share classes
 \code{GOOGL}/\code{GOOG}), and (b) several companies may contain the query text in
 their name.
 \begin{lstlisting}
-julia> cik("alphabet")              # by = :company is omitted since it is the default
+julia> cik("alphabet")           # by = :company is omitted since it is the default
 # Output:
 6-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
  (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
@@ -378,7 +381,7 @@ julia> cik("AAPL"; by = :ticker)
 1-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
  (company = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
 
-julia> cik()[1:5]                   # first 5 of every company
+julia> cik()[1:5]                # first 5 rows
 # Output:
 5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
  (company = "NVIDIA CORP", ticker = "NVDA", cik = "0001045810")
@@ -390,21 +393,44 @@ julia> cik()[1:5]                   # first 5 of every company
 
 \subsubsection{full\_text\_search}
 
-\sig{full\_text\_search(query; forms = nothing, startdate = nothing, enddate = nothing, from = 0, size = 10)}
+\sig{full\_text\_search(phrase; forms = nothing, startdate = nothing, enddate = nothing, from = 0)}
 
-\noindent Search the \emph{contents} of filings (2001 onward) through the EDGAR
-full-text search (EFTS) API, returning the parsed JSON. \code{forms} may be a
-single string (\code{"10-K"}) or a collection; \code{startdate} and \code{enddate}
-are \code{"YYYY-MM-DD"} strings; \code{from} and \code{size} page the results.
-Matches are under \code{.hits.hits}, and \code{.hits.total.value} is the total
-count.
+\noindent Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{phrase} through the EDGAR
+full-text search (EFTS) API, returning parsed JSON. \code{forms} may be a
+single string (\code{"10-K"})\footnote{Form 10-K is a detailed \textbf{annual} filing submitted by public companies to the SEC. It provides a comprehensive overview of the company's business activities, financial health, and key risks. The filing includes audited financial statements, management's discussion of financial results, information about the company's operations and strategy, disclosures on legal and regulatory issues, and an assessment of risk factors that could affect future performance.} or a collection; \code{startdate} and \code{enddate}
+are \code{"YYYY-MM-DD"} strings; and \code{from} defines the offset used by EFTS to return a fixed page of 100 results per
+request. The function \texttt{full\_text\_search} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?").
 
 \begin{lstlisting}
-res = full_text_search("supply chain disruption";
-                       forms = "10-K",
-                       startdate = "2023-01-01", enddate = "2023-12-31")
-res.hits.total.value
+julia> full_text_search("supply chain disruption"; forms = "10-K", startdate = "2026-01-01", )
+JSON3.Object{Vector{UInt8}, Vector{UInt64}} with 6 entries:
+  :took         => 2600
+  :timed_out    => false
+  :_shards      => {...
+  :hits         => {...
+  :aggregations => {...
+  :query        => {...
 \end{lstlisting}
+
+The output looks cryptic because the SEC runs this on \texttt{Elasticsearch}, and the function returns its raw response envelope. Only the key \texttt{:hits} holds the results; the rest is search-engine plumbing:
+
+\medskip
+\noindent
+\begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Key} & \textbf{Meaning} \\
+\midrule
+\code{:took}         & Milliseconds the search engine spent. \\
+\code{:timed\_out}   & Whether the search timed out. \\
+\code{:\_shards}     & Elasticsearch internal shard stats --- ignore. \\
+\code{:hits}         & \textbf{Results}, the only key we usually need. \\
+\code{:aggregations} & Faceted counts (e.g.\ by form type) for building filters. \\
+\code{:query}        & An echo of how your query was parsed. \\
+\bottomrule
+\end{tabular}
+\medskip
+
+Matches are under \code{.hits.hits}, and \code{.hits.total.value} is the total count.
 
 \subsection{Filings: List, Download, Extract}
 \label{sec:api-filings}
