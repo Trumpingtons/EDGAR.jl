@@ -68,6 +68,10 @@
 \titleformat{\section}{\Large\bfseries\color{BlueViolet}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
 
+% Tighten itemize: noitemsep zeroes both itemsep and parsep (itemsep alone leaves
+% parsep, so items still look spread out); keep a small gap around the whole list.
+\setlist[itemize]{noitemsep, topsep=2pt}
+
 % ---------------------------------------------------------------------------
 \title{\textbf{EDGAR.jl}\\[0.3em]
        \large A Julia interface to the U.S.\ SEC EDGAR system}
@@ -199,10 +203,9 @@ set_user_agent("Jane Doe jane@example.com")
 id = only(cik("AAPL"; by = :ticker)).cik   # "0000320193"
 
 # Full-text search across filing contents (2001 onward), restricted to 10-K forms
-res = filings_by_text("climate risk"; forms = "10-K")
-println(res.total, " matching filings")          # (; total, rows)
-for f in first(res.rows, 5)                        # rows is a Tables.jl row table
-    println(f.filed, "  ", f.form, "  ", f.company)
+rows = filings_by_text("climate risk"; forms = "10-K")   # a Tables.jl row table
+for f in first(rows, 5)
+    println(f.filed, "  ", f.form, "  ", f.entity)
 end
 \end{lstlisting}
 
@@ -245,57 +248,169 @@ statements today, use the XBRL data API above (\S\ref{sec:qs-findata}) --- the
 SEC has already extracted those facts for you, so you rarely need to parse the
 iXBRL by hand.
 
-% ===========================================================================
-\section{Glossary}
-\label{sec:glossary}
 
-SEC filings and their structured (XBRL) data come with their own vocabulary.
-The terms that matter here:
+\section{Forms and Entities}
 
-\begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
-  \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
-    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Functions accept it
-    as an integer or a string, with or without leading zeros (\code{320193}
-    $\equiv$ \code{0000320193}). Look one up from a ticker or company name with
-    \code{cik}.
-  \item[Filing] a document submitted to the SEC, identified by an
-    \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
-    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). Get a
-    filer's filings with \code{filings\_by\_cik}.
-  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable
-    format companies tag their financial statements in; it is what makes the
-    numbers queryable rather than locked inside a document.
-  \item[iXBRL] \emph{Inline XBRL}: those same tags embedded directly inside the
-    filing's human-readable HTML, so one document is both readable and
-    machine-parseable. The SEC has required it for financial statements since
-    around 2019.
-  \item[Fact] a single reported number: one \emph{concept}, for one
-    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
-    96{,}995{,}000{,}000 USD''). \code{company\_facts} returns every fact a
-    company has reported.
-  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
-    (e.g.\ \code{NetIncomeLoss}, \code{Assets}, \code{Revenues}) --- ``what is
-    being measured''. \code{company\_concept} returns one concept over time.
-  \item[Taxonomy] a dictionary that defines concepts. The big one is
-    \textbf{\code{us-gaap}} (US accounting standards); \textbf{\code{dei}}
-    (\emph{Document and Entity Information}) holds metadata about the filing
-    itself; \textbf{\code{srt}} holds shared elements; \textbf{\code{ifrs-full}}
-    is for filers reporting under IFRS; and each company has its own
-    \textbf{extension} namespace (e.g.\ \code{aapl} for Apple-specific concepts).
-  \item[Frame] a cross-section: one concept, one unit, one period, across
-    \emph{every} filer that reported it. \code{xbrl\_frames} returns a frame.
-  \item[Unit] the unit of measure of a fact: \code{USD}, \code{shares},
-    \code{USD/shares} (per-share), \code{pure} (a ratio), \dots
-  \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
-    use \emph{calendar} periods: \code{CY} + year, as in \code{CY2022} (a full
-    calendar year), \code{CY2022Q4} (a quarter), or \code{CY2022Q4I} (a single
-    instant --- note the trailing \code{I}). An \textbf{instant} is a point in
-    time (balance-sheet items such as Assets, at quarter-end); a
-    \textbf{duration} is a span (income-statement items such as Revenue). By
-    contrast, \textbf{\code{FY}} in a company's own facts is its \emph{fiscal}
-    year, which need not match the calendar (Apple's \code{FY2023} ended in
-    September 2023).
-\end{description}
+
+For most corporate analysis, the “big three” report forms (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching.
+
+\medskip
+\noindent To retrieve any form in EDGAR.jl, pass its \textbf{EDGAR form code} to
+\code{forms} in \code{filings\_by\_text} or \code{filings\_by\_cik}; the code is the
+name used in each heading below, except where noted (e.g.\ \code{"SC 13D"},
+\code{"13F-HR"}, \code{"NPORT-P"}, \code{"N-MFP2"}). For example:
+
+\begin{lstlisting}
+filings_by_cik(320193; forms = "8-K")                 # Apple's 8-Ks
+full_text_search("climate"; forms = ["10-K", "10-Q"]) # either annual or quarterly
+\end{lstlisting}
+
+\subsection{“Big Three” Report Forms}
+
+\subsubsection{10-K: Annual Report}
+The annual report, denoted 10-K, provides a comprehensive overview of a company's business and financial performance for the fiscal year.
+
+\subsubsection{10-Q: Quarterly Report}
+			
+The quarterly report, denoted 10-Q, updates investors on the company's performance during a fiscal quarter. There is typically no Q4 10-Q because the annual 10-K covers the full year. Unlike a 10-K, the financial statements are usually reviewed but not fully audited.
+
+\subsubsection{8-K: Current Report}
+
+The current report, denoted 8-K, is filed whenever a material event occurs that investors should know about. Unlike 10-K and 10-Q filings, 8-K filings are event-driven and can be filed at any time. Common triggers include:
+\begin{itemize}
+  \item Acquisitions or mergers
+  \item Bankruptcy
+  \item CEO or CFO changes
+  \item Director appointments or resignations
+  \item Major contracts
+  \item Earnings announcements
+  \item Changes in auditors
+  \item Delisting notices
+\end{itemize}
+
+
+\subsection{Foreign Companies}
+
+\subsubsection{20-F: Annual Report}
+The foreign-issuer equivalent of Form 10-K. Filed annually by foreign companies whose securities are traded in U.S. markets. Useful for understanding a foreign company’s business, risks, financial condition, and corporate governance. Examples include Toyota Motor Corporation and SAP SE.
+
+\subsection{Corporate Governance}
+\subsubsection{Proxy Statement (DEF 14A)}
+Many researchers consider the Proxy Statement (DEF 14A)\footnote{\textbf{DEF} denotes Definitive and \textbf{14A} refers to proxy materials filed under Section 14(a) of the Securities Exchange Act.} the best source of information on executive compensation, directors, and corporate governance. Typical contents include:
+\begin{itemize}
+\item Executive compensation
+\item Director biographies
+\item Board composition
+\item Related-party transactions
+\item Shareholder proposals
+\end{itemize}
+
+
+\subsection{Tender Offers and Mergers}
+\subsubsection{Schedule TO}
+Tender offer filing used in acquisitions, buyouts, and going-private transactions. Useful for understanding the terms, financing, and parties involved in a tender offer.
+\begin{itemize}
+\item Acquisitions
+\item Buyouts
+\item Going-private transactions
+\end{itemize}
+
+
+
+\subsection{Securities Offerings}
+
+\subsubsection{Form S-1}
+Form S-1 is the registration statement typically used by companies seeking to go public through an initial public offering (IPO). It is useful for understanding a company before its IPO. Typical contents include:
+\begin{itemize}
+  \item Detailed business description
+  \item Risk factors
+  \item Use of proceeds
+  \item Management team
+  \item Industry overview
+\end{itemize}
+
+\subsubsection{Form S-3}
+Form S-3 is a simplified registration statement used by eligible seasoned issuers to register additional securities offerings. It is commonly used for follow-on offerings and shelf registrations.
+
+
+\subsection{Ownership and Insider Activity}
+
+\subsubsection{Schedule 13D}
+Filed when an investor acquires more than 5\% of a company's shares and intends to influence management or corporate policies. Useful for identifying activist investors, takeover attempts, and significant ownership positions.
+
+\subsubsection{Schedule 13G}
+A simplified alternative to Schedule 13D for passive investors who acquire more than 5\% of a company's shares without seeking to influence management or control of the company.
+
+\subsubsection{Form 4}
+Reports purchases and sales of company securities by directors, officers, and beneficial owners holding more than 10\% of the company's shares. Useful for tracking insider trading activity.
+
+\subsection{Holdings of Institutional Investors}
+
+\subsubsection{Form 13F}
+An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \code{"13F-HR"} (the holdings report; \code{"13F-NT"} is a notice that another manager reports the holdings).
+
+\subsubsection{Form N-PORT}
+Individual registered fund portfolio disclosure, providing monthly portfolio reports required for registered open-end investment companies, including most mutual funds and ETFs \footnote{Main exemptions/exceptions include: (1) money market funds, which are primarily regulated under Form N-MFP instead (\S\ref{N-MFP}); (2) exchange-traded products that are not 1940 Act funds; (3) funds relying on master-feeder or umbrella structures; (4) newly formed or liquidating funds may benefit from transitional relief and reduced or modified reporting, respectively; (5) small fund conditional exemptions (limited scope).}. Each filing corresponds to a single registered investment fund. N-PORT filings are typically made public with a delay (generally $\sim$60 days after month-end), and therefore are not real-time.
+
+The public EDGAR form code is \code{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
+\begin{itemize}
+  \item Individual securities are reported
+  \item CUSIPs\footnote{A CUSIP (Committee on Uniform Security Identification Procedures) is a unique nine-character code used to identify North American financial securities, such as stocks, bonds, and mutual funds. Functioning much like a serial number, it uniquely identifies a security and facilitates the accurate tracking of investments, trade processing, and settlement by brokerages, banks, and clearing organizations.} are included
+  \item Positions are disclosed at the security level\footnote{Certain holdings may receive confidential treatment in limited, regulator-approved cases.}
+  \item Valuation per holding is provided
+\end{itemize}
+
+\noindent N-PORT filings may also include portfolio-level classifications and summaries, including,
+\begin{itemize}
+  \item Equity vs fixed income vs derivatives breakdowns
+  \item Sector and asset-type classifications
+  \item Country and currency exposure summaries
+  \item Liquidity categories
+\end{itemize}
+
+\noindent N-PORT filings may further include risk and exposure metrics (where applicable), including,
+\begin{itemize}
+  \item Portfolio duration (for fixed income)
+  \item VaR-style risk measures (where applicable)
+  \item Concentration levels
+  \item Exposure breakdowns across risk factors
+\end{itemize}
+
+\subsubsection{Form N-MFP}\label{N-MFP}
+Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \code{"N-MFP2"} (\code{"N-MFP3"} from the 2024 amendments).
+
+\subsection{Entities}
+
+Every filer on EDGAR --- whoever submits a filing --- is an \emph{entity},
+identified by a \textbf{CIK} (Central Index Key, \S\ref{sec:glossary}). An entity is
+not always an operating company: it may be a registered \emph{investment} company (a
+mutual fund, ETF, or money-market fund), an institutional investment manager, or an
+individual (e.g.\ a director filing Form 4). The SEC tags each filer with an
+\code{entityType}, and which forms it files follows from that type:
+
+\begin{itemize}
+  \item \code{"operating"} --- an operating company (or an institutional manager).
+    Files the corporate forms above: 10-K / 10-Q / 8-K, DEF 14A, S-1/S-3, 20-F for
+    foreign issuers; a manager also files \textbf{13F}.
+  \item \code{"investment"} --- a registered investment company: a mutual fund or
+    ETF (files \textbf{N-PORT}), or a money-market fund (files \textbf{N-MFP}).
+\end{itemize}
+
+\noindent EDGAR.jl exposes entities through three functions. \code{cik} maps a name
+or ticker to a CIK, covering entities that \emph{have} a ticker (companies and
+listed ETFs/funds). \code{profile(cik)} returns a single filer's row-invariant
+record --- its \code{name}, \code{entityType}, SIC industry, fiscal year-end,
+tickers, former names, and so on. And the \code{entity} column of
+\code{filings\_by\_text} is simply that filer's name. So a typical workflow is:
+resolve the CIK (\code{cik}), inspect the filer (\code{profile}), then pull its
+filings of the relevant form (\code{filings\_by\_cik}).
+
+\begin{lstlisting}
+id = only(cik("AAPL"; by = :ticker)).cik   # "0000320193"
+profile(id).entityType                      # "operating"
+filings_by_cik(id; forms = "10-K")          # its annual reports
+\end{lstlisting}
+
 
 % ===========================================================================
 \section{API}
@@ -316,83 +431,85 @@ through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
 \midrule
 \endhead
 \code{cik()} & Every company as a row table. \\
-\code{cik(query; by = :company | :ticker | :any)} & The rows matching
-  \code{query} by company name (case-insensitive substring, the default), exact
-  (case-insensitive) ticker, or either (\code{:any}). Same row-table type in every
-  case. \\
+\code{cik(entity; by = :name | :ticker | :any)} & The rows matching \code{entity}
+  by company name (case-insensitive substring), exact (case-insensitive) ticker, or
+  either --- \code{:any} is the default. Same row-table type in every case. \\
 \code{full\_text\_search(query; exact, forms, startdate, enddate, from)} &
   Full-text search of filing contents (2001+) via the EDGAR full-text search
   (EFTS) API. Matched as an exact phrase by default (\code{exact = false} for
   loose words); \code{forms} may be a string or a collection; dates are
-  \code{"YYYY-MM-DD"}. Returns \code{(; total, rows)}. \\
+  \code{"YYYY-MM-DD"}. Returns a row table. \\
 \code{filings\_by\_cik(cik; forms, startdate, enddate, from)} &
   A single filer's filings (2001+) via the same EFTS endpoint, using its entity
   filter rather than a text query --- a true "filed by this filer" search.
-  Returns \code{(; total, rows)}, the rows enriched with XBRL flags and
-  \code{acceptanceDateTime}. \\
+  Returns a per-filing row table (with XBRL flags and \code{acceptanceDateTime}). \\
+\code{profile(cik)} &
+  A filer's row-invariant data: name, \code{entityType}, SIC, fiscal year-end,
+  tickers, exchanges, former names, etc. \\
 \bottomrule
 \end{longtable}
 
 \subsubsection{cik}
 
-\sig{cik(query; by = :company | :ticker | :any)}
-
 \sig{cik()}
 
-\noindent A single lookup function with a \code{query}, \code{by} selects which column to match. Always returns a \texttt{Tables.jl} \emph{row
-table}, which is a \texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company},
-\texttt{ticker} and \texttt{cik}, with one record per ticker. \code{cik()} returns
-every company. :
+\sig{cik(entity; by = :name | :ticker | :any)}
+
+\noindent \code{cik()} returns every company; given an \code{entity}, \code{by}
+selects how to match it. Always returns a \texttt{Tables.jl} \emph{row table}, a
+\texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company}, \texttt{ticker}
+and \texttt{cik} (one record per ticker):
 
 \begin{itemize}[nosep]
-  \item \code{:company} (the default) --- rows whose company name contains
-    \code{query} (case-insensitive substring).
-  \item \code{:ticker} --- \code{0} or \code{1} row matching the exact (case-insensitive) ticker.
-  \item \code{:any} --- rows matching by company name \emph{or} ticker; handy when
-    a short string like \code{"IBM"} could be either. Each row is tested once, so a
-    row matching both columns appears only once.
+  \item \code{:any} (the default) --- rows matching \code{entity} by company name
+    (substring) \emph{or} an exact ticker; so a short string like \code{"IBM"}
+    finds the ticker and a word like \code{"apple"} finds the name, without saying
+    which. Each row is tested once, so a row matching both appears only once.
+  \item \code{:name} --- rows whose company name contains \code{entity}
+    (case-insensitive substring).
+  \item \code{:ticker} --- \code{0} or \code{1} row matching the exact
+    (case-insensitive) ticker.
 \end{itemize}
 
 \noindent The result type is the same for every form, so it stays type-stable, and
 as a plain vector it indexes, filters and feeds straight into any tool that reads
 tables, including \texttt{DataFrames}, \texttt{CSV} and \texttt{Parquet} files, or a \texttt{SQLite} database. A
-\texttt{:company} query may yield
-several rows, because (a) one company can have multiple tickers (e.g. share classes
-\code{GOOGL}/\code{GOOG}), and (b) several companies may contain the query text in
-their name.
+query may yield several rows, because (a) one company can have multiple tickers
+(e.g. share classes \code{GOOGL}/\code{GOOG}), and (b) several companies may match
+the query in their name.
 \begin{lstlisting}
-julia> cik("alphabet")           # by = :company is omitted since it is the default
+julia> cik("alphabet")           # by = :any (default); "alphabet" matches the name
 # Output:
-6-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
- (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
- (company = "Alphabet Inc.", ticker = "GOOG", cik = "0001652044")
- (company = "Alphabet Inc.", ticker = "GOOGN", cik = "0001652044")
- (company = "Alphabet Inc.", ticker = "GGLAP", cik = "0001652044")
- (company = "Alphabet Inc.", ticker = "GOOGM", cik = "0001652044")
- (company = "Alphabet Inc.", ticker = "GGLBP", cik = "0001652044")
+6-element Vector{@NamedTuple{entity::String, ticker::String, cik::String}}:
+ (entity = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
+ (entity = "Alphabet Inc.", ticker = "GOOG", cik = "0001652044")
+ (entity = "Alphabet Inc.", ticker = "GOOGN", cik = "0001652044")
+ (entity = "Alphabet Inc.", ticker = "GGLAP", cik = "0001652044")
+ (entity = "Alphabet Inc.", ticker = "GOOGM", cik = "0001652044")
+ (entity = "Alphabet Inc.", ticker = "GGLBP", cik = "0001652044")
 
 julia> cik("master")
 # Output:
-5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
- (company = "Mastercard Inc", ticker = "MA", cik = "0001141391")
- (company = "MasterBrand, Inc.", ticker = "MBC", cik = "0001941365")
- (company = "MasterCraft Boat Holdings, Inc.", ticker = "MCFT", cik = "0001638290")
- (company = "PUTNAM MASTER INTERMEDIATE INCOME TRUST", ticker = "PIM", cik = "0000830622")
- (company = "MASTERBEEF GROUP", ticker = "MB", cik = "0002027265")
+5-element Vector{@NamedTuple{entity::String, ticker::String, cik::String}}:
+ (entity = "Mastercard Inc", ticker = "MA", cik = "0001141391")
+ (entity = "MasterBrand, Inc.", ticker = "MBC", cik = "0001941365")
+ (entity = "MasterCraft Boat Holdings, Inc.", ticker = "MCFT", cik = "0001638290")
+ (entity = "PUTNAM MASTER INTERMEDIATE INCOME TRUST", ticker = "PIM", cik = "0000830622")
+ (entity = "MASTERBEEF GROUP", ticker = "MB", cik = "0002027265")
 
 julia> cik("AAPL"; by = :ticker)
 # Output:
-1-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
- (company = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
+1-element Vector{@NamedTuple{entity::String, ticker::String, cik::String}}:
+ (entity = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
 
 julia> cik()[1:5]                # first 5 rows
 # Output:
-5-element Vector{@NamedTuple{company::String, ticker::String, cik::String}}:
- (company = "NVIDIA CORP", ticker = "NVDA", cik = "0001045810")
- (company = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
- (company = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
- (company = "MICROSOFT CORP", ticker = "MSFT", cik = "0000789019")
- (company = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
+5-element Vector{@NamedTuple{entity::String, ticker::String, cik::String}}:
+ (entity = "NVIDIA CORP", ticker = "NVDA", cik = "0001045810")
+ (entity = "Apple Inc.", ticker = "AAPL", cik = "0000320193")
+ (entity = "Alphabet Inc.", ticker = "GOOGL", cik = "0001652044")
+ (entity = "MICROSOFT CORP", ticker = "MSFT", cik = "0000789019")
+ (entity = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
 \end{lstlisting}
 
 \subsubsection{filings\_by\_text}
@@ -410,33 +527,19 @@ are \code{"YYYY-MM-DD"} strings; and \code{from} is the 0-based offset used to p
 pass \code{exact = false} to match the words loosely instead. Results come back
 ranked by relevance, not by date.
 
-It returns a \texttt{NamedTuple} with these fields:
-
-\medskip
-\noindent
-\begin{tabular}{@{}p{0.16\textwidth}p{0.76\textwidth}@{}}
-\toprule
-\textbf{Field} & \textbf{Meaning} \\
-\midrule
-\code{query} & The search phrase, echoed back. \\
-\code{exact} & Whether it was matched as an exact phrase (\code{true}) or loose words (\code{false}). \\
-\code{total} & The number of matching filings (capped at 10\,000). \\
-\code{rows}  & A Tables.jl \emph{row table} (\texttt{Vector} of \texttt{NamedTuple}s) for the current page (up to 100); columns below. \\
-\bottomrule
-\end{tabular}
-\medskip
-
-\noindent To page beyond the first 100, advance \code{from} in steps of 100 up to
-\code{total}. The \code{rows} columns are:
+It returns a Tables.jl \emph{row table} --- a \texttt{Vector} of
+\texttt{NamedTuple}s, one per matching filing, for the current page (up to 100).
+There is no total-match count; to page, advance \code{from} in steps of 100 until
+you get fewer than 100 rows. The columns are:
 
 \medskip
 \noindent
 \begin{tabular}{@{}p{0.22\textwidth}p{0.70\textwidth}@{}}
 \toprule
-\textbf{\code{rows} column} & \textbf{Meaning} \\
+\textbf{Column} & \textbf{Meaning} \\
 \midrule
 \code{cik}        & The filer's 10-digit, zero-padded Central Index Key. \\
-\code{company}    & The filer's name. (Tickers are a filer attribute --- use \code{cik}, joining on the CIK.) \\
+\code{entity}     & The filer's name --- a company, mutual fund, ETF, money-market fund, institutional manager, etc. (Tickers are a filer attribute --- use \code{cik}, joining on the CIK; richer filer data is in \code{profile}.) \\
 \code{form}       & Form type (e.g.\ \code{10-K}, \code{8-K}). \\
 \code{reportDate} & The period the filing covers (may be empty). \\
 \code{filed}      & The date the filing was filed. \\
@@ -448,22 +551,16 @@ It returns a \texttt{NamedTuple} with these fields:
 \medskip
 
 \begin{lstlisting}
-julia> res = filings_by_text("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
+julia> rows = filings_by_text("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
 
-julia> res.query, res.exact      # what was searched
-("supply chain disruption", true)
-
-julia> res.total
-286
-
-julia> res.rows[1]
-(cik = "0001622996", company = "ACRO BIOMEDICAL CO., LTD.", form = "10-K",
+julia> rows[1]
+(cik = "0001622996", entity = "ACRO BIOMEDICAL CO., LTD.", form = "10-K",
  reportDate = "2025-12-31", filed = "2026-02-11",
  accession = "0001640334-26-000241", document = "acbm_10k.htm", score = 13.91)
 \end{lstlisting}
 \medskip
 
-\noindent Being a Tables.jl source, \code{res.rows} drops straight into
+\noindent Being a Tables.jl source, \code{rows} drops straight into
 \code{DataFrame}, \code{CSV} and friends. The submissions-only fields
 (\code{acceptanceDateTime} and the XBRL flags) are \emph{not} included here: a text
 search spans many filers, so adding them would cost one submissions request per
@@ -480,25 +577,22 @@ EDGAR's \emph{entity} filter --- the web form's company/CIK field. This is a tru
 ``filed by this filer'' query, unlike full-text searching for the CIK as document
 text, which also matches filings that merely \emph{mention} it (e.g.\ a fund listing
 the company among its holdings). \code{forms}, the dates and \code{from} behave as
-for \code{filings\_by\_text}, and it returns the same \code{(; total, rows)} shape.
+for \code{filings\_by\_text}; it likewise returns a Tables.jl row table, newest-first.
 
-Two differences from \code{filings\_by\_text}: \code{rows} has no \code{score} (no
-text is ranked, so results are \textbf{newest-first}), and it is \textbf{enriched}
-from the filer's submissions with four extra columns. The enrichment is joined on
-the \emph{accession} (each individual filing), not the CIK, so the flags are
-\textbf{per filing} --- a filer's \code{10-K} is XBRL while its \code{Form 4} is
-not. They are \code{missing} for any filing outside the submissions recent window
-(and \code{isXBRLNumeric} is \code{missing} wherever the SEC reports no value). The
-full \code{rows} columns, in order:
+Each row is \textbf{one filing}. There are no filer-level columns (name,
+\code{entityType}, SIC, \dots) --- those are invariant for one filer, so they are
+not repeated on every row; get them once from \code{profile} (below). The XBRL
+flags and \code{acceptanceDateTime} are joined \textbf{per filing} on the accession
+(a \code{10-K} is XBRL while a \code{Form 4} is not), and are \code{missing} for any
+filing outside the submissions recent window (and \code{isXBRLNumeric} wherever the
+SEC reports no value). The columns, in order:
 
 \medskip
 \noindent
 \begin{tabular}{@{}p{0.24\textwidth}p{0.68\textwidth}@{}}
 \toprule
-\textbf{\code{rows} column} & \textbf{Meaning} \\
+\textbf{Column} & \textbf{Meaning} \\
 \midrule
-\code{cik}                & The filer's 10-digit, zero-padded Central Index Key. \\
-\code{company}            & The filer's name. \\
 \code{form}               & Form type (e.g.\ \code{10-K}, \code{8-K}). \\
 \code{reportDate}         & The period the filing covers (may be empty). \\
 \code{filed}              & The date the filing was filed. \\
@@ -513,17 +607,54 @@ full \code{rows} columns, in order:
 \medskip
 
 \begin{lstlisting}
-julia> res = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01");
+julia> rows = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01");
 
-julia> res.total
-5
-
-julia> res.rows[1]
-(cik = "0000320193", company = "Apple Inc.", form = "8-K",
- reportDate = "2026-04-30", filed = "2026-04-30",
+julia> rows[1]
+(form = "8-K", reportDate = "2026-04-30", filed = "2026-04-30",
  acceptanceDateTime = "2026-04-30T20:30:41.000Z",
  accession = "0000320193-26-000011", document = "aapl-20260430.htm",
  isXBRL = true, isInlineXBRL = true, isXBRLNumeric = false)
+\end{lstlisting}
+
+\subsubsection{profile}
+
+\sig{profile(cik)}
+
+\noindent A filer's \textbf{row-invariant} data from the SEC submissions document
+--- the fields that are the same across all of a filer's filings, returned once
+(as a \texttt{NamedTuple}) rather than repeated on every row of
+\code{filings\_by\_cik}. \code{cik} may be an integer or string, padded or not. The
+fields are:
+
+\medskip
+\noindent
+\begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Meaning} \\
+\midrule
+\code{cik}                  & The filer's 10-digit, zero-padded Central Index Key. \\
+\code{name}                 & The filer's name. \\
+\code{entityType}           & The filer kind: \code{"operating"} (a company) or \code{"investment"} (a mutual fund / ETF / money-market fund), etc. \\
+\code{sic}                  & Standard Industrial Classification code (industry). \\
+\code{sicDescription}       & Human-readable industry description. \\
+\code{fiscalYearEnd}        & Fiscal year-end as \code{MMDD} (e.g.\ \code{"0926"}). \\
+\code{stateOfIncorporation} & State/country of incorporation. \\
+\code{tickers}              & Ticker symbols (\texttt{Vector\{String\}}; empty for funds without one). \\
+\code{exchanges}            & Exchanges those tickers trade on. \\
+\code{ein}                  & Employer Identification Number. \\
+\code{category}             & SEC filer category (e.g.\ "Large accelerated filer"). \\
+\code{website}              & The filer's website (may be empty). \\
+\code{description}          & Free-text description (may be empty). \\
+\code{formerNames}          & Prior names (\texttt{Vector\{String\}}). \\
+\bottomrule
+\end{tabular}
+\medskip
+
+\begin{lstlisting}
+julia> p = profile(320193);
+
+julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
+("Apple Inc.", "operating", "3571", "0926")
 \end{lstlisting}
 
 \subsection{Filings: List, Download, Extract}
@@ -581,12 +712,12 @@ under \code{outdir}, returning the path written.
 
 \begin{lstlisting}
 # List a company's recent filings, then download the most recent one
-res = filings_by_cik("0000320193"; forms = "8-K")
-for f in first(res.rows, 5)
+rows = filings_by_cik("0000320193"; forms = "8-K")
+for f in first(rows, 5)
     println(f.filed, "  ", f.form, "  ", f.accession)
 end
 
-path = download_filing("0000320193", res.rows[1].accession; destdir = "filings")
+path = download_filing("0000320193", rows[1].accession; destdir = "filings")
 
 # Convert to text and extract named sections
 html     = parse_filing(path)
@@ -799,4 +930,56 @@ body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")
 data = JSON3.read(body)
 \end{lstlisting}
 
+
+% ===========================================================================
+\subsection{Glossary}
+\label{sec:glossary}
+
+SEC filings and their structured (XBRL) data come with their own vocabulary.
+The terms that matter here:
+
+\begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
+  \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
+    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Functions accept it
+    as an integer or a string, with or without leading zeros (\code{320193}
+    $\equiv$ \code{0000320193}). Look one up from a ticker or company name with
+    \code{cik}.
+  \item[Filing] a document submitted to the SEC, identified by an
+    \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
+    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). Get a
+    filer's filings with \code{filings\_by\_cik}.
+  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable
+    format companies tag their financial statements in; it is what makes the
+    numbers queryable rather than locked inside a document.
+  \item[iXBRL] \emph{Inline XBRL}: those same tags embedded directly inside the
+    filing's human-readable HTML, so one document is both readable and
+    machine-parseable. The SEC has required it for financial statements since
+    around 2019.
+  \item[Fact] a single reported number: one \emph{concept}, for one
+    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
+    96{,}995{,}000{,}000 USD''). \code{company\_facts} returns every fact a
+    company has reported.
+  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
+    (e.g.\ \code{NetIncomeLoss}, \code{Assets}, \code{Revenues}) --- ``what is
+    being measured''. \code{company\_concept} returns one concept over time.
+  \item[Taxonomy] a dictionary that defines concepts. The big one is
+    \textbf{\code{us-gaap}} (US accounting standards); \textbf{\code{dei}}
+    (\emph{Document and Entity Information}) holds metadata about the filing
+    itself; \textbf{\code{srt}} holds shared elements; \textbf{\code{ifrs-full}}
+    is for filers reporting under IFRS; and each company has its own
+    \textbf{extension} namespace (e.g.\ \code{aapl} for Apple-specific concepts).
+  \item[Frame] a cross-section: one concept, one unit, one period, across
+    \emph{every} filer that reported it. \code{xbrl\_frames} returns a frame.
+  \item[Unit] the unit of measure of a fact: \code{USD}, \code{shares},
+    \code{USD/shares} (per-share), \code{pure} (a ratio), \dots
+  \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
+    use \emph{calendar} periods: \code{CY} + year, as in \code{CY2022} (a full
+    calendar year), \code{CY2022Q4} (a quarter), or \code{CY2022Q4I} (a single
+    instant --- note the trailing \code{I}). An \textbf{instant} is a point in
+    time (balance-sheet items such as Assets, at quarter-end); a
+    \textbf{duration} is a span (income-statement items such as Revenue). By
+    contrast, \textbf{\code{FY}} in a company's own facts is its \emph{fiscal}
+    year, which need not match the calendar (Apple's \code{FY2023} ended in
+    September 2023).
+\end{description}
 \end{document}
