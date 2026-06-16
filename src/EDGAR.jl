@@ -612,9 +612,10 @@ classes like `GOOGL`/`GOOG`) and a loose name can match more than one filer. For
 ticker match the row table holds at most one row; pull the bare CIK with
 `only(cik("AAPL"; by = :ticker)).cik`.
 
-Being a valid [Tables.jl](https://github.com/JuliaData/Tables.jl) source, the
-result ingests directly into `DataFrames`, `CSV`, Arrow and SQL sinks, and as a
-plain `Vector` it indexes and slices naturally.
+Because it implements the [Tables.jl](https://github.com/JuliaData/Tables.jl)
+interface, any tool that reads tables takes the result directly — `DataFrames`, a
+`CSV` file, Arrow, a SQL database — and as a plain `Vector` it indexes and slices
+naturally.
 
 ```julia
 cik()[1:5]                          # first 5 of every company

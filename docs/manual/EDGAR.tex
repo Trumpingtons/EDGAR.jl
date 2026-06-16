@@ -58,6 +58,9 @@
 % inline code shortcut
 \newcommand{\code}[1]{\texttt{\small #1}}
 
+% function signature block: a blank line of vertical space above and below
+\newcommand{\sig}[1]{\medskip\noindent\code{#1}\par\medskip}
+
 \titleformat{\section}{\Large\bfseries\color{BlueViolet}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
 
@@ -323,8 +326,10 @@ through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
 
 \subsubsection{cik}
 
+\medskip
 \noindent\code{cik()}\\
 \code{cik(query; by = :company | :ticker | :any)}
+\par\medskip
 
 \noindent A single lookup function that always returns a Tables.jl \emph{row
 table} --- a \texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company},
@@ -342,8 +347,9 @@ every company; with a \code{query}, \code{by} selects which column to match:
 \end{itemize}
 
 \noindent The result type is the same for every form, so it stays type-stable, and
-as a plain vector it indexes, filters and ingests straight into
-\texttt{DataFrames}, \texttt{CSV}, Arrow and SQL sinks. A company query may yield
+as a plain vector it indexes, filters and feeds straight into any tool that reads
+tables --- \texttt{DataFrames}, a \texttt{CSV} file, Arrow, a SQL database. A
+company query may yield
 several rows, since one company can have multiple tickers (e.g. share classes
 \code{GOOGL}/\code{GOOG}), although there is just one \texttt{company} and
 \texttt{cik} among them.
@@ -374,7 +380,7 @@ julia> only(cik("AAPL"; by = :ticker)).cik   # bare CIK from a ticker
 
 \subsubsection{full\_text\_search}
 
-\noindent\code{full\_text\_search(query; forms = nothing, startdate = nothing, enddate = nothing, from = 0, size = 10)}
+\sig{full\_text\_search(query; forms = nothing, startdate = nothing, enddate = nothing, from = 0, size = 10)}
 
 \noindent Search the \emph{contents} of filings (2001 onward) through the EDGAR
 full-text search (EFTS) API, returning the parsed JSON. \code{forms} may be a
@@ -416,7 +422,7 @@ res.hits.total.value
 
 \subsubsection{fetch\_submissions}
 
-\noindent\code{fetch\_submissions(cik)}
+\sig{fetch\_submissions(cik)}
 
 \noindent Fetch a filer's complete submissions document from
 \code{data.sec.gov/submissions/} --- company metadata plus its recent-filings
@@ -426,14 +432,14 @@ the recent filings.
 
 \subsubsection{list\_recent\_filings}
 
-\noindent\code{list\_recent\_filings(cik; count = 10)}
+\sig{list\_recent\_filings(cik; count = 10)}
 
 \noindent Return a filer's most recent filings as up to \code{count} rows of
 \code{(accession, form, date)}, newest first. Built on \code{fetch\_submissions}.
 
 \subsubsection{download\_filing}
 
-\noindent\code{download\_filing(cik, accession; destdir = ".")}
+\sig{download\_filing(cik, accession; destdir = ".")}
 
 \noindent Download a filing's document from the EDGAR \code{Archives} into
 \code{destdir} (created if needed) and return the local file path. The accession
@@ -443,14 +449,14 @@ the function throws if none succeed.
 
 \subsubsection{parse\_filing}
 
-\noindent\code{parse\_filing(path)}
+\sig{parse\_filing(path)}
 
 \noindent Convert the filing HTML at \code{path} to plain text, using \code{Gumbo}
 and \code{Cascadia} to strip markup. The extraction helpers operate on this text.
 
 \subsubsection{extract\_section}
 
-\noindent\code{extract\_section(html, names; max\_chars = 200\_000, base\_path = nothing)}
+\sig{extract\_section(html, names; max\_chars = 200\_000, base\_path = nothing)}
 
 \noindent Pull named sections from filing HTML/text by heuristic,
 case-insensitive matching --- e.g.\ \code{"Item 7"} or
@@ -459,7 +465,7 @@ to its extracted text; \code{max\_chars} caps the length kept per section.
 
 \subsubsection{save\_filing}
 
-\noindent\code{save\_filing(text, metadata; outdir = "out")}
+\sig{save\_filing(text, metadata; outdir = "out")}
 
 \noindent Write extracted \code{text} together with its \code{metadata} to disk
 under \code{outdir}, returning the path written.
@@ -499,7 +505,7 @@ println(get(sections, "Item 7", "(not found)"))
 
 \subsubsection{company\_facts}
 
-\noindent\code{company\_facts(cik)}
+\sig{company\_facts(cik)}
 
 \noindent Every XBRL fact a company has ever reported, in a single (often several
 megabyte) document from the \code{/api/xbrl/companyfacts/} endpoint, as parsed
@@ -509,7 +515,7 @@ Facts are grouped by taxonomy under \code{.facts} (e.g.\ \code{:dei},
 
 \subsubsection{company\_concept}
 
-\noindent\code{company\_concept(cik, taxonomy, tag)}
+\sig{company\_concept(cik, taxonomy, tag)}
 
 \noindent One XBRL concept over time for a single filer, from
 \code{/api/xbrl/companyconcept/} --- lighter than \code{company\_facts} when you
@@ -519,7 +525,7 @@ want a single line item. Observations live under \code{.units} keyed by unit (e.
 
 \subsubsection{xbrl\_frames}
 
-\noindent\code{xbrl\_frames(taxonomy, tag, unit, period)}
+\sig{xbrl\_frames(taxonomy, tag, unit, period)}
 
 \noindent One XBRL concept for one period across \emph{every} filer that reported
 it, from \code{/api/xbrl/frames/} --- a cross-section rather than a time series. A
@@ -563,7 +569,7 @@ There is no API key; the only credential is the SEC \code{User-Agent}
 
 \subsubsection{set\_user\_agent}
 
-\noindent\code{set\_user\_agent(user\_agent)}
+\sig{set\_user\_agent(user\_agent)}
 
 \noindent Set the SEC \code{User-Agent} for the current process from a single
 \code{"name email"} string. It is validated (non-empty, contains an email) and
@@ -572,7 +578,7 @@ with a clear error \emph{before} contacting the SEC.
 
 \subsubsection{get\_user\_agent}
 
-\noindent\code{get\_user\_agent()}
+\sig{get\_user\_agent()}
 
 \noindent Return the \code{User-Agent} that will be sent, following the resolution
 order: an explicit value from \code{set\_user\_agent}/\code{set\_config}, else the
@@ -580,7 +586,7 @@ order: an explicit value from \code{set\_user\_agent}/\code{set\_config}, else t
 
 \subsubsection{persist\_user\_agent}
 
-\noindent\code{persist\_user\_agent(user\_agent; depot = first(DEPOT\_PATH))}
+\sig{persist\_user\_agent(user\_agent; depot = first(DEPOT\_PATH))}
 
 \noindent Validate and set the User-Agent for this session, \emph{and} write
 \code{SEC\_USER\_AGENT} into the depot's \code{startup.jl} so every future Julia
@@ -588,7 +594,7 @@ session has it. \code{depot} selects which Julia depot's startup file to write.
 
 \subsubsection{unpersist\_user\_agent}
 
-\noindent\code{unpersist\_user\_agent(; depot = first(DEPOT\_PATH))}
+\sig{unpersist\_user\_agent(; depot = first(DEPOT\_PATH))}
 
 \noindent Remove the \code{SEC\_USER\_AGENT} line that \code{persist\_user\_agent}
 wrote from the depot's \code{startup.jl}. Returns \code{true} if a line was
@@ -631,7 +637,7 @@ Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
 
 \subsubsection{set\_config}
 
-\noindent\code{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist, allow\_file, user\_agent)}
+\sig{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist, allow\_file, user\_agent)}
 
 \noindent Override the global runtime configuration, returning the updated
 \code{EDGARConfig}. Only the keywords you pass are changed; the rest keep their
@@ -642,21 +648,21 @@ alternative to \code{set\_user\_agent}.
 
 \subsubsection{clean\_cache}
 
-\noindent\code{clean\_cache(max\_age\_seconds = CACHE\_TTL)}
+\sig{clean\_cache(max\_age\_seconds = CACHE\_TTL)}
 
 \noindent Prune the on-disk cache on demand, deleting entries older than
 \code{max\_age\_seconds} and returning the number removed.
 
 \subsubsection{cache\_metrics}
 
-\noindent\code{cache\_metrics()}
+\sig{cache\_metrics()}
 
 \noindent Return a \code{Dict} of the session's cache counters --- hits, misses,
 requests and bytes --- for inspecting cache effectiveness.
 
 \subsubsection{cache\_path\_for}
 
-\noindent\code{cache\_path\_for(url)}
+\sig{cache\_path\_for(url)}
 
 \noindent Return the on-disk cache path EDGAR.jl would use for \code{url}, whether
 or not it is currently cached.
@@ -672,7 +678,7 @@ clean_cache()
 
 \subsubsection{fetch\_url}
 
-\noindent\code{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
+\sig{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
 
 \noindent The primitive every function above is built on: it returns the raw
 response body as bytes (or \code{nothing} on failure), with the configured
