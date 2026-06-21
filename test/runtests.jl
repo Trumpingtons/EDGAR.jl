@@ -507,6 +507,30 @@ end
     @test fwith[1].label == "Net sales"
 end
 
+@testset "FilingSummary fallback classification (offline)" begin
+    # defref token -> namespaced concept
+    @test (EDGAR._defref_concept("defref_us-gaap_Assets"),
+           EDGAR._defref_concept("defref_vktx_PrepaidClinicalTrialCosts")) ==
+          ("us-gaap:Assets", "vktx:PrepaidClinicalTrialCosts")
+
+    # concepts pulled from a rendered R-file (deduped)
+    rfile = """<a onclick="top.Show.showAR(this,'defref_us-gaap_Assets',window)">Total assets</a>
+               <a onclick="x('defref_us-gaap_LiabilitiesAndStockholdersEquity')">L+E</a>
+               <span>defref_us-gaap_Assets</span>"""
+    @test Set(EDGAR._rfile_concepts(rfile)) ==
+          Set(["us-gaap:Assets", "us-gaap:LiabilitiesAndStockholdersEquity"])
+
+    # FilingSummary <Report> parsing: face statements kept, parenthetical/notes dropped
+    fs = """<FilingSummary><MyReports>
+      <Report><Role>http://x/role/StatementBalanceSheets</Role><ShortName>Balance Sheets</ShortName><HtmlFileName>R2.htm</HtmlFileName></Report>
+      <Report><Role>http://x/role/BalanceSheetsParenthetical</Role><ShortName>Balance Sheets (Parenthetical)</ShortName><HtmlFileName>R3.htm</HtmlFileName></Report>
+      <Report><ShortName>Statements of Cash Flows</ShortName><HtmlFileName>R6.htm</HtmlFileName></Report>
+      <Report><Role>http://x/role/Notes</Role><ShortName>Basis of Presentation</ShortName><HtmlFileName>R7.htm</HtmlFileName></Report>
+    </MyReports></FilingSummary>"""
+    @test [(r.statement, r.file) for r in EDGAR._filing_summary_reports(fs)] ==
+          [("BalanceSheet", "R2.htm"), ("CashFlow", "R6.htm")]
+end
+
 @testset "calculations (calc linkbase, W7, offline)" begin
     cal = """
     <link:linkbase>
