@@ -1802,6 +1802,56 @@ Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although m
 \end{description}
 
 
+\section{Architecture and Portability}
+\label{sec:architecture}
+
+EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic XBRL core} and a thin
+\textbf{jurisdiction layer}. The core --- the regex-based extractor that resolves contexts, units
+and facts from raw \texttt{<ix:nonFraction>} / \texttt{xbrli:context} / \texttt{xbrli:unit}, the
+\texttt{Fact}/\texttt{Selection} model, the four export layers, the DuckDB warehouse, the browser
+picker, and the linkbase \emph{parsers} --- depends on no SEC-specific assumption. It has been
+validated unchanged against a non-SEC filing: the GLEIF 2024 annual report (an ESEF/IFRS report in
+both inline \texttt{.xhtml} and classic \texttt{.xbrl} form) extracts identically from both
+serializations, using the IFRS \texttt{ifrs-full} taxonomy, a \texttt{gleif} extension namespace,
+and an LEI entity identifier --- none of which the core was written for.
+
+What is genuinely SEC-specific is small: \emph{how} a filing is discovered and fetched, \emph{where}
+its linkbases live, how its filer is \emph{identified}, the role-name \emph{vocabulary} used to
+classify statements, and the SEC-only structured-data APIs. Table~\ref{tab:portability} shows where
+the lines fall. SEC is the one jurisdiction implemented today; other jurisdictions (ESEF report
+packages, Canada's SEDAR+) would supply only their slice of the jurisdiction column. Concretely, the
+common parsing already lives in \texttt{extract\_xbrl.jl} and the SEC linkbase access in
+\texttt{extract\_xbrl\_sec.jl}.
+
+\begin{table}[h]
+\centering
+\caption{Where the common core ends and the jurisdiction layer begins.}
+\label{tab:portability}
+\small
+\begin{tabular}{@{}p{0.30\textwidth}p{0.14\textwidth}p{0.47\textwidth}@{}}
+\toprule
+\textbf{Concern} & \textbf{Common core} & \textbf{Jurisdiction-specific} \\
+\midrule
+Context/unit/fact regex parsing & Yes (all) & --- \\
+\texttt{Fact}/\texttt{Selection}/\texttt{FactRow} representation & Yes & --- \\
+Markdown / Facts JSON / DuckDB / \texttt{save\_selection} & Yes & --- \\
+Browser picker (pure DOM) & Yes & --- \\
+\texttt{standardize} mechanism & Yes & mapping \emph{data} (\texttt{us-gaap} vs \texttt{ifrs-full}) \\
+Linkbase parsers (\texttt{\_concept\_statements} / \texttt{\_labels} / \texttt{\_calculations}) & Yes & --- \\
+Discovery/fetch of a filing & --- & SEC Archives vs ESEF zip package vs SEDAR+ \\
+Linkbase location & --- & SEC sibling files vs bundled-in-zip \\
+Identity & --- & CIK vs LEI vs SEDAR id \\
+Role vocabulary (\texttt{classify\_role}) & Yes (base) & small per-jurisdiction overrides \\
+Structured-data APIs (\texttt{company\_facts}, \texttt{xbrl\_frames}, \texttt{full\_text\_search}, \texttt{cik}) & --- & SEC-only --- no cross-jurisdiction analog \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent So the per-jurisdiction surface is small: roughly fetch, locate-linkbases, identity and
+role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry happens to offer. Most
+of the package stays common --- which is what makes adding a second jurisdiction tractable rather
+than a rewrite.
+
 \section{Related Work and Comparison}
 \label{sec:related-work}
 

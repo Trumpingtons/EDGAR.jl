@@ -1610,7 +1610,8 @@ function facts(sels::AbstractVector{<:Selection})
 end
 facts(sel::Selection) = facts([sel])
 
-include("extract_xbrl.jl")   # facts(::Filing) — Julia-native bulk XBRL extraction (W2)
+include("extract_xbrl.jl")       # standard-agnostic XBRL parsing + native extraction (common)
+include("extract_xbrl_sec.jl")   # SEC-specific linkbase access: statement_map/label_map/calculations
 
 """
     to_duckdb(data, db; table="facts") -> Int
