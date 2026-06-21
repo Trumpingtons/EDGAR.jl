@@ -13,9 +13,8 @@ using Pkg
 Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl.git")
 ```
 
-This installs the package and its dependencies, including `HTTP` and `JSON3` for
-talking to the SEC endpoints, and the `Gumbo` and `Cascadia` packages for robust
-HTML parsing. EDGAR.jl requires **Julia 1.12 or later**.
+This installs the package and its dependencies, `HTTP` and `JSON3`, for talking to
+the SEC endpoints. EDGAR.jl requires **Julia 1.12 or later**.
 
 ## Set a User-Agent first
 

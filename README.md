@@ -60,14 +60,12 @@ for f in rows[1:min(5, end)]
     println(f.filed, "  ", f.form, "  ", f.accession, "  isXBRL=", f.isXBRL)
 end
 
-# 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", rows[1].accession; destdir = "filings")
+# 2. Fetch the most recent filing into memory (iXBRL/XBRL/HTML), then save it
+f = fetch_filing("0000320193", rows[1].accession)   # a Filing; no disk write
+save_filing(f; destdir = "filings")                 # persist when you want a file
 
-# 3. Read the filing's HTML (the extraction functions operate on HTML)
-html = parse_filing(path)
-
-# 4. Extract specific sections (heuristic, case-insensitive)
-sections = extract_section(html, ["Item 7", "Management's Discussion"])
+# 3. Extract specific sections from the HTML in f.content (heuristic, case-insensitive)
+sections = extract_section(f.content, ["Item 7", "Management's Discussion"])
 println(get(sections, "Item 7", "(not found)"))
 ```
 
@@ -149,7 +147,9 @@ terms that matter here:
 
 | Function | Purpose |
 |---|---|
-| `download_filing(cik, accession; destdir)` | Download a filing's documents |
+| `fetch_filing(cik, accession; kind)` | Fetch a filing's document (iXBRL/XBRL/HTML) into memory as a `Filing` |
+| `save_filing(f; destdir)` | Write a fetched `Filing` to disk |
+| `open_filing(f)` | Render a fetched `Filing` in the browser (via a temp file) |
 | `parse_filing(path)` | Convert a filing's HTML to text (Gumbo + Cascadia) |
 | `extract_section(text, names)` | Pull named sections (e.g. `"Item 7"`) from filing text |
 | `save_filing(text, metadata; outdir)` | Write extracted text + metadata to disk |
@@ -203,3 +203,11 @@ Full documentation: **https://trumpingtons.github.io/EDGAR.jl/**
 ## License
 
 [MIT](LICENSE) © Antonio Saragga Seabra
+
+## Acknowledgements
+
+The optional `:edgartools` concept-standardization mapping (`set_standardizer(:edgartools)`)
+vendors `concept_mappings.json` from [edgartools](https://github.com/dgunning/edgartools)
+(MIT License, © 2022-present Dwight Gunning). See
+[`src/data/edgartools_concept_mappings.NOTICE.md`](src/data/edgartools_concept_mappings.NOTICE.md)
+and the bundled `src/data/edgartools_LICENSE.txt`.

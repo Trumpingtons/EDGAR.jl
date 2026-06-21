@@ -17,14 +17,13 @@ for f in rows[1:min(5, end)]
 end
 profile("0000320193").entityType   # filer-level data: "operating", SIC, tickers, …
 
-# 2. Download the most recent filing's documents into a directory
-path = download_filing("0000320193", rows[1].accession; destdir = "filings")
+# 2. Fetch the most recent filing into memory (iXBRL/XBRL/HTML), then save it
+f = fetch_filing("0000320193", rows[1].accession)   # a Filing (no disk write)
+save_filing(f; destdir = "filings")                 # persist it when you want
 
-# 3. Read the filing's HTML (the extraction functions operate on HTML)
-html = parse_filing(path)
-
-# 4. Pull out specific sections (heuristic, case-insensitive)
-sections = extract_section(html, ["Item 7", "Management's Discussion"])
+# 3. The extraction functions operate on the HTML in f.content
+#    (or read a saved file with read(path, String))
+sections = extract_section(f.content, ["Item 7", "Management's Discussion"])
 println(get(sections, "Item 7", "(not found)"))
 ```
 

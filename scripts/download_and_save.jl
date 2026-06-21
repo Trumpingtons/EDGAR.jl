@@ -16,14 +16,9 @@ cik = ARGS[1]
 accession = ARGS[2]
 outdir = length(ARGS) >= 3 ? ARGS[3] : "output"
 
-println("Downloading filing $accession for CIK $cik...")
-path = EDGAR.download_filing(cik, accession; destdir="filings")
-println("Downloaded to: $path")
+println("Fetching filing $accession for CIK $cik...")
+f = EDGAR.fetch_filing(cik, accession)
+println("Fetched $(f.document) ($(f.kind), $(length(f.content)) bytes)")
 
-println("Parsing filing...")
-text = EDGAR.parse_filing(path)
-
-meta = Dict("cik" => cik, "accession" => accession, "source_path" => path)
-paths = EDGAR.save_filing(text, meta; outdir=outdir)
-println("Saved text to: $(paths[1])")
-println("Saved metadata to: $(paths[2])")
+path = EDGAR.save_filing(f; destdir=outdir)
+println("Saved filing (with its images) to: $path")

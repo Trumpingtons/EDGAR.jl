@@ -8,6 +8,9 @@
 /docs/manual/*.log
 /docs/manual/*.out
 /docs/manual/*.toc
+/docs/manual/*.fls
+/docs/manual/*.fdb_latexmk
+texput.log
 
 # Secrets — NEVER commit (SSH deploy keys, tokens). Not needed for the
 # GitHub-Actions Pages deploy; safe to delete locally.
@@ -25,3 +28,6 @@
 
 # Package Manifest — resolve fresh in CI (this is a library, not an app)
 /Manifest.toml
+
+# Output of scripts/filings_lifecycle.jl demo
+filings_demo/

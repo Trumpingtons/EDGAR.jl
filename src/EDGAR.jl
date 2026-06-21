@@ -2,9 +2,12 @@ module EDGAR
 
 using HTTP
 using JSON3
-using Gumbo
-using Cascadia
+using Base64
+using Dates
+using Sockets
 # avoid requiring extra stdlib; use built-in hash for cache key
+
+include("standardize.jl")   # standardize(concept) — cross-company concept mapping (W4)
 
 # HTTP helper (injectable for tests)
 http_get = HTTP.get
@@ -612,8 +615,8 @@ would need a submissions fetch per filer (~100 per page) — see
 ```julia
 rows = full_text_search("climate risk"; forms = "10-K", startdate = "2024-01-01")
 rows[1].entity         # the top hit's filer
-using DataFrames
-DataFrame(rows)        # the page as a DataFrame
+using PrettyTables
+pretty_table(rows)     # the page as a table
 ```
 """
 function full_text_search(query::AbstractString; exact::Bool=true, forms=nothing, startdate=nothing, enddate=nothing, from::Int=0)
@@ -784,40 +787,279 @@ function _cik_dir(cik)
 end
 
 """
-    download_filing(cik, accession; destdir=".") -> String
+    Filing
 
-Download a filing's document from the EDGAR `Archives` into `destdir`, creating
-the directory if needed, and return the local file path. The accession number may
-be given with or without dashes. Several common document/index URL patterns are
-tried in turn; the first that responds with HTTP 200 is saved. Throws if none of
-them succeed.
+A single filing document fetched into memory by [`fetch_filing`](@ref): its
+`content` (a `String`) plus `cik` (10-digit), `accession`, `document` (the
+filename), source `url`, and `kind` — `:ixbrl` (inline-XBRL HTML), `:xbrl` (a
+classic XBRL instance), or `:html` (a filing with no XBRL). Persist it with
+[`save_filing`](@ref).
 """
-function download_filing(cik::Union{Integer,AbstractString}, accession::AbstractString; destdir=".")
-    acc = replace(accession, "-"=>"")
-    cik_path = string(parse(Int, _normalize_cik(cik)))
-    url = "https://www.sec.gov/Archives/edgar/data/$(cik_path)/$(acc)/"
-    # Best-effort: try common filename patterns
-    candidates = ["/" * accession * "-index.htm", "/" * accession * ".txt", "/" * accession * ".html", "/index.htm"]
-    if !isdir(destdir)
-        mkpath(destdir)
+struct Filing
+    cik::String
+    accession::String
+    document::String
+    url::String
+    kind::Symbol
+    content::String
+end
+
+Base.show(io::IO, f::Filing) =
+    print(io, "Filing(", repr(f.kind), ", ", repr(f.document), ", ", length(f.content), " bytes)")
+
+# Internal: the base Archives URL for a filing's directory.
+_filing_dir(cik, accession) =
+    "https://www.sec.gov/Archives/edgar/data/$(parse(Int, _normalize_cik(cik)))/$(replace(accession, "-" => ""))"
+
+# Internal: locate the XBRL *instance* document in a filing's directory (via its
+# `index.json` file list), skipping the schema (`.xsd`) and the linkbases
+# (`_cal`/`_def`/`_lab`/`_pre`/`_ref`.xml). Prefers the iXBRL-extracted `_htm.xml`.
+function _xbrl_instance(base)
+    names = String[String(it.name) for it in _get_json("$base/index.json").directory.item]
+    xml = filter(n -> endswith(lowercase(n), ".xml") &&
+                      !occursin(r"_(cal|def|lab|pre|ref)\.xml$"i, n), names)
+    isempty(xml) && error("no XBRL instance (.xml) found in $base")
+    j = findfirst(n -> endswith(lowercase(n), "_htm.xml"), xml)
+    return j === nothing ? first(xml) : xml[j]
+end
+
+# Internal: locate a filing by accession across a filer's *entire* submissions
+# history and return the fields `fetch_filing` needs (`primaryDocument` and the
+# `isInlineXBRL`/`isXBRL` flags), or `nothing` if the accession is not found.
+#
+# The submissions document only inlines the most recent ~1000 filings under
+# `filings.recent`; for a prolific filer (Apple files Form 4s almost daily) older
+# filings spill into additional JSON pages listed in `filings.files`. Those pages
+# carry the same column arrays at their top level, so the same scan works on both.
+function _find_filing(cik, accession)
+    sub = _fetch_submissions(cik)
+    function scan(rec)
+        i = findfirst(a -> String(a) == accession, rec.accessionNumber)
+        i === nothing && return nothing
+        flag(arr) = (v = arr[i]; v !== nothing && v == 1)
+        return (primaryDocument = String(rec.primaryDocument[i]),
+                isInlineXBRL = flag(rec.isInlineXBRL),
+                isXBRL = flag(rec.isXBRL))
     end
-    ua = get_user_agent()   # throws a clear error if unset, before any network call
-    for cand in candidates
-        full = url * cand
-        try
-            r = HTTP.get(full, headers=["User-Agent"=>ua])
-            if r.status == 200
-                out = joinpath(destdir, basename(cand))
-                open(out, "w") do io
-                    write(io, String(r.body))
-                end
-                return out
-            end
-        catch
-            # continue
+    r = scan(sub.filings.recent)
+    r === nothing || return r
+    for f in get(sub.filings, :files, ())
+        page = _get_json("https://data.sec.gov/submissions/$(String(f.name))")
+        r = scan(page)
+        r === nothing || return r
+    end
+    return nothing
+end
+
+"""
+    fetch_filing(cik, accession; kind=:auto) -> Filing
+
+Fetch a single filing's document into memory (no disk write) as a [`Filing`](@ref).
+`cik` may be an integer or string; `accession` is the dashed accession number
+(e.g. `"0000320193-26-000011"`). The fetch goes through [`fetch_url`](@ref), so it
+is cached and uses the configured User-Agent.
+
+`kind` selects which document:
+- `:auto` (default) — the **inline-XBRL** primary document if the filing has it
+  (`isInlineXBRL`), else the classic **XBRL** instance if it has one (`isXBRL`),
+  else the plain primary HTML.
+- `:ixbrl` / `:html` — the primary document (`primaryDocument` from submissions).
+- `:xbrl` — the classic XBRL instance (`.xml`), located via the filing's `index.json`.
+
+The filing is located anywhere in the filer's submissions history: the recent
+window plus the older paginated pages, so even a long-past accession from a prolific
+filer is found. Save the result with `save_filing(f; destdir)`.
+
+```julia
+f = fetch_filing(320193, "0000320193-26-000011")   # :auto -> iXBRL for a recent 10-K/8-K
+f.kind, f.document
+save_filing(f; destdir = "filings")
+```
+"""
+function fetch_filing(cik::Union{Integer,AbstractString}, accession::AbstractString; kind::Symbol=:auto)
+    cik10 = _normalize_cik(cik)
+    base = _filing_dir(cik, accession)
+    info = _find_filing(cik, accession)
+    info === nothing && error("filing $(accession) was not found in $(cik10)'s submissions history")
+    want = kind === :auto ? (info.isInlineXBRL ? :ixbrl :
+                             info.isXBRL ? :xbrl : :html) : kind
+    doc = if want === :ixbrl || want === :html
+        info.primaryDocument
+    elseif want === :xbrl
+        _xbrl_instance(base)
+    else
+        throw(ArgumentError("`kind` must be :auto, :ixbrl, :xbrl or :html, got $(repr(kind))"))
+    end
+    url = "$base/$doc"
+    body = fetch_url(url)
+    body === nothing && error("could not fetch $url")
+    return Filing(cik10, accession, doc, url, want, String(body))
+end
+
+# Internal: the directory URL a filing was fetched from — everything up to and
+# including the final slash of `f.url` — against which the relative asset
+# references (images, stylesheets) inside the filing HTML are resolved.
+_filing_base_url(f::Filing) = f.url[1:something(findlast('/', f.url), 0)]
+
+# Internal: file extensions of the relative assets worth downloading to make a
+# saved filing self-contained — chiefly the embedded images, plus any external
+# CSS/JS. Extensions outside this list (e.g. `.htm` links to sibling filings, or
+# document anchors) are deliberately skipped.
+const _ASSET_EXT = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".bmp", ".ico", ".css", ".js")
+
+"""
+    download_assets(f::Filing; destdir=".") -> Vector{String}
+
+Download the relative assets — chiefly the embedded images — that a fetched
+[`Filing`](@ref)'s HTML references, writing each next to the document under
+`destdir` so the saved filing renders self-contained (a filing's images live
+beside it in the EDGAR Archives directory, and [`fetch_filing`](@ref) downloads
+only the primary document). The `src`/`href` attributes are scanned; only relative
+URLs with a known asset extension ([`_ASSET_EXT`]) are taken, so links to sibling
+filings and in-page anchors are skipped. Each asset is fetched through the cached
+[`fetch_url`](@ref) and written preserving any sub-path. The download is
+best-effort: a reference that cannot be fetched is skipped. Returns the filenames
+written. Called automatically by [`open_filing`](@ref) and [`save_filing`](@ref).
+"""
+function download_assets(f::Filing; destdir=".")
+    base = _filing_base_url(f)
+    isempty(base) && return String[]
+    seen = Set{String}()
+    written = String[]
+    for m in eachmatch(r"(?:src|href)\s*=\s*[\"']([^\"'#?]+)"i, f.content)
+        rel = strip(m.captures[1])
+        (isempty(rel) || rel in seen) && continue
+        (startswith(rel, "http://") || startswith(rel, "https://") || startswith(rel, "//") ||
+         startswith(rel, "data:") || startswith(rel, "mailto:")) && continue
+        any(e -> endswith(lowercase(rel), e), _ASSET_EXT) || continue
+        push!(seen, rel)
+        cleaned = startswith(rel, "./") ? rel[3:end] : rel
+        body = fetch_url(base * cleaned)
+        body === nothing && continue
+        dest = joinpath(destdir, cleaned)
+        mkpath(dirname(dest))
+        write(dest, body)
+        push!(written, cleaned)
+    end
+    return written
+end
+
+"""
+    open_filing(f::Filing; assets=true) -> String
+
+View a fetched [`Filing`](@ref) in your default browser. A browser can only open a
+file or URL, not an in-memory string, so this writes `f` to a fresh **temporary**
+directory (under the filename `f.document`, so the extension/title are right) and
+opens it, returning that path. This is a throwaway view — use [`save_filing`](@ref)
+to keep a copy.
+
+With `assets=true` (the default) the filing's relative assets — chiefly its
+embedded images — are downloaded beside the document via [`download_assets`](@ref)
+so they render; pass `assets=false` to open just the HTML (faster, no extra
+requests, but images referenced relatively appear blank).
+"""
+# Internal: hand a local file path (or URL) to the OS to open in its default
+# application — the browser, for HTML. The single place the platform dispatch lives.
+function _open_in_default_app(target::AbstractString)
+    cmd = Sys.isapple()   ? `open $target` :
+          Sys.iswindows() ? `cmd /c start "" $target` : `xdg-open $target`
+    run(cmd)
+    return target
+end
+
+function open_filing(f::Filing; assets::Bool=true)
+    # cleanup=true (the default, made explicit) registers an atexit hook that
+    # removes this directory — the document and its downloaded images together —
+    # when the Julia process exits, so nothing lingers in the temp dir. Deletion
+    # waits until exit (not right after `run`) since the browser opens the file
+    # asynchronously and must still be able to read it.
+    dir = mktempdir(; prefix="EDGAR_filing_", cleanup=true)
+    path = joinpath(dir, f.document)
+    write(path, f.content)
+    assets && download_assets(f; destdir=dir)
+    return _open_in_default_app(path)
+end
+
+"""
+    open_filing(path::AbstractString) -> String
+
+Open a filing **already saved on disk** in your default browser, returning `path` —
+the on-disk counterpart to [`open_filing(f::Filing)`](@ref). Use it to view a filing
+written with [`save_filing`](@ref), or any HTML page you saved yourself (an extracted
+section such as a balance sheet, say — still part of the filing). The path must exist
+(an `ArgumentError` is thrown otherwise); an `http(s)://` URL is passed through as-is.
+
+```julia
+path = save_filing(f; destdir = "filings")
+open_filing(path)                            # reload from disk and view
+```
+"""
+function open_filing(path::AbstractString)
+    is_url = startswith(path, "http://") || startswith(path, "https://")
+    is_url || isfile(path) || throw(ArgumentError("no such file to open: $(repr(path))"))
+    return _open_in_default_app(path)
+end
+
+"""
+    open_filing(cik, accession; kind=:auto, assets=true) -> String
+
+Fetch a filing and view it in your default browser in one step — the convenience
+combination of [`fetch_filing`](@ref) and [`open_filing`](@ref). `cik`, `accession`
+and `kind` are exactly as in [`fetch_filing`](@ref); `assets` is as in
+[`open_filing`](@ref). Returns the temporary file path that was opened.
+
+```julia
+open_filing(320193, "0000320193-25-000079")   # fetch the 10-K and open it
+```
+"""
+open_filing(cik::Union{Integer,AbstractString}, accession::AbstractString; kind::Symbol=:auto, assets::Bool=true) =
+    open_filing(fetch_filing(cik, accession; kind); assets)
+
+# Internal: image extensions → MIME type, for the `data:` URIs used to inline a
+# filing's images when rendering it self-contained in a notebook.
+const _IMAGE_MIME = Dict(".jpg"=>"image/jpeg", ".jpeg"=>"image/jpeg", ".png"=>"image/png",
+                         ".gif"=>"image/gif", ".svg"=>"image/svg+xml", ".webp"=>"image/webp",
+                         ".bmp"=>"image/bmp", ".ico"=>"image/x-icon")
+
+# Internal: return `f.content` with every relative image reference rewritten to a
+# self-contained base64 `data:` URI, so the HTML renders with its images and no
+# external files — the in-memory equivalent of `download_assets`, used by the
+# notebook `show` method (which renders an HTML string in-page, where relative
+# `src` paths cannot resolve). Each image is fetched once through the cached
+# `fetch_url`; a reference that fails to download is left untouched.
+function _inline_images(f::Filing)
+    base = _filing_base_url(f)
+    isempty(base) && return f.content
+    html = f.content
+    uris = Dict{String,String}()
+    for m in eachmatch(r"(src|href)\s*=\s*([\"'])([^\"'#?]+)\2"i, f.content)
+        rel = strip(m.captures[3])
+        (startswith(rel, "http://") || startswith(rel, "https://") || startswith(rel, "//") ||
+         startswith(rel, "data:") || startswith(rel, "mailto:")) && continue
+        mime = get(_IMAGE_MIME, lowercase(splitext(rel)[2]), nothing)
+        mime === nothing && continue
+        if !haskey(uris, rel)
+            body = fetch_url(base * (startswith(rel, "./") ? rel[3:end] : rel))
+            uris[rel] = body === nothing ? "" : "data:$mime;base64,$(base64encode(body))"
         end
+        isempty(uris[rel]) && continue
+        html = replace(html, m.match => "$(m.captures[1])=$(m.captures[2])$(uris[rel])$(m.captures[2])")
     end
-    error("Could not download filing for $(cik) $(accession)")
+    return html
+end
+
+# Render a Filing inline in notebook front-ends (Jupyter/IJulia, Pluto, …) that
+# request `text/html`. iXBRL/HTML filings are emitted with their images inlined as
+# `data:` URIs (via `_inline_images`) so the document renders self-contained; a
+# classic XBRL instance is XML, not HTML, so its source is shown escaped inside a
+# <pre> instead of being interpreted as markup.
+function Base.show(io::IO, ::MIME"text/html", f::Filing)
+    if f.kind === :xbrl
+        esc = replace(f.content, "&" => "&amp;", "<" => "&lt;", ">" => "&gt;")
+        print(io, "<pre>", esc, "</pre>")
+    else
+        print(io, _inline_images(f))
+    end
 end
 
 function html_to_text(html::AbstractString)
@@ -831,209 +1073,693 @@ function html_to_text(html::AbstractString)
 end
 
 """
-    parse_filing(path) -> String
+    save_filing(f::Filing; destdir=".", assets=true) -> String
 
-Read a downloaded filing from `path` and return its raw HTML. The extraction
-functions (such as [`extract_section`](@ref)) operate directly on this HTML.
+Persist a fetched [`Filing`](@ref) (iXBRL/XBRL/HTML) verbatim to
+`<destdir>/<f.document>`, creating `destdir` if needed, and return the path written
+— the save half of what the old `download_filing` did, now separate from
+[`fetch_filing`](@ref). With `assets=true` (the default) the filing's relative
+assets — chiefly its embedded images — are also downloaded into `destdir` via
+[`download_assets`](@ref) so the saved copy renders self-contained; pass
+`assets=false` to write only the document.
 """
-function parse_filing(path::AbstractString)
-    # Return raw HTML string; extraction functions operate on HTML
-    return read(path, String)
+function save_filing(f::Filing; destdir=".", assets::Bool=true)
+    isdir(destdir) || mkpath(destdir)
+    path = joinpath(destdir, f.document)
+    write(path, f.content)
+    assets && download_assets(f; destdir)
+    return path
+end
+
+# Internal: the handful of named HTML entities common in filings, plus the ones
+# that must be decoded last (so a literal "&amp;lt;" survives as "&lt;").
+const _ENTITIES = ["&nbsp;" => " ", "&#160;" => " ", "&lt;" => "<", "&gt;" => ">",
+                   "&quot;" => "\"", "&#39;" => "'", "&apos;" => "'", "&mdash;" => "—",
+                   "&ndash;" => "–", "&rsquo;" => "’", "&lsquo;" => "‘",
+                   "&amp;" => "&"]
+
+# Internal: turn a fragment of filing HTML into plain text — drop <script>/<style>
+# blocks, strip the remaining tags, decode the common HTML entities, and collapse
+# runs of whitespace. Shared by every extraction path so output is uniform.
+function clean_text(fragment::AbstractString)
+    txt = replace(fragment, r"(?is)<script.*?</script>" => " ")
+    txt = replace(txt, r"(?is)<style.*?</style>" => " ")
+    txt = replace(txt, r"(?is)<[^>]+>" => " ")
+    txt = replace(txt, r"&#(\d+);" => m -> string(Char(parse(Int, m[3:end-1]))))   # numeric entities
+    txt = replace(txt, _ENTITIES...)                                               # &amp; decoded last
+    txt = replace(txt, ' ' => ' ')                                            # NBSP -> space
+    txt = replace(txt, r"\s+" => " ")
+    return strip(txt)
 end
 
 """
-    save_filing(text, metadata; outdir="out") -> String
-
-Write `text` to `<outdir>/<accession>.txt`, taking the accession number from
-`metadata[:accession]` and creating `outdir` if needed. Returns the path written.
-"""
-function save_filing(text::AbstractString, metadata::Dict; outdir="out")
-    if !isdir(outdir)
-        mkpath(outdir)
-    end
-    fn = joinpath(outdir, metadata[:accession] * ".txt")
-    open(fn, "w") do io
-        write(io, text)
-    end
-    return fn
-end
-
-"""
-    extract_section(html, names; max_chars=200_000, base_path=nothing) -> Dict{String,String}
+    extract_section(html, names; base_path=nothing) -> Dict{String,String}
 
 Pull one or more named sections out of a filing's `html`, returning a dictionary
 that maps each requested name to the matched text. Names that cannot be located
 are simply absent from the result, so look them up with `get`.
 
 Matching is heuristic and tried in order: the document's table of contents
-(following anchor links), then DOM headings (`h1`–`h6`, via Gumbo + Cascadia),
-then a plain-text search as a last resort. `base_path` lets table-of-contents
-links that point to sibling files be resolved relative to it; `max_chars` bounds
-the size of the plain-text fallback window.
+(following anchor links), then the document's own headings (`h1`–`h6`), then a
+plain-text search as a last resort. `base_path` lets table-of-contents links that
+point to sibling files be resolved relative to it. Each section's full text is
+returned (bounded only by where the next section starts).
 
 ```julia
 sections = extract_section(html, ["Item 7", "Management's Discussion"])
 println(get(sections, "Item 7", "(not found)"))
 ```
 """
-function extract_section(html::AbstractString, names::Vector{String}; max_chars::Int=200_000, base_path::Union{Nothing,String}=nothing)
+function extract_section(html::AbstractString, names::Vector{String}; base_path::Union{Nothing,String}=nothing)
     results = Dict{String,String}()
-    body_html = match(r"(?is)<body.*?</body>", html)
-    body_html = body_html === nothing ? html : body_html.match
 
-    # Try TOC-based extraction heuristics
-    toc_present = occursin(r"(?i)id=[\"']?toc[\"']?", body_html) || occursin("table of contents", lowercase(body_html))
-    toc_items = String[]
-    toc_hrefs = String[]
-    if toc_present
-        # try to extract a TOC block if present
-        mblock = match(r"(?is)<div[^>]*id=[\"']?toc[\"']?[^>]*>.*?</div>", body_html)
-        toc_html = mblock === nothing ? body_html : mblock.match
-        # Look for anchors in the TOC region: <a href="#...">Label</a>
-        for m in eachmatch(r"<a[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", toc_html)
-            push!(toc_hrefs, m.captures[1])
-            push!(toc_items, replace(strip(m.captures[2]), r"<[^>]+>" => " "))
-        end
-        # fallback: list items lines
-        if isempty(toc_items)
-            for m in eachmatch(r"(?m)^\s*\d+\.\s*(.+)$", toc_html)
-                push!(toc_items, strip(m.captures[1])); push!(toc_hrefs, "")
-            end
+    # Step 1 — reduce to the <body>. All later offsets are within `body`. Locate the
+    # open/close tags with bounded searches rather than a `.*?` span — a 10-K can be
+    # >10 MB, which overruns PCRE's backtracking limit on a lazy match.
+    bopen = match(r"(?is)<body\b[^>]*>", html)
+    if bopen === nothing
+        body = String(html)
+    else
+        bclose = findlast("</body>", html)
+        stop = bclose === nothing ? lastindex(html) : last(bclose)
+        body = String(html[bopen.offset:stop])
+    end
+
+    # Label normaliser: drop tags, decode numeric entities and NBSP, collapse
+    # whitespace. Filings write item numbers as "Item&#160;1A.", so decoding the
+    # entity is what lets a query like "Item 1A" match the label.
+    function norm(s)
+        t = replace(s, r"<[^>]+>" => " ")
+        t = replace(t, r"&#(\d+);" => m -> string(Char(parse(Int, m[3:end-1]))))
+        t = replace(t, "&nbsp;" => " ", '\u00a0' => ' ')
+        return strip(replace(t, r"\s+" => " "))
+    end
+
+    # Step 2 — collect heading markers: each <h1>-<h6> becomes a section start at
+    # its offset, labelled by its (tag-stripped) inner text. (`\1` ties the close
+    # tag to the same level as the open tag.)
+    markers = Tuple{Int,String}[]
+    for h in eachmatch(r"(?is)<(h[1-6])\b[^>]*>(.*?)</\1>", body)
+        push!(markers, (h.offset, norm(h.captures[2])))
+    end
+
+    # Step 3 — parse the table of contents into an id -> label map, and add a
+    # marker for each element the TOC targets. The TOC gives section anchors a
+    # human label (and `toc_links` carries cross-file hrefs for Step 8).
+    toc_links = Tuple{String,String}[]                      # (href, label)
+    for a in eachmatch(r"(?is)<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", body)
+        label = norm(a.captures[2])
+        isempty(label) || push!(toc_links, (String(a.captures[1]), label))
+    end
+    # id -> label, for same-document (#id) targets. A TOC row is often several
+    # links to the same target ("Item 1A." / "Risk Factors" / "5"); join them so
+    # the section name is preserved rather than overwritten by the page number.
+    id_label = Dict{String,String}()
+    for (href, label) in toc_links
+        startswith(href, "#") || continue
+        id = href[2:end]
+        id_label[id] = haskey(id_label, id) ? id_label[id] * " " * label : label
+    end
+    # Add a marker only for elements the TOC actually targets. Filings tag nearly
+    # every inline value with an id (XBRL facts etc.); treating all of them as
+    # section starts would chop a section at its first inline anchor, so we keep
+    # only the TOC-target ids (real section starts) plus the headings from Step 2.
+    for e in eachmatch(r"(?is)<[a-z][a-z0-9]*\b[^>]*\b(?:id|name)=[\"']([^\"']+)[\"'][^>]*>", body)
+        id = String(e.captures[1])
+        haskey(id_label, id) || continue
+        # Fold the de-slugified id into the label as well. Some filers (e.g.
+        # Microsoft) link only the section *title* in the TOC and put the item
+        # number in the id ("item_1a_risk_factors"), so this lets a query like
+        # "Item 1A" match too; an opaque id (Apple's "i7193…_94") is harmless noise.
+        push!(markers, (e.offset, id_label[id] * " " * replace(id, r"[_\-]+" => " ")))
+    end
+
+    # Step 4 — merge into one document-order boundary list. Headings and anchors
+    # often coincide (a heading just inside its anchored <div>); collapse the two
+    # only when nothing but tags/whitespace separates them — never two markers with
+    # real text between them — keeping the labelled one.
+    sort!(markers, by = first)
+    boundaries = Tuple{Int,String}[]
+    for (off, label) in markers
+        if !isempty(boundaries) &&
+           isempty(strip(replace(body[first(boundaries[end]):prevind(body, off)], r"(?is)<[^>]*>" => "")))
+            # same boundary as the previous marker: fill in a label if we lacked one
+            isempty(last(boundaries[end])) && !isempty(label) && (boundaries[end] = (first(boundaries[end]), label))
+        else
+            push!(boundaries, (off, label))
         end
     end
 
-    # Helper to extract fragment by id/name from html string
-    extract_fragment = function(h::AbstractString, anchor::AbstractString)
-        # id or name match
-        # escape anchor to avoid regex injection
-        esc = replace(anchor, r"([\\\^\$\.\|\?\*\+\(\)\[\{])" => s"\\\\\1")
-        pat = Regex("(?is)<(h\\d|div|p|section)[^>]*(?:id|name)=[\"']?" * esc * "[\"']?[^>]*>")
-        m = match(pat, h)
-        if m !== nothing
-            spos = m.offset
-            tag = lowercase(String(m.captures[1]))
-            # try to capture the full element contents (non-greedy)
-            s2 = h[spos:end]
-            elem_pat = Regex("(?is)^<" * tag * "[^>]*>.*?</" * tag * ">")
-            m2 = match(elem_pat, s2)
-            if m2 !== nothing
-                sec_html = m2.match
-            else
-                # fallback: find next heading or end
-                nr = findnext(r"(?is)<h[1-6][^>]*>", h, spos+1)
-                next_pos = nr === nothing ? lastindex(h) + 1 : first(nr)
-                sec_html = h[spos:min(next_pos-1, lastindex(h))]
-            end
-            txt = replace(sec_html, r"(?is)<script.*?</script>" => "")
-            txt = replace(txt, r"(?is)<style.*?</style>" => "")
-            txt = replace(txt, r"<[^>]+>" => " ")
-            txt = replace(txt, r"\s+" => " ")
-            return strip(txt)
-        end
-        return nothing
-    end
-
-    # Try TOC items matching requested names
+    # Step 5 — match each requested name to its best boundary. An exact
+    # case-insensitive substring (e.g. "Item 7" inside "Item 7. Management's…")
+    # wins outright; otherwise fall back to fuzzy similarity. Records the index
+    # into `boundaries` so Step 6 can slice to the next one.
+    best_boundary = Dict{String,Int}()
     for name in names
-        found = false
-        best_idx = 0; best_score = 0.0
-        for (i, label) in enumerate(toc_items)
-            # prefer substring matches (e.g., "Item 7" in "Item 7. Management's Discussion")
-            if occursin(lowercase(strip(name)), lowercase(strip(label)))
-                s = 1.0
-            else
-                s = similarity_ratio(name, label)
-            end
-            if s > best_score
-                best_score = s; best_idx = i
+        needle = lowercase(strip(name))
+        best_i = 0; best_score = 0.0
+        for (i, (_, label)) in enumerate(boundaries)
+            isempty(label) && continue
+            score = occursin(needle, lowercase(label)) ? 1.0 : similarity_ratio(name, label)
+            if score > best_score
+                best_score = score; best_i = i
             end
         end
-        if best_score > 0.6 && best_idx > 0
-            href = toc_hrefs[best_idx]
-                if startswith(href, "#") || href == ""
-                anchor = replace(href, "#"=>"")
-                frag = extract_fragment(body_html, anchor)
-                if frag !== nothing
-                    results[name] = frag; continue
-                end
-            else
-                # may point to other file or fragment
-                parts = split(href, '#')
-                href_file = parts[1]; anchor = length(parts) > 1 ? parts[2] : ""
-                if base_path !== nothing && href_file != ""
-                    # If href_file is an absolute URL, fetch it remotely
-                    if occursin("://", href_file) || startswith(href_file, "//")
-                        raw = fetch_url(href_file)
-                        if raw !== nothing
-                            other_html = String(raw)
-                            frag = anchor == "" ? html_to_text(other_html) : extract_fragment(other_html, anchor)
-                            if frag !== nothing
-                                results[name] = frag; continue
-                            end
-                        end
-                    else
-                        other_path = joinpath(dirname(base_path), href_file)
-                        if isfile(other_path)
-                            other_html = read(other_path, String)
-                            frag = anchor == "" ? html_to_text(other_html) : extract_fragment(other_html, anchor)
-                            if frag !== nothing
-                                results[name] = frag; continue
-                            end
-                        end
-                    end
-                end
-            end
-        end
+        best_score > 0.6 && (best_boundary[name] = best_i)
     end
 
-    # If not found via TOC, try DOM headings
-    try
-        doc = Gumbo.parsehtml(body_html)
-        for name in names
-            nodes = Cascadia.eachmatch(Selector("h1,h2,h3,h4,h5,h6"), doc.root)
-            best_node = nothing; best_score = 0.0
-            for n in nodes
-                lab = strip(Gumbo.innerText(n))
-                s = similarity_ratio(name, lab)
-                if s > best_score
-                    best_score = s; best_node = n
-                end
-            end
-            if best_node !== nothing && best_score > 0.5
-                # extract until next heading
-                # get outerHTML from best_node and siblings
-                outer = Gumbo.innerHTML(best_node)
-                # fallback: use text from node
-                txt = strip(replace(outer, r"<[^>]+>" => " "))
-                results[name] = txt
+    # Step 6 — slice each matched section: from its boundary offset up to the start
+    # of the *next* boundary (or end of body), then strip to plain text. Slicing to a
+    # boundary is what makes nesting irrelevant.
+    #
+    # One refinement: a top-level "Item N" often contains its own sub-sections that
+    # are themselves TOC targets (Item 8's Balance Sheets, Income Statements, Notes,
+    # …). Stopping at the first of those would truncate the item to its heading, so
+    # when the matched boundary names an item, the section runs to the next boundary
+    # that names a *different* item — skipping the sub-sections in between.
+    item_no(label) = (m = match(r"(?i)\bitem\s+(\d+[a-z]?)\b", label); m === nothing ? nothing : lowercase(m.captures[1]))
+    for (name, i) in best_boundary
+        start = first(boundaries[i])
+        cur = item_no(boundaries[i][2])
+        j = i + 1
+        if cur !== nothing
+            # advance past sub-sections (no item, or the same item) to the next
+            # boundary that names a different item
+            while j <= length(boundaries)
+                nj = item_no(boundaries[j][2])
+                (nj !== nothing && nj != cur) && break
+                j += 1
             end
         end
-    catch
-        # ignore
+        stop = j <= length(boundaries) ? prevind(body, first(boundaries[j])) : lastindex(body)
+        results[name] = clean_text(body[start:stop])
     end
 
-    # Final fallback: simple text search for the heading labels
-    plain = html_to_text(body_html)
-    plain_norm = replace(lowercase(replace(plain, r"\s+" => " ")), r"[\W_]" => "")
+    # Step 8 — cross-file links. A TOC entry may point into another document
+    # ("other_page.html#item7"). For any name not found in this body, match it
+    # against the TOC link labels; if the best link carries a file part, load that
+    # file (locally via `base_path`, or remotely) and extract the section from it.
     for name in names
-        if haskey(results, name) continue end
-        target = replace(lowercase(name), r"[\W_]" => "")
-        r = findfirst(target, plain_norm)
-        if r !== nothing
-            # map normalized index back to original plain by searching the substring
-            # take a window around the match in the original plain text
-            idx = r.start
-            start = max(idx - 200, 1)
-            stop = min(idx + max_chars, lastindex(plain_norm))
-            # extract corresponding region from original plain (approximate)
-            results[name] = strip(plain[start: min(stop, lastindex(plain))])
+        haskey(results, name) && continue
+        needle = lowercase(strip(name))
+        best_href = ""; best_score = 0.0
+        for (href, label) in toc_links
+            score = occursin(needle, lowercase(label)) ? 1.0 : similarity_ratio(name, label)
+            if score > best_score
+                best_score = score; best_href = href
+            end
         end
+        best_score > 0.6 || continue
+        file = first(split(best_href, '#'))
+        isempty(file) && continue                       # same-document, already handled
+        other_html = if occursin("://", file) || startswith(file, "//")
+            raw = fetch_url(file); raw === nothing ? nothing : String(raw)
+        elseif base_path !== nothing
+            p = joinpath(dirname(base_path), file); isfile(p) ? read(p, String) : nothing
+        else
+            nothing
+        end
+        other_html === nothing && continue
+        sub = extract_section(other_html, [name])
+        haskey(sub, name) && (results[name] = sub[name])
+    end
+
+    # Step 9 — last-resort plain-text fallback for a body with no usable TOC or
+    # headings. Search the cleaned text for the name with flexible whitespace and
+    # return from the match to the end of the text. The index comes from the *same*
+    # string we searched, so it stays aligned (the previous implementation searched a
+    # stripped copy but sliced the original, misaligning the result).
+    local plain
+    for name in names
+        haskey(results, name) && continue
+        @isdefined(plain) || (plain = clean_text(body))
+        pat = Regex(join((replace(w, r"([\\^\$.|?*+()\[\]{}])" => s"\\\1") for w in split(strip(name))), "\\s+"), "i")
+        r = findfirst(pat, plain)
+        r === nothing && continue
+        results[name] = strip(plain[first(r):end])
     end
 
     return results
 end
 
-export download_filing, parse_filing, extract_section, save_filing,
+# ── Interactive selection ──────────────────────────────────────────────────
+#
+# The picker (see `select_section`) lets a user click a region in a rendered
+# filing; that region comes back as a `Selection`, the unit every export layer
+# (Markdown, facts, …) operates on. The type is defined here as a stable contract
+# ahead of the machinery that produces it.
+
+include("picker.jl")   # PICKER_JS — the browser-side overlay (Step 1.1)
+
+"""
+    Fact
+
+One numeric XBRL fact extracted from a tagged region of a filing — the atom of the
+analytical (Layer 2/3) output. Values are stored **normalised** (the displayed
+number with `scale` and `sign` already applied), and the context/unit references are
+**resolved** so a row is self-describing, while the raw refs are kept for provenance.
+
+Fields:
+
+- `cik`, `accession` — the filer and filing (provenance/identity).
+- `statement` — which statement/section the fact sits in (e.g. `"BalanceSheet"`), or
+  `""` if not classified.
+- `concept` — the XBRL concept, namespaced (`"us-gaap:Assets"`, or an issuer extension).
+- `label` — the human-readable label as presented.
+- `value` — the **normalised** numeric value (`displayed × 10^scale × sign`).
+- `unit` — the resolved unit (`"USD"`, `"shares"`, `"USD/shares"`, `"pure"`).
+- `period_start` — the start of a duration; `nothing` for an instant.
+- `period_end` — the period end (instants) or duration end.
+- `is_instant` — `true` for a point-in-time fact (balance-sheet items), `false` for a
+  flow (income-statement / cash-flow items).
+- `dimensions` — axis ⇒ member qualifiers (segment, geography, …); empty when none.
+- `decimals` — reported precision; `nothing` for `INF` / unspecified.
+- `context_ref`, `unit_ref` — the raw iXBRL references (provenance/debug).
+- `source_selector` — the DOM region ([`Selection`](@ref)) the fact came from.
+
+Only **numeric** facts are represented here; non-numeric tags (text/date) belong to
+the presentation/text layer. `Fact`s flow to disk as a Tables.jl row table (see the
+internal `fact_row` for the exact column schema and the dedup key). Build one with the
+keyword constructor.
+"""
+struct Fact
+    cik::String
+    accession::String
+    statement::String
+    concept::String
+    label::String
+    value::Float64
+    unit::String
+    period_start::Union{Date,Nothing}
+    period_end::Date
+    is_instant::Bool
+    dimensions::Dict{String,String}
+    decimals::Union{Int,Nothing}
+    context_ref::String
+    unit_ref::String
+    source_selector::String
+end
+
+# Keyword constructor — the positional form has 15 fields; this keeps construction
+# (in Phase 3 and in tests) readable, with sensible defaults for the optional ones.
+function Fact(; concept, value, period_end, is_instant, unit="",
+              cik="", accession="", statement="", label="",
+              period_start=nothing, dimensions=Dict{String,String}(), decimals=nothing,
+              context_ref="", unit_ref="", source_selector="")
+    return Fact(cik, accession, statement, concept, label, Float64(value), unit,
+                period_start, period_end, is_instant, dimensions, decimals,
+                context_ref, unit_ref, source_selector)
+end
+
+Base.show(io::IO, f::Fact) =
+    print(io, "Fact(", f.concept, " = ", f.value, " ", f.unit,
+          " @ ", f.is_instant ? f.period_end : "$(f.period_start)..$(f.period_end)", ")")
+
+# Internal: one fact as a Tables.jl row (a NamedTuple) — the exact column schema and
+# order written to disk. `dimensions` is serialised to a JSON string for storage. The
+# warehouse dedup key is (accession, concept, context_ref, unit_ref) — i.e. one fact
+# per concept × context × unit within a filing — so re-importing a filing is a no-op.
+fact_row(f::Fact) =
+    (cik = f.cik, accession = f.accession, statement = f.statement, concept = f.concept,
+     standard_concept = standardize(f.concept), label = f.label, value = f.value, unit = f.unit,
+     period_start = f.period_start, period_end = f.period_end, is_instant = f.is_instant,
+     dimensions = JSON3.write(f.dimensions), decimals = f.decimals,
+     context_ref = f.context_ref, unit_ref = f.unit_ref, source_selector = f.source_selector)
+
+# The fact row-table schema: the element type of the Tables.jl row table that `facts`
+# returns. It mirrors `fact_row` exactly, so an empty table (from a prose-only
+# selection) is still concretely typed rather than a `Vector{Any}`. `standard_concept`
+# is the cross-company mapping (W4), `nothing` when the concept is unmapped.
+const FactRow = @NamedTuple{cik::String, accession::String, statement::String,
+    concept::String, standard_concept::Union{Nothing,String}, label::String, value::Float64,
+    unit::String, period_start::Union{Nothing,Date}, period_end::Date, is_instant::Bool,
+    dimensions::String, decimals::Union{Nothing,Int}, context_ref::String,
+    unit_ref::String, source_selector::String}
+
+# A structured table captured from a selection: a header row and the body rows, each a
+# vector of cell strings (the browser resolves colspan/rowspan before sending).
+const SelectionTable = @NamedTuple{header::Vector{String}, rows::Vector{Vector{String}}}
+
+"""
+    Selection
+
+A region a user picked from a rendered filing via [`select_section`](@ref) — the
+unit the export layers operate on. It carries enough provenance to trace any
+downstream artifact (a Markdown chunk, a fact row) back to the exact filing and DOM
+region it came from:
+
+- `cik` — the filer's 10-digit, zero-padded Central Index Key.
+- `accession` — the filing's dashed accession number.
+- `url` — the source document URL the region was picked from.
+- `selector` — a CSS selector locating the region within the document, so the same
+  pick can be re-applied to a later filing of the same form.
+- `kind` — `:table`, `:prose`, or `:mixed`: what the region holds, which decides the
+  export layers that apply (a table yields facts/rows; prose yields text only).
+- `text` — the region's plain text (its `innerText`).
+- `html` — the region's raw `outerHTML` (the lossless fragment).
+- `table` — the structured table (`header` + `rows`) when the region is/contains one,
+  else `nothing` (drives the Markdown table export).
+- `facts` — the resolved numeric [`Fact`](@ref)s in the region (empty for prose).
+
+`Selection`s are produced by [`select_section`](@ref); you rarely build one by hand
+outside of tests (use the keyword constructor there).
+"""
+struct Selection
+    cik::String
+    accession::String
+    url::String
+    selector::String
+    kind::Symbol
+    text::String
+    html::String
+    table::Union{Nothing,SelectionTable}
+    facts::Vector{Fact}
+end
+
+Selection(; cik="", accession="", url="", selector="", kind::Symbol=:prose, text="",
+          html="", table=nothing, facts=Fact[]) =
+    Selection(cik, accession, url, selector, kind, text, html, table, facts)
+
+Base.show(io::IO, s::Selection) =
+    print(io, "Selection(", repr(s.kind), ", ", repr(s.selector), ", ",
+          length(s.text), " chars, ", length(s.facts), " facts)")
+
+# ── Transport contract (browser → Julia) ───────────────────────────────────
+#
+# The picker's JS POSTs a JSON payload describing the selected region. Because the
+# browser has the whole document DOM (and its <ix:header>), it resolves contexts,
+# units and dimensions before sending; Julia only normalises the numeric value
+# (value × 10^scale × sign) and shapes the types. Payload (version 1):
+#
+#   { "version": 1,
+#     "provenance": { "cik": "...", "accession": "...", "url": "..." },
+#     "selector": "#item8 table", "kind": "table",
+#     "text": "ASSETS …", "html": "<table>…</table>",
+#     "table": { "header": ["", "2025", "2024"],
+#                "rows":   [["Cash","10729","10727"], …] },          // or null
+#     "facts": [ { "concept": "us-gaap:CashAndCashEquivalents...",
+#                  "label": "Cash and cash equivalents",
+#                  "value": 10729, "scale": 6, "sign": "", "decimals": -6,
+#                  "unit": "USD", "unitRef": "usd", "contextRef": "c-3",
+#                  "periodStart": null, "periodEnd": "2025-04-30",
+#                  "isInstant": true, "dimensions": {} }, … ]        // or []
+#   }
+const SELECTION_SCHEMA_VERSION = 1
+
+# Internal: JSON value (number or comma-formatted string) → Float64.
+_tonum(x) = x isa Number ? Float64(x) : parse(Float64, replace(strip(String(x)), "," => ""))
+
+# Internal: build one Fact from a payload fact object, applying scale/sign and
+# resolving the (already JS-resolved) period/unit/dimensions into Julia types.
+function _parse_fact(fj, cik, accession, source_selector)
+    scale = Int(get(fj, :scale, 0))
+    sign  = String(get(fj, :sign, ""))
+    value = _tonum(fj.value) * 10.0^scale * (sign == "-" ? -1.0 : 1.0)
+    ps = get(fj, :periodStart, nothing)
+    period_start = (ps === nothing || ps == "") ? nothing : Date(String(ps))
+    dec = get(fj, :decimals, nothing)
+    decimals = (dec === nothing || dec == "INF") ? nothing : Int(dec)
+    dims = Dict{String,String}()
+    dj = get(fj, :dimensions, nothing)
+    dj === nothing || for (k, v) in pairs(dj); dims[String(k)] = String(v); end
+    return Fact(; cik, accession, statement = String(get(fj, :statement, "")),
+                concept = String(fj.concept), label = String(get(fj, :label, "")),
+                value, unit = String(get(fj, :unit, "")),
+                period_start, period_end = Date(String(fj.periodEnd)),
+                is_instant = Bool(get(fj, :isInstant, false)), dimensions = dims, decimals,
+                context_ref = String(get(fj, :contextRef, "")),
+                unit_ref = String(get(fj, :unitRef, "")), source_selector)
+end
+
+# Internal: a copy of a Fact with its `statement` replaced (Fact is immutable). Used to apply
+# statement classification to picked facts after the fact, mirroring `facts(::Filing; classify)`.
+_with_statement(f::Fact, statement::AbstractString) =
+    Fact(f.cik, f.accession, String(statement), f.concept, f.label, f.value, f.unit,
+         f.period_start, f.period_end, f.is_instant, f.dimensions, f.decimals,
+         f.context_ref, f.unit_ref, f.source_selector)
+
+# Internal: fill a picked Selection's facts' `statement` from a concept => statement map (from the
+# filing's presentation linkbase). Concepts absent from the map (e.g. note-only) keep their empty
+# statement. Returns the Selection unchanged when there is nothing to classify.
+function _classify_selection(sel::Selection, statements::AbstractDict)
+    (isempty(sel.facts) || isempty(statements)) && return sel
+    facts = [haskey(statements, f.concept) ? _with_statement(f, statements[f.concept]) : f
+             for f in sel.facts]
+    return Selection(sel.cik, sel.accession, sel.url, sel.selector, sel.kind, sel.text,
+                     sel.html, sel.table, facts)
+end
+
+"""
+    parse_selection(payload::AbstractString) -> Selection
+
+Parse a picker transport payload (the JSON the browser POSTs back, schema version
+$(SELECTION_SCHEMA_VERSION)) into a [`Selection`](@ref) — resolving its structured
+table and normalising its [`Fact`](@ref)s. Throws if the payload's `version` is not
+understood. This is the seam between the browser picker and the Julia export layers.
+"""
+function parse_selection(payload::AbstractString)
+    o = JSON3.read(payload)
+    get(o, :version, nothing) == SELECTION_SCHEMA_VERSION ||
+        throw(ArgumentError("unsupported selection payload version $(get(o, :version, "missing"))"))
+    p = o.provenance
+    cik = String(p.cik); accession = String(p.accession); url = String(get(p, :url, ""))
+    selector = String(get(o, :selector, ""))
+    tj = get(o, :table, nothing)
+    table = tj === nothing ? nothing :
+        (header = String[String(x) for x in get(tj, :header, ())],
+         rows = Vector{String}[String[String(c) for c in r] for r in get(tj, :rows, ())])
+    facts = Fact[]
+    fj = get(o, :facts, nothing)
+    fj === nothing || for f in fj; push!(facts, _parse_fact(f, cik, accession, selector)); end
+    return Selection(cik, accession, url, selector, Symbol(get(o, :kind, "prose")),
+                     String(get(o, :text, "")), String(get(o, :html, "")), table, facts)
+end
+
+"""
+    open_filing(sel::Selection) -> String
+
+View a region captured with [`select_section`](@ref)/[`select_sections`](@ref) in your
+browser — the picked-region counterpart of [`open_filing(::Filing)`](@ref). The captured
+HTML (`sel.html`) is wrapped in a minimal page (with a `<base>` so the fragment's relative
+images still resolve to the SEC Archives, and a small provenance header naming the filer,
+accession and selector), written to a throwaway temporary directory and opened. Returns the
+path. This is a quick visual check of what you picked; to keep a copy, use the export layers.
+
+```julia
+sel = select_section(f)
+open_filing(sel)               # eyeball exactly what was captured
+```
+"""
+# Internal: wrap a Selection's captured HTML in a minimal, self-contained preview
+# page — a `<base>` so relative images resolve to the SEC Archives, plus a provenance
+# header. Pure (no I/O), so it can be tested without launching a browser.
+function _selection_page(sel::Selection)
+    dirurl = sel.url[1:something(findlast('/', sel.url), 0)]
+    basetag = isempty(dirurl) ? "" : "<base href=\"$dirurl\">"
+    prov = string("<p style=\"font:13px system-ui,sans-serif;color:#555;",
+                  "border-bottom:1px solid #ddd;padding-bottom:6px;margin:0 0 12px\">",
+                  "EDGAR selection &middot; ", sel.kind, " &middot; CIK ", sel.cik,
+                  " &middot; ", sel.accession, " &middot; <code>", sel.selector, "</code></p>")
+    return string("<!doctype html><html><head><meta charset=\"utf-8\">", basetag,
+                  "<title>EDGAR selection &mdash; ", sel.kind, "</title></head><body>",
+                  prov, sel.html, "</body></html>")
+end
+
+function open_filing(sel::Selection)
+    dir = mktempdir(; prefix = "EDGAR_selection_", cleanup = true)
+    path = joinpath(dir, "selection.html")
+    write(path, _selection_page(sel))
+    return _open_in_default_app(path)
+end
+
+include("present.jl")   # markdown(::Selection) — the presentation export layer (Step 2.2)
+
+"""
+    facts(sel::Selection) -> Vector{FactRow}
+    facts(sels::AbstractVector{<:Selection}) -> Vector{FactRow}
+
+Assemble the resolved XBRL facts captured in `sel` (or several selections) into a
+[Tables.jl](https://github.com/JuliaData/Tables.jl) *row table* — the hardened fact
+schema: `cik`, `accession`, `statement`, `concept`, `label`, normalised `value`, `unit`,
+`period_start`/`period_end`, `is_instant`, `dimensions` (JSON), `decimals`, the raw
+`context_ref`/`unit_ref`, and `source_selector`. Values are already normalised
+(`displayed × 10^scale × sign`, in [`parse_selection`](@ref)).
+
+Rows are de-duplicated on the natural key `(accession, concept, context_ref, unit_ref)` —
+one fact per concept × context × unit — so picking the same region twice, or combining
+overlapping selections, does not double-count. A prose-only selection yields an **empty**
+table (no error). Being a `Vector` of `NamedTuple`s, the result is a Tables.jl source —
+render it with `PrettyTables`, or feed it to `CSV`, `Arrow`, `DataFrames`, a database, ….
+
+```julia
+sel = select_section(f)            # pick the income statement
+using PrettyTables
+pretty_table(facts(sel))           # the normalised facts as a table
+```
+"""
+function facts(sels::AbstractVector{<:Selection})
+    rows = FactRow[]
+    seen = Set{NTuple{4,String}}()
+    for sel in sels, f in sel.facts
+        key = (f.accession, f.concept, f.context_ref, f.unit_ref)
+        key in seen && continue
+        push!(seen, key)
+        push!(rows, fact_row(f))
+    end
+    return rows
+end
+facts(sel::Selection) = facts([sel])
+
+include("extract_xbrl.jl")   # facts(::Filing) — Julia-native bulk XBRL extraction (W2)
+
+"""
+    to_duckdb(data, db; table="facts") -> Int
+
+Append the XBRL facts in `data` to a DuckDB table, returning the number of rows **newly**
+inserted. `data` is a [`Selection`](@ref), a vector of selections, or a fact row table
+(the output of [`facts`](@ref)); `db` is a database-file path (created if it does not
+exist) or an open `DuckDB.DB` connection.
+
+The table is the canonical fact warehouse — one schema every source maps into (the picker
+now, with `source='picker'`; the structured-data API later, filling `form`/`fy`/`fp`/`frame`).
+Its primary key is each fact's **semantic identity** `(cik, accession, concept, unit,
+period_start, period_end, is_instant, dimensions)` — *not* the document-internal
+`context_ref`/`unit_ref`, which are kept only as provenance — and rows are inserted with
+`ON CONFLICT DO NOTHING`. So re-importing the same filing is **idempotent** (returning `0`),
+and the same fact arriving from two sources collapses to one row. Append filing by filing
+to grow the warehouse. Once the facts are in DuckDB, export to Parquet/CSV/SQLite is a single
+`COPY … TO` / `ATTACH … (TYPE SQLITE)`; and because a fact table is already a Tables.jl
+source, `CSV.write`/`Arrow.write`/`SQLite.load!` also take it directly.
+
+This is a **package extension**: it is available only after `using DuckDB`.
+
+```julia
+using DuckDB
+to_duckdb(select_section(f), "filings.duckdb")   # append; running it again -> 0 new rows
+```
+"""
+function to_duckdb(args...; kwargs...)
+    error("`to_duckdb` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl " *
+          "DuckDB extension (`EDGARDuckDBExt`).")
+end
+
+"""
+    statement_view(db; table="facts", statement=nothing, accession=nothing,
+                   consolidated=true, months=nothing, by=:concept) -> Vector{NamedTuple}
+
+Pivot the long fact table in DuckDB `db` (a database-file path or an open `DuckDB.DB`)
+into a **wide statement view** — the familiar shape of a financial statement: one row per
+`concept`/`label`, one column per reporting period (`period_end`), each cell the normalised
+value. The newest period comes first. Because the warehouse may hold many filings, the view
+**stitches** a statement across them automatically.
+
+- `statement` — restrict to one financial statement, e.g. `"IncomeStatement"`, `"BalanceSheet"`,
+  `"CashFlow"` (requires facts ingested with `classify=true`; see [`statement_map`](@ref)).
+- `months` — keep only duration periods of about this many months (e.g. `3` quarterly, `12`
+  annual) plus all instants. This is **smart period selection**: it stops the 3-month and
+  9-month periods that share an end date from colliding in one column.
+- `consolidated=true` (default) shows the face of the statement (no dimensional qualifier);
+  `consolidated=false` adds the dimensional breakdowns and a `dimensions` column.
+- `accession` restricts to a single filing.
+- `by=:standard_concept` groups by the standardized concept (see [`set_standardizer`](@ref))
+  for cross-company comparison, instead of the raw `concept`/`label`.
+
+The result is a Tables.jl row table (the period dates are the column names), so
+`pretty_table(statement_view(db))` renders the statement and it feeds any Tables.jl sink.
+
+This is a **package extension**: available only after `using DuckDB`.
+
+```julia
+using DuckDB, PrettyTables
+to_duckdb(select_section(f), "filings.duckdb")     # accumulate facts
+pretty_table(statement_view("filings.duckdb"))     # see them as a statement
+```
+"""
+function statement_view(args...; kwargs...)
+    error("`statement_view` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl " *
+          "DuckDB extension (`EDGARDuckDBExt`).")
+end
+
+"""
+    archive_filings(cik, db; forms=nothing, startdate=nothing, enddate=nothing,
+                    facts=true, classify=false, labels=false, kind=:auto, limit=nothing) -> NamedTuple
+
+Bulk-archive a filer's filings into the DuckDB warehouse `db` (a path): list them with
+[`filings_by_cik`](@ref), then for each fetch the document and store it in `documents`
+(the lossless iXBRL HTML, Layer 1) and — when `facts=true` — extract its XBRL facts
+natively with [`facts(::Filing)`](@ref) into `facts` (tagged `source='filing'`) plus a
+filing-level Facts JSON snapshot in `extractions`. One open connection is reused across
+the whole run, and every write is idempotent (re-running adds nothing new).
+
+`forms` / `startdate` / `enddate` filter the listing as in [`filings_by_cik`](@ref);
+`limit` caps how many filings are processed; `kind` is passed to [`fetch_filing`](@ref).
+`classify=true` fills each fact's `statement` (presentation linkbase) and `labels=true` its
+`label` (label linkbase), at one extra fetch each per filing.
+Returns a summary `(filings, documents, facts)` of how many were processed and how many
+rows were newly added. A filing that fails to fetch is skipped.
+
+Requires DuckDB: `using DuckDB` loads this method.
+
+```julia
+using DuckDB
+archive_filings(104169, "wmt.duckdb"; forms = "10-Q", limit = 4)   # last 4 Walmart 10-Qs
+```
+"""
+function archive_filings(args...; kwargs...)
+    error("`archive_filings` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl " *
+          "DuckDB extension (`EDGARDuckDBExt`).")
+end
+
+# Internal: a filesystem-safe basename for a selection's export files — the accession
+# plus a slug of the selector, so several picks from one filing do not collide.
+function _selection_slug(sel::Selection)
+    s = strip(replace(sel.selector, r"[^A-Za-z0-9]+" => "-"), '-')
+    isempty(s) && (s = string(sel.kind))
+    length(s) > 48 && (s = s[1:48])
+    return string(isempty(sel.accession) ? "selection" : sel.accession, "_", s)
+end
+
+"""
+    save_selection(sel::Selection; as::Symbol, dir=".", db=nothing) -> String | Int
+
+Export a [`Selection`](@ref) to disk in one of the four formats — the unified "Export As"
+menu — returning the path written (or, for `:duckdb`, the number of rows appended). `dir`
+is created if needed; file names are `<accession>_<selector-slug>.<ext>`.
+
+- `:ixbrl`    — the lossless captured fragment (`sel.html`) as `…​.ixbrl.html`. View a
+  self-contained, image-resolving version with [`open_filing(::Selection)`](@ref).
+- `:markdown` — [`markdown`](@ref) (table/prose + provenance) as `…​.md`.
+- `:facts`    — [`facts_json`](@ref) (the Layer-2 semantic JSON) as `…​.facts.json`.
+- `:duckdb`   — append via `to_duckdb` to `db` (default `<dir>/facts.duckdb`); **requires**
+  `using DuckDB`. Returns the number of rows newly inserted.
+
+```julia
+sel = select_section(f)
+save_selection(sel; as = :markdown, dir = "out")    # -> "out/0000..._div-....md"
+save_selection(sel; as = :facts,    dir = "out")    # -> "out/0000..._div-....facts.json"
+using DuckDB
+save_selection(sel; as = :duckdb,   dir = "out")    # -> 42  (rows appended to out/facts.duckdb)
+```
+"""
+function save_selection(sel::Selection; as::Symbol, dir::AbstractString=".", db=nothing)
+    if as === :duckdb
+        isdir(dir) || mkpath(dir)
+        return to_duckdb(sel, db === nothing ? joinpath(dir, "facts.duckdb") : db)
+    end
+    ext, content = as === :ixbrl    ? (".ixbrl.html", sel.html) :
+                   as === :markdown ? (".md", markdown(sel)) :
+                   as === :facts    ? (".facts.json", facts_json(sel)) :
+                   throw(ArgumentError("`as` must be :ixbrl, :markdown, :facts or :duckdb, got $(repr(as))"))
+    isdir(dir) || mkpath(dir)
+    path = joinpath(dir, _selection_slug(sel) * ext)
+    write(path, content)
+    return path
+end
+
+export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
+       read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
+       label_map, calculations, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik,

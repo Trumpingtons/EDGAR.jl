@@ -20,6 +20,11 @@
 \usepackage[colorlinks=true,linkcolor=BlueViolet,urlcolor=BlueViolet,
             citecolor=BlueViolet]{hyperref}
 \usepackage[dvipsnames]{xcolor}
+\usepackage{caption}
+\usepackage{graphicx}
+\graphicspath{{figures/}}   % drop screenshots (PNG/PDF) under docs/manual/figures/
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
 
 % ---- Julia code listing style ---------------------------------------------
 \definecolor{codebg}{rgb}{0.97,0.97,0.98}
@@ -63,7 +68,7 @@
 \newcommand{\code}[1]{\texttt{\small #1}}
 
 % function signature block: a blank line of vertical space above and below
-\newcommand{\sig}[1]{\medskip\noindent\code{#1}\par\medskip}
+\newcommand{\sig}[1]{\medskip\noindent\texttt{#1}\par\medskip}
 
 \titleformat{\section}{\Large\bfseries\color{BlueViolet}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
@@ -72,6 +77,9 @@
 % parsep, so items still look spread out); keep a small gap around the whole list.
 \setlist[itemize]{noitemsep, topsep=2pt}
 
+
+
+\captionsetup{skip=10pt}
 % ---------------------------------------------------------------------------
 \title{\textbf{EDGAR.jl}\\[0.3em]
        \large A Julia interface to the U.S.\ SEC EDGAR system}
@@ -83,16 +91,9 @@
 
 \begin{abstract}
 \noindent
-\textbf{EDGAR.jl} pulls company data from the U.S.\ Securities and Exchange
+\texttt{EDGAR.jl} pulls company data from the U.S.\ Securities and Exchange
 Commission's \href{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}{EDGAR}
-system into Julia: a filer's \emph{submission history}, the \emph{XBRL financial
-facts} extracted from its filings, cross-filer \emph{frames}, and \emph{full-text
-search} of filing contents. It talks to the public
-\code{data.sec.gov} / \code{efts.sec.gov} / \code{sec.gov} endpoints with
-\code{HTTP.jl} and \code{JSON3.jl}, parses HTML with \code{Gumbo.jl} and
-\code{Cascadia.jl}, and caches responses so an interactive session does not
-re-download the same data. No API key is required --- only a descriptive
-\code{User-Agent} (see \S\ref{sec:ua}).
+system into Julia: a filer's \emph{submission history}, the \emph{XBRL financial facts} extracted from its filings, cross-filer \emph{frames}, with \emph{full-text search} of filing contents. 
 \end{abstract}
 
 \tableofcontents
@@ -101,90 +102,110 @@ re-download the same data. No API key is required --- only a descriptive
 % ===========================================================================
 \section{Introduction}
 \label{sec:intro}
+EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S. Securities and Exchange Commission's electronic filing system. All publicly listed companies in the United States submit their regulatory disclosures through EDGAR. Since 2009, financial statements within these filings have been tagged using XBRL (eXtensible Business Reporting Language), enabling structured, machine-readable access to financial data.
 
-EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the SEC's
-filing system. Every public company in the United States files its disclosures
-there, and since 2009 the financial statements in those filings are tagged in
-\textbf{XBRL}, which is what makes them machine-readable. The SEC publishes this
-data through open JSON REST APIs that require no registration and no key.
+The SEC provides public access to this information through open JSON REST APIs that do not require registration or API keys. To ensure fair access, the SEC imposes a rate limit of approximately ten requests per second. The caching layer in \texttt{EDGAR.jl} (\S\ref{sec:caching}) helps ensure that usage remains well below this threshold.
 
-EDGAR.jl wraps those endpoints behind a small, typed API and stops at plain Julia
-values (\code{JSON3} objects and \code{NamedTuple}s), which you can pipe into
-\code{Tables.jl}, \code{TimeSeries.jl}, or a database. It covers three kinds of
-task:
+\texttt{EDGAR.jl} wraps these endpoints in a lightweight, type-stable API and returns standard Julia objects such as \texttt{NamedTuple}s and \texttt{JSON3} structures. These can be directly integrated with \texttt{Tables.jl}, \texttt{TimeSeries.jl}, or database backends. The package supports three main categories of functionality:
 
 \begin{itemize}[nosep]
-  \item \textbf{Filings} --- list a filer's submissions, download a filing's
-        documents, convert them to text, and extract sections such as
-        \emph{Financial Statements} and \emph{Management's Discussion}.
-  \item \textbf{XBRL financial data} --- a filer's full set of reported facts
-        (\code{company\_facts}), one concept over time (\code{company\_concept}),
-        or one concept across every filer for a period (\code{xbrl\_frames}).
-  \item \textbf{Full-text search} --- search the contents of filings since 2001
-        (\code{full\_text\_search}).
+  \item \textbf{Filings:} access and process SEC submissions, including listing a filer’s documents, downloading filing packages, converting filings to text, and extracting structured sections such as \emph{Financial Statements} or \emph{Management's Discussion and Analysis}.
+
+  \item \textbf{XBRL Financial Data:} retrieve structured financial facts, including all reported data for a filer (\texttt{company\_facts}), time series for a single concept (\texttt{company\_concept}), or cross-sectional data for a concept across all filers for a given period (\texttt{xbrl\_frames}).
+
+  \item \textbf{Full-Text and CIK Search:} query the contents of filings since 2001 using keyword search via (\texttt{filings\_by\_text}) or CIK codes via (\texttt{filings\_by\_cik}).
 \end{itemize}
 
-\noindent
-The SEC asks for \textbf{fair use}: at most ten requests per second. EDGAR.jl's
-cache (\S\ref{sec:caching}) helps you stay well under that.
+\medskip
+\noindent Beyond these API wrappers, \texttt{EDGAR.jl} adds an interactive
+extraction-to-analysis pipeline (Table~\ref{tab:at-a-glance}): \emph{pick} a statement in a
+rendered filing --- or bulk-extract a whole filing with no browser --- \emph{export} it four ways,
+build a queryable fact \emph{warehouse}, \emph{enrich} it from the filing's own XBRL linkbases,
+and \emph{analyse} it as a stitched, cross-period statement. Every fact is traceable back to the
+exact region it came from, and the extracted values are validated against the SEC's
+\texttt{companyfacts} API.
+
+\begin{center}
+\begin{tikzpicture}[
+  stage/.style={draw=BlueViolet, fill=BlueViolet!8, rounded corners=3pt,
+                font=\small\bfseries\color{BlueViolet}, minimum height=8mm, inner xsep=5pt},
+  arr/.style={-{Stealth[length=2.2mm, width=1.8mm]}, BlueViolet, line width=0.7pt}]
+\node[stage] (s1) {Pick};
+\node[stage, right=4.5mm of s1] (s2) {Extract};
+\node[stage, right=4.5mm of s2] (s3) {Export};
+\node[stage, right=4.5mm of s3] (s4) {Warehouse};
+\node[stage, right=4.5mm of s4] (s5) {Enrich};
+\node[stage, right=4.5mm of s5] (s6) {Analyse};
+\draw[arr] (s1) -- (s2); \draw[arr] (s2) -- (s3); \draw[arr] (s3) -- (s4);
+\draw[arr] (s4) -- (s5); \draw[arr] (s5) -- (s6);
+\end{tikzpicture}
+\end{center}
+
+\begin{table}[h]
+\centering
+\caption{The extraction-to-analysis pipeline at a glance.}
+\label{tab:at-a-glance}
+\small
+\begin{tabular}{@{}p{0.10\textwidth}p{0.50\textwidth}p{0.31\textwidth}@{}}
+\toprule
+\textbf{Stage} & \textbf{What it does} & \textbf{Key functions} \\
+\midrule
+Pick & Interactive browser picker: colour-coded by kind, audible confirm, multi-select, every fact traced to its DOM region & \texttt{select\_section}, \texttt{select\_sections} \\
+Extract & Resolve XBRL facts from a pick, or natively from a whole filing (no browser) & \texttt{facts}, \texttt{archive\_filings} \\
+Export & Four layers from any selection: lossless iXBRL, Markdown, Facts JSON, DuckDB & \texttt{open\_filing}, \texttt{markdown}, \texttt{facts\_json}, \texttt{save\_selection} \\
+Warehouse & One \texttt{.duckdb} --- three tables (\texttt{documents} / \texttt{extractions} / \texttt{facts}) joined by accession, semantic key, idempotent append & \texttt{to\_duckdb}, \texttt{archive\_filings} \\
+Enrich & Cross-company standardization, statement classification and roll-up arithmetic --- from authoritative sources & \texttt{set\_standardizer}, \texttt{statement\_map}, \texttt{calculations} \\
+Analyse & Wide statement view --- stitched across filings, period-aware, standardized, restatement-aware & \texttt{statement\_view} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ===========================================================================
 \section{Installation}
 \label{sec:install}
 
-EDGAR.jl requires \textbf{Julia 1.12 or later}. It is not yet registered, so
-install it straight from GitHub:
+\subsection{Installing from GitHub}
+\texttt{EDGAR.jl} requires \textbf{Julia 1.12 or later}. It is not yet registered, so install it straight from GitHub,
 
 \begin{lstlisting}
-using Pkg
-Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
+julia> using Pkg
+julia> Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 \end{lstlisting}
 
-\subsection{Setting a User-Agent}
-\label{sec:ua}
+\subsection{Setting an User-Agent}\label{sec:ua}
 
-The SEC's fair-access policy requires every request to identify you with a
-\code{User-Agent} header containing your \textbf{name and a contact email}.
-\textbf{Without it the SEC returns HTTP 403.} There is no key and no
-registration --- just be honest about who is calling. Set yours once with a
-single \code{"name email"} string:
+The SEC's fair-access policy requires each request to include a \texttt{User-Agent} header identifying the requester with a name and a contact email address. Requests that do not include this header are rejected with an HTTP 403 error. There is no API key or registration process, users are simply expected to identify themselves honestly when accessing the data.
 
+The user agent should be set once per session as a single string of the form \texttt{"Name email"}:
 \begin{lstlisting}
-using EDGAR
-set_user_agent("Jane Doe jane@example.com")
+julia> using EDGAR
+julia> set_user_agent("Your Name name@example.com")
 \end{lstlisting}
 
-\noindent
-\code{set\_user\_agent} validates the string (non-empty, contains an email) and
-returns it. If you forget, EDGAR.jl stops with a clear error \emph{before} ever
-contacting the SEC.
+\noindent If the \texttt{User-Agent} header is not set, \texttt{EDGAR.jl} will raise an error locally and stop execution before making any request to the SEC, ensuring compliance with the SEC's access policy.
 
-\subsection{Per Session User-Agent vs. Persistent}
-\code{set\_user\_agent} (and \code{set\_config}) set the User-Agent only for the
-\emph{current} Julia process --- a new REPL or notebook kernel starts without
-one. The resolution order EDGAR.jl uses is:
-
+\subsection{Persisting an User-Agent}
+The function \texttt{set\_user\_agent()} sets the User-Agent only for the \emph{current} Julia process. As a result, a new REPL session, script execution, or notebook kernel will start without this configuration. The resolution order used by \texttt{EDGAR.jl} is:
 \begin{enumerate}[nosep]
-  \item an explicit value from \code{set\_user\_agent} / \code{set\_config}; else
-  \item the \code{SEC\_USER\_AGENT} environment variable; else
-  \item an error.
+  \item an explicit value set via \texttt{set\_user\_agent()}; otherwise
+  \item the \texttt{SEC\_USER\_AGENT} environment variable; otherwise
+  \item an error is thrown.
 \end{enumerate}
 
-\noindent
-So to avoid setting it every session, define the environment variable once.
-\code{persist\_user\_agent} writes it into your Julia startup file for you, which
-every future Julia process (REPL, script, \emph{and} notebook kernel) reads:
 
+
+\noindent To avoid configuring the User-Agent in every session, it can be defined once as an environment variable. This variable is automatically read by all future Julia processes, including REPL sessions, scripts, and notebook kernels. It can be set in \texttt{startup.jl} or exported from the shell,
 \begin{lstlisting}
-persist_user_agent("Jane Doe jane@example.com")  # writes ~/.julia/config/startup.jl
-# unpersist_user_agent()                          # removes it again
+ENV["SEC_USER_AGENT"] = "Your Name name@example.com"
 \end{lstlisting}
 
-\noindent
-Equivalently, set \code{ENV["SEC\_USER\_AGENT"] = "Jane Doe jane@example.com"} in
-\code{\textasciitilde/.julia/config/startup.jl} (or export it from your shell)
-yourself. The User-Agent is \emph{not} a secret --- it is exactly the information
-you are transmitting to the SEC --- so storing it in a startup file is fine.
+The User-Agent is not a secret: it is simply the identity transmitted to the SEC with each request. For this reason, storing it in a startup file is safe and recommended.
+
+Alternatively, \texttt{EDGAR.jl} provides convenience functions to manage persistence automatically,
+\begin{lstlisting}
+julia> persist_user_agent("Your Name name@example.com")
+julia> unpersist_user_agent()   # removes the persisted setting
+\end{lstlisting}
 
 % ===========================================================================
 \section{Quick Start}
@@ -209,10 +230,27 @@ for f in first(rows, 5)
 end
 \end{lstlisting}
 
+
+\subsection{Filing Formats: Documents and iXBRL}
+\label{sec:qs-reports}
+
+\emph{Structured extraction of financial statements from inline XBRL (iXBRL) is
+planned and not yet available.} The SEC tags the financial statements directly
+inside each filing's primary HTML document; a future release will parse those
+\texttt{<ix:\dots>} tags into tidy tables.
+
+In the meantime you can already work with the filing \emph{documents}: list a
+filer's filings, download a filing, convert it to text, and pull named sections
+(see \S\ref{sec:api-filings}). For the \emph{tagged numbers} that underlie the
+statements today, use the XBRL data API above (\S\ref{sec:qs-findata}) --- the
+SEC has already extracted those facts for you, so you rarely need to parse the
+iXBRL by hand.
+
+
 \subsection{Financial Data}
 \label{sec:qs-findata}
 
-The three XBRL endpoints share the \code{us-gaap} vocabulary and return JSON:
+The three XBRL endpoints share the \texttt{us-gaap} vocabulary and return JSON:
 
 \begin{lstlisting}
 # Every XBRL fact a company has reported, in one document
@@ -229,43 +267,29 @@ println(length(assets.data), " filers reported Assets")
 \end{lstlisting}
 
 \noindent
-A trailing \code{I} on the frame period (\code{"CY2022Q4I"}) denotes an
+A trailing \texttt{I} on the frame period (\texttt{"CY2022Q4I"}) denotes an
 \emph{instant} (a balance-sheet point in time); drop it for a \emph{duration}
 (a flow such as revenue). See the Glossary (\S\ref{sec:glossary}).
 
-\subsection{Financial Reports}
-\label{sec:qs-reports}
 
-\emph{Structured extraction of financial statements from inline XBRL (iXBRL) is
-planned and not yet available.} The SEC tags the financial statements directly
-inside each filing's primary HTML document; a future release will parse those
-\code{<ix:\dots>} tags into tidy tables.
+\section{Form Types and Entities}
 
-In the meantime you can already work with the filing \emph{documents}: list a
-filer's filings, download a filing, convert it to text, and pull named sections
-(see \S\ref{sec:api-filings}). For the \emph{tagged numbers} that underlie the
-statements today, use the XBRL data API above (\S\ref{sec:qs-findata}) --- the
-SEC has already extracted those facts for you, so you rarely need to parse the
-iXBRL by hand.
-
-
-\section{Forms and Entities}
-
-
-For most corporate analysis, the “big three” report forms (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching.
+For most corporate analysis, the “big three” report forms (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching and analysing.
 
 \medskip
-\noindent To retrieve any form in EDGAR.jl, pass its \textbf{EDGAR form code} to
-\code{forms} in \code{filings\_by\_text} or \code{filings\_by\_cik}; the code is the
-name used in each heading below, except where noted (e.g.\ \code{"SC 13D"},
-\code{"13F-HR"}, \code{"NPORT-P"}, \code{"N-MFP2"}). For example:
+\noindent Using \texttt{EDGAR.jl} to retrieve any form, first pass its EDGAR code\footnote{The code is the name used in each heading \$\ref{big3}-\$\ref{hii} below, except where noted (e.g.\ \texttt{"SC 13D"}, \texttt{"13F-HR"}, \texttt{"NPORT-P"}, \texttt{"N-MFP2"}).} (e.g annual report "10-K", quarterly report "10-Q", current report "8-K") to,
+\begin{itemize}
+  \item \texttt{filings\_by\_cik}
+    \begin{lstlisting}
+    filings_by_cik(320193; forms = "8-K")          # Apple CIK = 320193
+    \end{lstlisting}
+  \item \texttt{filings\_by\_text}
+    \begin{lstlisting}
+    filings_by_text("supply chain disruption"; forms = ["10-K", "10-Q"]) 
+    \end{lstlisting}
+\end{itemize}
 
-\begin{lstlisting}
-filings_by_cik(320193; forms = "8-K")                 # Apple's 8-Ks
-full_text_search("climate"; forms = ["10-K", "10-Q"]) # either annual or quarterly
-\end{lstlisting}
-
-\subsection{“Big Three” Report Forms}
+\subsection{“Big Three” Report Forms}\label{big3}
 
 \subsubsection{10-K: Annual Report}
 The annual report, denoted 10-K, provides a comprehensive overview of a company's business and financial performance for the fiscal year.
@@ -344,15 +368,15 @@ A simplified alternative to Schedule 13D for passive investors who acquire more 
 \subsubsection{Form 4}
 Reports purchases and sales of company securities by directors, officers, and beneficial owners holding more than 10\% of the company's shares. Useful for tracking insider trading activity.
 
-\subsection{Holdings of Institutional Investors}
+\subsection{Holdings of Institutional Investors}\label{hii}
 
 \subsubsection{Form 13F}
-An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \code{"13F-HR"} (the holdings report; \code{"13F-NT"} is a notice that another manager reports the holdings).
+An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \texttt{"13F-HR"} (the holdings report; \texttt{"13F-NT"} is a notice that another manager reports the holdings).
 
 \subsubsection{Form N-PORT}
 Individual registered fund portfolio disclosure, providing monthly portfolio reports required for registered open-end investment companies, including most mutual funds and ETFs \footnote{Main exemptions/exceptions include: (1) money market funds, which are primarily regulated under Form N-MFP instead (\S\ref{N-MFP}); (2) exchange-traded products that are not 1940 Act funds; (3) funds relying on master-feeder or umbrella structures; (4) newly formed or liquidating funds may benefit from transitional relief and reduced or modified reporting, respectively; (5) small fund conditional exemptions (limited scope).}. Each filing corresponds to a single registered investment fund. N-PORT filings are typically made public with a delay (generally $\sim$60 days after month-end), and therefore are not real-time.
 
-The public EDGAR form code is \code{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
+The public EDGAR form code is \texttt{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
 \begin{itemize}
   \item Individual securities are reported
   \item CUSIPs\footnote{A CUSIP (Committee on Uniform Security Identification Procedures) is a unique nine-character code used to identify North American financial securities, such as stocks, bonds, and mutual funds. Functioning much like a serial number, it uniquely identifies a security and facilitates the accurate tracking of investments, trade processing, and settlement by brokerages, banks, and clearing organizations.} are included
@@ -377,38 +401,45 @@ The public EDGAR form code is \code{"NPORT-P"}. N-PORT is highly granular compar
 \end{itemize}
 
 \subsubsection{Form N-MFP}\label{N-MFP}
-Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \code{"N-MFP2"} (\code{"N-MFP3"} from the 2024 amendments).
+Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \texttt{"N-MFP2"} (\texttt{"N-MFP3"} from the 2024 amendments).
 
 \subsection{Entities}
 
-Every filer on EDGAR --- whoever submits a filing --- is an \emph{entity},
+Every filer on EDGAR, whoever submits a filing, is an \emph{entity},
 identified by a \textbf{CIK} (Central Index Key, \S\ref{sec:glossary}). An entity is
 not always an operating company: it may be a registered \emph{investment} company (a
 mutual fund, ETF, or money-market fund), an institutional investment manager, or an
 individual (e.g.\ a director filing Form 4). The SEC tags each filer with an
-\code{entityType}, and which forms it files follows from that type:
+\texttt{entityType}, and which forms it files follows from that type:
 
 \begin{itemize}
-  \item \code{"operating"} --- an operating company (or an institutional manager).
+  \item \texttt{"operating"} --- an operating company (or an institutional manager).
     Files the corporate forms above: 10-K / 10-Q / 8-K, DEF 14A, S-1/S-3, 20-F for
     foreign issuers; a manager also files \textbf{13F}.
-  \item \code{"investment"} --- a registered investment company: a mutual fund or
+  \item \texttt{"investment"} --- a registered investment company: a mutual fund or
     ETF (files \textbf{N-PORT}), or a money-market fund (files \textbf{N-MFP}).
 \end{itemize}
 
-\noindent EDGAR.jl exposes entities through three functions. \code{cik} maps a name
+\noindent \texttt{EDGAR.jl} exposes entities through three functions. \texttt{cik} maps a name
 or ticker to a CIK, covering entities that \emph{have} a ticker (companies and
-listed ETFs/funds). \code{profile(cik)} returns a single filer's row-invariant
-record --- its \code{name}, \code{entityType}, SIC industry, fiscal year-end,
-tickers, former names, and so on. And the \code{entity} column of
-\code{filings\_by\_text} is simply that filer's name. So a typical workflow is:
-resolve the CIK (\code{cik}), inspect the filer (\code{profile}), then pull its
-filings of the relevant form (\code{filings\_by\_cik}).
+listed ETFs/funds). \texttt{profile(cik)} returns a single filer's row-invariant
+record --- its \texttt{name}, \texttt{entityType}, SIC industry, fiscal year-end,
+tickers, former names, and so on. And the \texttt{entity} column of
+\texttt{filings\_by\_text} is simply that filer's name. So a typical workflow is:
+resolve the CIK (\texttt{cik}), inspect the filer (\texttt{profile}), then pull its
+filings of the relevant form (\texttt{filings\_by\_cik}).
 
 \begin{lstlisting}
-id = only(cik("AAPL"; by = :ticker)).cik   # "0000320193"
-profile(id).entityType                      # "operating"
-filings_by_cik(id; forms = "10-K")          # its annual reports
+julia> id = only(cik("AAPL"; by = :ticker)).cik
+# Output:
+"0000320193"
+
+julia> profile(id).entityType 
+"operating"
+
+reports = filings_by_cik(id; forms = "10-K")
+table(reports)
+
 \end{lstlisting}
 
 
@@ -417,66 +448,85 @@ filings_by_cik(id; forms = "10-K")          # its annual reports
 \label{sec:api}
 
 CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
-\code{0000320193}). Any \code{cik} argument accepts an integer or a string, with
-or without leading zeros (\code{320193}, \code{"320193"} and \code{"0000320193"}
+\texttt{0000320193}). Any \texttt{cik} argument accepts an integer or a string, with
+or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"0000320193"}
 are equivalent); functions normalize to the 10-digit form. Every data call goes
 through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
 
-\subsection{Searching and Company Lookup}
+\subsection{Searching and Entity Lookup}
 \label{sec:api-search}
 
-\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+Searching typically begins with identifying a filer and then retrieving either company metadata or relevant filings. The package therefore provides functions for company lookup, filer profiling, full-text search of filing contents, and retrieval of filings submitted by a specific entity. Table~\ref{tab:searching} summarizes these functions and their intended usage.
+
+\begin{table}[t]
+\caption{Searching and Entity Lookup Methods}
+\label{tab:searching}
+\begin{tabular}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
 \toprule
-\textbf{Function} & \textbf{Purpose} \\
+\textbf{Method} & \textbf{Purpose} \\
 \midrule
-\endhead
-\code{cik()} & Every company as a row table. \\
-\code{cik(entity; by = :name | :ticker | :any)} & The rows matching \code{entity}
+\texttt{cik()} & Every company as a row table. \\
+\texttt{cik(entity; by = :name | :ticker | :any)} & The rows matching \texttt{entity}
   by company name (case-insensitive substring), exact (case-insensitive) ticker, or
-  either --- \code{:any} is the default. Same row-table type in every case. \\
-\code{full\_text\_search(query; exact, forms, startdate, enddate, from)} &
+  either --- \texttt{:any} is the default. Same row-table type in every case. \\
+\texttt{ftext(text; exact, forms, startdate, enddate, from)} &
   Full-text search of filing contents (2001+) via the EDGAR full-text search
-  (EFTS) API. Matched as an exact phrase by default (\code{exact = false} for
-  loose words); \code{forms} may be a string or a collection; dates are
-  \code{"YYYY-MM-DD"}. Returns a row table. \\
-\code{filings\_by\_cik(cik; forms, startdate, enddate, from)} &
+  (EFTS) API. Matched as an exact phrase by default (\texttt{exact = false} for
+  loose words); \texttt{forms} may be a string or a collection; dates are
+  \texttt{"YYYY-MM-DD"}. Returns a row table. \\
+\texttt{fcik(cik; forms, startdate, enddate, from)} &
   A single filer's filings (2001+) via the same EFTS endpoint, using its entity
   filter rather than a text query --- a true "filed by this filer" search.
-  Returns a per-filing row table (with XBRL flags and \code{acceptanceDateTime}). \\
-\code{profile(cik)} &
-  A filer's row-invariant data: name, \code{entityType}, SIC, fiscal year-end,
-  tickers, exchanges, former names, etc. \\
+  Returns a per-filing row table (with XBRL flags and \texttt{acceptanceDateTime}). \\
+\texttt{profile(cik)} &
+  A filer's row-invariant data, including: name, \texttt{entityType}, SIC, fiscal year-end,
+  tickers, exchanges, former names. \\
 \bottomrule
-\end{longtable}
+\end{tabular}
+\end{table}
 
-\subsubsection{cik}
+\subsubsection{\texttt{cik}}
 
-\sig{cik()}
+\paragraph{Signatures}
+\begin{description}
+  \item[\sig{cik()}] 
+  \item[\sig{cik(entity; by = :name | :ticker | :any)}] 
+\end{description}
 
-\sig{cik(entity; by = :name | :ticker | :any)}
 
-\noindent \code{cik()} returns every company; given an \code{entity}, \code{by}
-selects how to match it. Always returns a \texttt{Tables.jl} \emph{row table}, a
-\texttt{Vector} of \texttt{NamedTuple}s with fields \texttt{company}, \texttt{ticker}
-and \texttt{cik} (one record per ticker):
 
-\begin{itemize}[nosep]
-  \item \code{:any} (the default) --- rows matching \code{entity} by company name
-    (substring) \emph{or} an exact ticker; so a short string like \code{"IBM"}
-    finds the ticker and a word like \code{"apple"} finds the name, without saying
-    which. Each row is tested once, so a row matching both appears only once.
-  \item \code{:name} --- rows whose company name contains \code{entity}
-    (case-insensitive substring).
-  \item \code{:ticker} --- \code{0} or \code{1} row matching the exact
-    (case-insensitive) ticker.
+\paragraph{Selection Criteria}
+\begin{itemize}
+  \item \texttt{cik()} returns all entities with an associated CIK code in the EDGAR dataset.
+  \item \texttt{cik(entity\_query; by = :name | :ticker | :any)} selects entities by matching the input string against the company name, ticker, or both, depending on the \texttt{by} argument.
 \end{itemize}
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
 
-\noindent The result type is the same for every form, so it stays type-stable, and
-as a plain vector it indexes, filters and feeds straight into any tool that reads
-tables, including \texttt{DataFrames}, \texttt{CSV} and \texttt{Parquet} files, or a \texttt{SQLite} database. A
-query may yield several rows, because (a) one company can have multiple tickers
-(e.g. share classes \code{GOOGL}/\code{GOOG}), and (b) several companies may match
+  \item[\quad - \texttt{by}]~
+  \begin{description}[nosep]
+    \item[\quad \texttt{:any}] (default) matches rows where \texttt{entity\_query} appears either as a substring in the entity name (case-insensitive) or as an exact ticker match. For example, \texttt{"IBM"} matches the ticker IBM, while \texttt{"apple"} matches company names containing that string. Each row is tested once, so a row matching both appears only once.
+    \item[\quad \texttt{:name}] returns rows where the entity name contains \texttt{entity\_query} (case-insensitive substring match).
+    \item[\quad \texttt{:ticker}] returns at most one row matching the exact ticker (case-insensitive).
+  \end{description}
+\end{description}
+
+\paragraph{Return Value} Both forms always return a \texttt{Tables.jl} \emph{row table}, with fields 
+\begin{itemize}
+  \item \texttt{entity}
+  \item \texttt{ticker}
+  \item \texttt{cik}
+\end{itemize}
+with one record per ticker.
+
+The return type is consistent across all modes, ensuring type stability. The result behaves as a standard Tables.jl-compatible object and can be directly consumed by downstream tools such as \texttt{DataFrames.jl}, \texttt{TimeSeries.jl}, \texttt{CSV.jl}, \texttt{XLSX.jl}, \texttt{Parquet.jl}, or database interfaces such as \texttt{SQLite.jl}.
+
+A query may yield several rows, because (a) one company can have multiple tickers
+(e.g. share classes \texttt{GOOGL}/\texttt{GOOG}), and (b) several companies may match
 the query in their name.
+
+\paragraph{Julia Examples:} Finding the CIK code for an entity.
+
 \begin{lstlisting}
 julia> cik("alphabet")           # by = :any (default); "alphabet" matches the name
 # Output:
@@ -488,7 +538,7 @@ julia> cik("alphabet")           # by = :any (default); "alphabet" matches the n
  (entity = "Alphabet Inc.", ticker = "GOOGM", cik = "0001652044")
  (entity = "Alphabet Inc.", ticker = "GGLBP", cik = "0001652044")
 
-julia> cik("master")
+julia> cik("master"; by = :name)
 # Output:
 5-element Vector{@NamedTuple{entity::String, ticker::String, cik::String}}:
  (entity = "Mastercard Inc", ticker = "MA", cik = "0001141391")
@@ -496,6 +546,10 @@ julia> cik("master")
  (entity = "MasterCraft Boat Holdings, Inc.", ticker = "MCFT", cik = "0001638290")
  (entity = "PUTNAM MASTER INTERMEDIATE INCOME TRUST", ticker = "PIM", cik = "0000830622")
  (entity = "MASTERBEEF GROUP", ticker = "MB", cik = "0002027265")
+
+julia> cik("IBM"; by = :name)      # Name is: International Business Machines Corp
+# Output
+@NamedTuple{entity::String, ticker::String, cik::String}[]
 
 julia> cik("AAPL"; by = :ticker)
 # Output:
@@ -512,102 +566,122 @@ julia> cik()[1:5]                # first 5 rows
  (entity = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
 \end{lstlisting}
 
-\subsubsection{filings\_by\_text}
+\subsubsection{\texttt{ftext}}
 
-\sig{filings\_by\_text(phrase; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}
+\paragraph{Signature}
+\begin{description}
+  \item[\sig{ftext(text; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}] 
+\end{description}
 
-\noindent Also exported as \code{full\_text\_search} --- the SEC's own name for this
-endpoint (EFTS) --- and pairs with \code{filings\_by\_cik}. The function
-\texttt{filings\_by\_text} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{phrase} through the EDGAR
-full-text search (EFTS) API. \code{forms} may be a single string (\code{"10-K"})\footnote{Form 10-K is a detailed \textbf{annual} filing submitted by public companies to the SEC. It provides a comprehensive overview of the company's business activities, financial health, and key risks. The filing includes audited financial statements, management's discussion of financial results, information about the company's operations and strategy, disclosures on legal and regulatory issues, and an assessment of risk factors that could affect future performance.} or a collection; \code{startdate} and \code{enddate}
-are \code{"YYYY-MM-DD"} strings; and \code{from} is the 0-based offset used to page
-(EFTS returns a fixed page of 100 results per request). By default the
-\texttt{phrase} is matched \textbf{exactly} (it is quoted for you), so
-\code{"supply chain disruption"} finds only filings with those three words adjacent;
-pass \code{exact = false} to match the words loosely instead. Results come back
+\noindent Also exported as \texttt{full\_text\_search}, which is the SEC's own name for this endpoint (EFTS), and pairs with \texttt{fcik}. The function
+\texttt{ftext} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{text} through the EDGAR full-text search (EFTS) API. 
+
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
+  \item[\quad - \texttt{exact}]
+  \item[\quad - \texttt{forms}] may be a single string (\texttt{"10-K"})\footnote{Form 10-K is a detailed annual filing submitted by public companies to the SEC. It provides a comprehensive overview of the company's business activities, financial health, and key risks. The filing includes audited financial statements, management's discussion of financial results, information about the company's operations and strategy, disclosures on legal and regulatory issues, and an assessment of risk factors that could affect future performance.} or a collection; 
+  \item[\quad - \texttt{startdate}] is a \texttt{"YYYY-MM-DD"} format string
+  \item[\quad - \texttt{enddate}] is a \texttt{"YYYY-MM-DD"} format string 
+  \item[\quad - \texttt{from}] is the 0-based offset used to page (EFTS returns a fixed page of 100 results per request). 
+\end{description}
+By default the (\texttt{text}) is matched \textbf{exactly}, so
+\texttt{"supply chain disruption"} finds only filings with those three words adjacent;
+pass \texttt{exact = false} to match the words loosely instead. Results come back
 ranked by relevance, not by date.
 
-It returns a Tables.jl \emph{row table} --- a \texttt{Vector} of
-\texttt{NamedTuple}s, one per matching filing, for the current page (up to 100).
-There is no total-match count; to page, advance \code{from} in steps of 100 until
-you get fewer than 100 rows. The columns are:
+\paragraph{Return Values.} The method \texttt{ftext()} returns a \texttt{Tables.jl} \emph{row table}, a row per matching filing for the current page (up to 100). There is no total-match count; to page, advance (\texttt{from}) in steps of 100 until you get fewer than 100 rows. The returned columns are described in Table~\ref{tab:ftext}.
 
-\medskip
-\noindent
+
+\begin{table}[t]
+\centering
+\caption{\texttt{ftext()} Return Columns}
+\label{tab:ftext}
 \begin{tabular}{@{}p{0.22\textwidth}p{0.70\textwidth}@{}}
 \toprule
-\textbf{Column} & \textbf{Meaning} \\
+\textbf{Column} & \textbf{Description} \\
 \midrule
-\code{cik}        & The filer's 10-digit, zero-padded Central Index Key. \\
-\code{entity}     & The filer's name --- a company, mutual fund, ETF, money-market fund, institutional manager, etc. (Tickers are a filer attribute --- use \code{cik}, joining on the CIK; richer filer data is in \code{profile}.) \\
-\code{form}       & Form type (e.g.\ \code{10-K}, \code{8-K}). \\
-\code{reportDate} & The period the filing covers (may be empty). \\
-\code{filed}      & The date the filing was filed. \\
-\code{accession}  & The accession number identifying the filing. \\
-\code{document}   & The primary document's filename. \\
-\code{score}      & Relevance score (higher = better match). \\
+\texttt{cik}        & The filer's 10-digit, zero-padded Central Index Key. \\
+\texttt{entity}     & The filer's name --- a company, mutual fund, ETF, money-market fund, institutional manager, etc. (Tickers are a filer attribute --- use \texttt{cik}, joining on the CIK; richer filer data is in \texttt{profile}.) \\
+\texttt{form}       & Form type (e.g.\ \texttt{10-K}, \texttt{8-K}). \\
+\texttt{reportDate} & The period the filing covers (may be empty). \\
+\texttt{filed}      & The date the filing was filed. \\
+\texttt{accession}  & The accession number identifying the filing. \\
+\texttt{document}   & The primary document's filename. \\
+\texttt{score}      & Relevance score (higher = better match). \\
 \bottomrule
 \end{tabular}
-\medskip
+\end{table}
 
+\paragraph{Julia Example:} Finding the accession number and the document's filename identifying a filing.
 \begin{lstlisting}
-julia> rows = filings_by_text("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
+julia> rows = ftext("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
 
 julia> rows[1]
+# Output:
 (cik = "0001622996", entity = "ACRO BIOMEDICAL CO., LTD.", form = "10-K",
  reportDate = "2025-12-31", filed = "2026-02-11",
  accession = "0001640334-26-000241", document = "acbm_10k.htm", score = 13.91)
 \end{lstlisting}
 \medskip
 
-\noindent Being a Tables.jl source, \code{rows} drops straight into
-\code{DataFrame}, \code{CSV} and friends. The submissions-only fields
-(\code{acceptanceDateTime} and the XBRL flags) are \emph{not} included here: a text
+\noindent The submissions-only fields
+(\texttt{acceptanceDateTime} and the \texttt{XBRL} flags) are \emph{not} included here: a text
 search spans many filers, so adding them would cost one submissions request per
-distinct filer (up to $\sim$100 per page). \code{filings\_by\_cik} adds them cheaply
-for a single filer.
+distinct filer (up to $\sim$100 per page). The method \texttt{fcik} adds them cheaply
+for a single filer (Table \ref{tab:fcik}).
 
-\subsubsection{filings\_by\_cik}
+\subsubsection{\texttt{fcik}}
 
-\sig{filings\_by\_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, from=0)}
+\paragraph{Signature}
+\begin{center}
+\textbf{\sig{fcik(cik; forms = nothing, startdate = nothing, enddate = nothing, from = 0)}}
+\end{center}
+
 
 \noindent List a single filer's filings (2001 onward) through the same EFTS
 endpoint, but keyed by its \texttt{cik} (an integer or string, padded or not) using
 EDGAR's \emph{entity} filter --- the web form's company/CIK field. This is a true
 ``filed by this filer'' query, unlike full-text searching for the CIK as document
 text, which also matches filings that merely \emph{mention} it (e.g.\ a fund listing
-the company among its holdings). \code{forms}, the dates and \code{from} behave as
-for \code{filings\_by\_text}; it likewise returns a Tables.jl row table, newest-first.
+the company among its holdings). 
 
-Each row is \textbf{one filing}. There are no filer-level columns (name,
-\code{entityType}, SIC, \dots) --- those are invariant for one filer, so they are
-not repeated on every row; get them once from \code{profile} (below). The XBRL
-flags and \code{acceptanceDateTime} are joined \textbf{per filing} on the accession
-(a \code{10-K} is XBRL while a \code{Form 4} is not), and are \code{missing} for any
-filing outside the submissions recent window (and \code{isXBRLNumeric} wherever the
-SEC reports no value). The columns, in order:
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
+  \item[\quad - \texttt{forms}] behaves as for \texttt{ftext}
+  \item[\quad - \texttt{startdate}] is a \texttt{"YYYY-MM-DD"} format string
+  \item[\quad - \texttt{enddate}] is a \texttt{"YYYY-MM-DD"} format string 
+  \item[\quad - \texttt{from}] is the 0-based offset used to page (EFTS returns a fixed page of 100 results per request). 
+\end{description}
 
-\medskip
-\noindent
-\begin{tabular}{@{}p{0.24\textwidth}p{0.68\textwidth}@{}}
+\paragraph{Return Value.}
+The method \texttt{fcik()} returns a \texttt{Tables.jl} row table ordered from newest to oldest filing. Each row corresponds to a single filing. The returned columns are described in Table~\ref{tab:fcik}.
+
+Filer-level attributes such as company name, entity type, and SIC code are not included because they are invariant for a given filer. These can be obtained separately using \texttt{profile()}. The fields \texttt{acceptanceDateTime}, \texttt{isXBRL}, \texttt{isInlineXBRL}, and \texttt{isXBRLNumeric} are associated with individual filings and are joined using the accession number. Values may be \texttt{missing} for filings outside the SEC’s recent submissions window. In addition, \texttt{isXBRLNumeric} may be \texttt{missing} when the SEC does not report a value.
+
+\begin{table}[t]
+\centering
+\caption{\texttt{fcik()} Return Columns}
+\label{tab:fcik}
+\begin{tabular}{@{}p{0.25\textwidth}p{0.65\textwidth}@{}}
 \toprule
-\textbf{Column} & \textbf{Meaning} \\
+\textbf{Column} & \textbf{Description} \\
 \midrule
-\code{form}               & Form type (e.g.\ \code{10-K}, \code{8-K}). \\
-\code{reportDate}         & The period the filing covers (may be empty). \\
-\code{filed}              & The date the filing was filed. \\
-\code{acceptanceDateTime} & When the SEC accepted the filing (ISO-8601 UTC). \\
-\code{accession}          & The accession number identifying the filing. \\
-\code{document}           & The primary document's filename. \\
-\code{isXBRL}             & Whether the filing carries XBRL data. \\
-\code{isInlineXBRL}       & Whether that XBRL is inline (iXBRL). \\
-\code{isXBRLNumeric}      & Whether it contains numeric XBRL facts. \\
+\texttt{form}               & Filing form type (e.g.\ \texttt{10-K}, \texttt{10-Q}, \texttt{8-K}). \\
+\texttt{reportDate}         & Reporting period covered by the filing, if available. \\
+\texttt{filed}              & Filing date. \\
+\texttt{acceptanceDateTime} & Date and time the SEC accepted the filing (UTC, ISO 8601 format). \\
+\texttt{accession}          & Unique accession number identifying the filing. \\
+\texttt{document}           & Filename of the filing’s primary document. \\
+\texttt{isXBRL}             & Indicates whether the filing contains XBRL data. \\
+\texttt{isInlineXBRL}       & Indicates whether the filing uses Inline XBRL (iXBRL). \\
+\texttt{isXBRLNumeric}      & Indicates whether numeric XBRL facts are present. \\
 \bottomrule
 \end{tabular}
-\medskip
+\end{table}
 
+\paragraph{Julia Example:} Finding the accession number and the document's filename identifying a filing.
 \begin{lstlisting}
-julia> rows = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01");
+julia> rows = fcik(320193; forms = "8-K", startdate = "2026-01-01");
 
 julia> rows[1]
 (form = "8-K", reportDate = "2026-04-30", filed = "2026-04-30",
@@ -616,114 +690,845 @@ julia> rows[1]
  isXBRL = true, isInlineXBRL = true, isXBRLNumeric = false)
 \end{lstlisting}
 
-\subsubsection{profile}
+\subsubsection{\texttt{profile}}
 
-\sig{profile(cik)}
+\paragraph{Signature}
 
-\noindent A filer's \textbf{row-invariant} data from the SEC submissions document
---- the fields that are the same across all of a filer's filings, returned once
-(as a \texttt{NamedTuple}) rather than repeated on every row of
-\code{filings\_by\_cik}. \code{cik} may be an integer or string, padded or not. The
-fields are:
+\begin{center}
+\textbf{\sig{profile(cik)}}
+\end{center}
 
-\medskip
-\noindent
+\noindent Provides a filer's row-invariant data from the SEC submissions document
+containing the fields that are the same across all of a filer's filings, returned once as a \texttt{NamedTuple} rather than repeated on every row created by (\texttt{fcik}). 
+
+\paragraph{Keyword Arguments}
+
+\begin{description}[nosep]
+  \item[\quad - \texttt{cik}] the CIK number, may be an integer or string, padded or not. 
+\end{description}
+
+\paragraph{Return Value.} The returned columns are described in Table~\ref{tab:profile}.
+
+\begin{table}[t]
+\centering
+\caption{\texttt{profile()} Return Columns}
+\label{tab:profile}
 \begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
 \toprule
-\textbf{Field} & \textbf{Meaning} \\
+\textbf{Field} & \textbf{Description} \\
 \midrule
-\code{cik}                  & The filer's 10-digit, zero-padded Central Index Key. \\
-\code{name}                 & The filer's name. \\
-\code{entityType}           & The filer kind: \code{"operating"} (a company) or \code{"investment"} (a mutual fund / ETF / money-market fund), etc. \\
-\code{sic}                  & Standard Industrial Classification code (industry). \\
-\code{sicDescription}       & Human-readable industry description. \\
-\code{fiscalYearEnd}        & Fiscal year-end as \code{MMDD} (e.g.\ \code{"0926"}). \\
-\code{stateOfIncorporation} & State/country of incorporation. \\
-\code{tickers}              & Ticker symbols (\texttt{Vector\{String\}}; empty for funds without one). \\
-\code{exchanges}            & Exchanges those tickers trade on. \\
-\code{ein}                  & Employer Identification Number. \\
-\code{category}             & SEC filer category (e.g.\ "Large accelerated filer"). \\
-\code{website}              & The filer's website (may be empty). \\
-\code{description}          & Free-text description (may be empty). \\
-\code{formerNames}          & Prior names (\texttt{Vector\{String\}}). \\
+\texttt{cik}                  & The filer's 10-digit, zero-padded Central Index Key. \\
+\texttt{name}                 & The filer's name. \\
+\texttt{entityType}           & The filer kind: \texttt{"operating"} (a company) or \texttt{"investment"} (a mutual fund / ETF / money-market fund).\\
+\texttt{sic}                  & Standard Industrial Classification code. \\
+\texttt{sicDescription}       & Human-readable industry description. \\
+\texttt{fiscalYearEnd}        & Fiscal year-end as \texttt{MMDD}. \\
+\texttt{stateOfIncorporation} & State/country of incorporation. \\
+\texttt{tickers}              & Ticker symbols (\texttt{Vector\{String\}}; empty for funds without one). \\
+\texttt{exchanges}            & Exchanges those tickers trade on. \\
+\texttt{ein}                  & Employer Identification Number. \\
+\texttt{category}             & SEC filer category (e.g.\ "Large accelerated filer"). \\
+\texttt{website}              & The filer's website (may be empty). \\
+\texttt{description}          & Free-text description (may be empty). \\
+\texttt{formerNames}          & Prior names (\texttt{Vector\{String\}}). \\
 \bottomrule
 \end{tabular}
-\medskip
+\end{table}
+
+\paragraph{Julia Example:} Getting data from the SEC submissions document.
 
 \begin{lstlisting}
 julia> p = profile(320193);
 
 julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
+# Output:
 ("Apple Inc.", "operating", "3571", "0926")
 \end{lstlisting}
 
-\subsection{Filings: List, Download, Extract}
+\subsection{Filings Life-Cicle: Fetch, Render, Extract, Save}
 \label{sec:api-filings}
 
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
 \toprule
-\textbf{Function} & \textbf{Purpose} \\
+\textbf{Method} & \textbf{Purpose} \\
 \midrule
 \endhead
-\code{download\_filing(cik, accession; destdir)} & Download a filing's primary
-  document into \code{destdir}; tries common URL patterns, saving the first that
-  returns HTTP 200. \\
-\code{parse\_filing(path)} & Convert a filing's HTML to text (\code{Gumbo} +
-  \code{Cascadia}). \\
-\code{extract\_section(html, names; max\_chars)} & Pull named sections (e.g.\
-  \code{"Item 7"}, \code{"Management's Discussion"}) from filing HTML/text. \\
-\code{save\_filing(text, metadata; outdir)} & Write extracted text + metadata to
-  disk. \\
+\texttt{fetch\_filing(cik, accession; kind)} & Fetch a filing's document (iXBRL /
+  XBRL / HTML) into memory as a \texttt{Filing}; cached, no disk write. \\
+\texttt{open\_filing(f; assets)} & Render a fetched \texttt{Filing} in the default browser via a temporary file, with its images. \\
+\texttt{open\_filing(cik, accession; kind, assets)} & Combines \texttt{fetch\_filing} and \texttt{open\_filing} into a single call\\
+\texttt{open\_filing(path)} & Open a filing already saved on disk in the browser. \\
+\texttt{extract\_section(html, names)} & Pull named sections from filing HTML. \\
+\texttt{save\_filing(f; destdir, assets)} & Write a fetched \texttt{Filing} to \texttt{destdir/document}, with its images. \\
+\midrule
+\texttt{download\_assets(f; destdir)} & Download a filing's referenced images and CSS/JS next to it. \\
 \bottomrule
 \end{longtable}
 
-\subsubsection{download\_filing}
+\subsubsection{The \texttt{Filing} Type}
+\label{sec:filing-type}
 
-\sig{download\_filing(cik, accession; destdir = ".")}
-
-\noindent Download a filing's document from the EDGAR \code{Archives} into
-\code{destdir} (created if needed) and return the local file path. The accession
-number may be given with or without dashes. Several common document/index URL
-patterns are tried in turn; the first that responds with HTTP 200 is saved, and
-the function throws if none succeed.
-
-\subsubsection{parse\_filing}
-
-\sig{parse\_filing(path)}
-
-\noindent Convert the filing HTML at \code{path} to plain text, using \code{Gumbo}
-and \code{Cascadia} to strip markup. The extraction helpers operate on this text.
-
-\subsubsection{extract\_section}
-
-\sig{extract\_section(html, names; max\_chars = 200\_000, base\_path = nothing)}
-
-\noindent Pull named sections from filing HTML/text by heuristic,
-case-insensitive matching --- e.g.\ \code{"Item 7"} or
-\code{"Management's Discussion"}. Returns a \code{Dict} mapping each requested name
-to its extracted text; \code{max\_chars} caps the length kept per section.
-
-\subsubsection{save\_filing}
-
-\sig{save\_filing(text, metadata; outdir = "out")}
-
-\noindent Write extracted \code{text} together with its \code{metadata} to disk
-under \code{outdir}, returning the path written.
+\noindent A \texttt{Filing} is an immutable value representing a filing document in
+memory. It is defined as a simple \texttt{struct} with six fields:
 
 \begin{lstlisting}
-# List a company's recent filings, then download the most recent one
-rows = filings_by_cik("0000320193"; forms = "8-K")
-for f in first(rows, 5)
-    println(f.filed, "  ", f.form, "  ", f.accession)
+struct Filing
+    cik::String         # 10-digit, zero-padded Central Index Key
+    accession::String   # dashed accession number
+    document::String    # the primary document's filename
+    url::String         # the EDGAR Archives URL it was fetched from
+    kind::Symbol        # :ixbrl, :xbrl, or :html
+    content::String     # the raw document text (HTML or XML)
 end
-
-path = download_filing("0000320193", rows[1].accession; destdir = "filings")
-
-# Convert to text and extract named sections
-html     = parse_filing(path)
-sections = extract_section(html, ["Item 7", "Management's Discussion"])
-println(get(sections, "Item 7", "(not found)"))
 \end{lstlisting}
+
+\noindent In normal use, \texttt{Filing} instances are created by
+\texttt{fetch\_filing}, which populates all fields from the SEC submissions data and
+the retrieved document. Because \texttt{Filing} is a plain \texttt{struct}, the
+default constructor
+\texttt{Filing(cik, accession, document, url, kind, content)} is also available,
+which can be useful in tests or when reconstructing a filing from previously saved
+content and metadata.
+
+Fields are accessed directly using dot notation. For example,
+\texttt{f.content} contains the document text processed by the extraction helpers, \texttt{f.kind} distinguishes between iXBRL, XBRL, and HTML filings, and \texttt{f.url} records the document's source. A \texttt{Filing} also displays as a
+compact one-line summary in the REPL and renders inline as HTML in notebook front-ends (\S\ref{sec:display-filing}).
+
+
+\subsubsection{Displaying a \texttt{Filing}}
+\label{sec:display-filing}
+
+\paragraph{Web Browser}
+The primary way to inspect a \texttt{Filing} is in a web browser via
+\texttt{open\_filing}. The function writes the filing to a temporary HTML file,
+downloads any referenced assets (such as images), rewrites the corresponding URLs
+to point at the local copies, and then opens the result in the system's default
+browser.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079")
+julia> open_filing(f)
+\end{lstlisting}
+
+\noindent For \texttt{:ixbrl} and \texttt{:html} filings, the browser displays the
+document exactly as a normal web page. Since iXBRL is itself an HTML document with
+embedded XBRL markup, the filing renders as the familiar report submitted to the
+SEC, including tables, styling, and images.
+
+A \texttt{:xbrl} filing is different: it contains XML rather than HTML and
+therefore has no visual presentation of its own. In that case,
+\texttt{open\_filing} wraps the XML in a minimal HTML page and displays it as escaped source code, allowing the underlying instance document to be inspected in the
+browser.
+
+\paragraph{Notebook} Besides opening a filing in a browser, a \texttt{Filing} can render
+\emph{inline} in any rich display front-end, such as Jupyter or Pluto notebooks,
+via its \texttt{text/html} \texttt{show} method. There is nothing to call explicitly:
+when a \texttt{Filing} is the last expression in a cell, the front-end requests its
+HTML representation and renders the filing directly in the output area.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079")
+julia> f          # a notebook renders the filing itself, inline
+\end{lstlisting}
+
+\noindent Notebooks render the HTML in-page, where relative image references cannot
+be resolved against files on disk. To ensure that figures still appear, the
+\texttt{show} method replaces each referenced image with a base64-encoded
+\texttt{data:} URI — the in-memory analogue of what \texttt{download\_assets} does on
+disk — making the rendered filing completely self-contained.
+
+\paragraph{Terminal REPL}
+In a plain terminal REPL there is no HTML renderer, so evaluating \texttt{f} displays a compact summary such as
+\texttt{Filing(:ixbrl, “aapl-20250927.htm”, 1520208 bytes)}.
+Use \texttt{open\_filing} to view the filing in a web browser instead.
+
+\noindent Note that \texttt{:xbrl} filings contain XML rather than HTML. Because there is no visual document to render, they are displayed as escaped source within a \texttt{<pre>} block. Only \texttt{:ixbrl} and \texttt{:html} filings render as formatted documents.
+\paragraph{HTML as a String}
+To obtain the rendered markup as a \texttt{String} (for embedding or
+post-processing), or to trigger rendering explicitly when a \texttt{Filing} is not
+the final expression in a function, loop, or notebook cell, use Julia's standard
+display API,
+
+\begin{lstlisting}
+julia> html = repr("text/html", f)        # the rendered HTML as a String
+julia> display(f)                         # render to the active display on demand
+\end{lstlisting}
+
+\subsubsection{\texttt{fetch\_filing}}
+
+\paragraph{Signature}
+\begin{center}
+\textbf{\sig{fetch\_filing(cik, accession; kind = (:auto) | :ixbr | :xbr | :html)}}
+\end{center}
+
+\noindent Fetch a single filing's document from the EDGAR \texttt{Archives} into
+memory (no disk write). The fetch goes through \texttt{fetch\_url}, so it is
+cached and uses the configured User-Agent. 
+
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
+  \item[\quad - \texttt{cik}]
+  \item[\quad - \texttt{accession}]
+  \item[\quad - \texttt{kind}]~
+  \begin{description}[nosep]
+    \item[\quad \texttt{:auto}] (default) takes the iXBRL primary document when the filing has one (\texttt{isInlineXBRL}), else the classic XBRL instance (\texttt{isXBRL}), otherwise the plain primary HTML.
+    \item[\quad \texttt{:ixbrl}] force the primary document
+    \item[\quad \texttt{:xbrl}] force the XBRL instance (located via the filing's \texttt{index.json})
+    \item[\quad \texttt{:html}] force the primary document
+  \end{description}
+\end{description}
+
+\paragraph{Return Value.}
+A \texttt{Filing} (\S\ref{sec:filing-type}), whose fields are
+\begin{itemize}
+  \item \texttt{cik}
+  \item \texttt{accession}
+  \item \texttt{document}
+  \item \texttt{url}
+  \item \texttt{kind}
+  \item \texttt{content} --- the raw document text
+\end{itemize}
+
+
+\paragraph{Julia Example:} Fetch one filing using its accession number and show the primary document's name and format. 
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079")
+# Output:
+Filing(:ixbrl, "aapl-20250927.htm", 1520208 bytes)
+
+julia> f.kind, f.document, f.url
+# Output:
+(:ixbrl, "aapl-20250927.htm", "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm")
+\end{lstlisting}
+
+
+\subsubsection{\texttt{open\_filing}}
+
+\begin{center}
+\textbf{\sig{open\_filing(f::Filing; assets = true)}}
+\end{center}
+\begin{center}
+\textbf{\sig{open\_filing(cik, accession; kind = :auto, assets = true)}}
+\end{center}
+\begin{center}
+\textbf{\sig{open\_filing(path::AbstractString)}}
+\end{center}
+
+
+
+\noindent View a fetched \texttt{Filing} in your default browser, returning the path
+opened. A browser can only open a file or URL --- never an in-memory string --- so
+this writes \texttt{f} to a fresh \emph{temporary} directory (under the filename
+\texttt{f.document}, so the extension and tab title are right) and opens it. It is a
+throwaway view; use \texttt{save\_filing} to keep a copy. For programmatic use no file
+is needed at all. Methods such as \texttt{extract\_section} work straight off
+\texttt{f.content}.
+
+Filing's images are stored as separate files \emph{beside} the document in the
+EDGAR Archives, and \texttt{fetch\_filing} downloads only the primary document, so the
+HTML's relative \texttt{<img>} references would otherwise resolve to nothing and the
+figures appear blank. With \texttt{assets = true} (the default) the referenced images and any CSS/JS are fetched into the same temporary directory via
+\texttt{download\_assets} so the page renders complete; pass \texttt{assets = false} to
+open just the HTML (faster, no extra requests). The temporary directory --- the
+document and its images together --- is registered for automatic cleanup when the
+Julia process exits, so nothing lingers on disk between sessions.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079")
+# Output:
+Filing(:ixbrl, "aapl-20250927.htm", 1520208 bytes)
+
+julia> open_filing(f)          # renders the 10-K, with its images, in your browser
+\end{lstlisting}
+
+\paragraph{Fetch and Open} For the common case where the filing is only being viewed, the convenience method
+\texttt{open\_filing(cik, accession; kind = :auto, assets = true)} combines \texttt{fetch\_filing} and \texttt{open\_filing} into a single call, fetching the
+filing and opening it immediately in the browser without requiring an intermediate
+\texttt{Filing} object:
+
+\begin{lstlisting}
+julia> open_filing(320193, "0000320193-25-000079")   # fetch and view in one step
+\end{lstlisting}
+
+\paragraph{Reopen from Disk} A third method, \texttt{open\_filing(path::AbstractString)},
+opens a filing that is \emph{already saved on disk} --- the on-disk counterpart of the
+in-memory \texttt{Filing} method. It is the natural partner of \texttt{save\_filing}
+(which returns the path it wrote) and works for any saved HTML page, including an
+extracted section such as a balance sheet (still part of the filing). The path must
+exist; an \texttt{http(s)://} URL is passed through to the browser as-is.
+
+\begin{lstlisting}
+julia> path = save_filing(f; destdir = "filings")
+julia> open_filing(path)          # reload from disk and view in the browser
+\end{lstlisting}
+
+
+\subsubsection{\texttt{extract\_section}}
+
+\begin{center}
+\textbf{\sig{extract\_section(html, names; base\_path = nothing)}}
+\end{center}
+
+
+\noindent Pull named sections from filing HTML/text by heuristic,
+case-insensitive matching --- e.g.\ \texttt{"Item 7"} or
+\texttt{"Management's Discussion"}. Returns a \texttt{Dict} mapping each requested name
+to its extracted text (the full section, up to where the next section begins).
+
+
+\subsubsection{\texttt{save\_filing}}
+
+\begin{center}
+\textbf{\sig{save\_filing(f::Filing; destdir = ".", assets = true)}}
+\end{center}
+\noindent Write a fetched \texttt{Filing} verbatim to \texttt{destdir/f.document}, creating \texttt{destdir} if needed, and return the path. With
+\texttt{assets = true} (the default) the filing's images and any CSS/JS are also
+downloaded into \texttt{destdir} via \texttt{download\_assets}, so the saved copy renders
+self-contained. Pass \texttt{assets = false} to write only the document. 
+
+
+\subsubsection{\texttt{download\_assets}}
+
+\begin{center}
+  \textbf{\sig{download\_assets(f::Filing; destdir = ".")}}
+\end{center}
+
+
+\noindent Download the relative assets --- chiefly the embedded images --- that a
+filing's HTML references, writing each next to the document under \texttt{destdir} so
+a saved filing renders self-contained. The \texttt{src}/\texttt{href} attributes are
+scanned and only relative URLs with a known asset extension (images, CSS, JS) are
+taken, so links to sibling filings and in-page anchors are skipped; each asset is
+fetched through the cached \texttt{fetch\_url} and written preserving any sub-path. The
+download is best-effort (a reference that cannot be fetched is skipped) and the list
+of filenames written is returned. \texttt{open\_filing} and \texttt{save\_filing} call it
+for you; use it directly only to populate a directory yourself.
+
+
+\subsubsection{Worked Example: The Filings Life-Cycle}
+\label{sec:lifecycle-example}
+
+\noindent The functions above compose into a complete workflow. The script below
+walks the whole life-cycle on a real filing --- Walmart's latest Form 10-Q (chosen
+over a tidier filer precisely because its Balance Sheet extracts a little roughly,
+exercising the heuristics) --- using nothing but the public API: it resolves the
+CIK, fetches the 10-Q, renders it, extracts the Balance Sheet, saves both the full
+filing and the Balance Sheet to disk, and finally reloads each from disk and shows
+it in the browser.
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> set_user_agent("Your Name you@example.com")   
+
+# 1. Find the company's CIK from its ticker.
+julia> row = only(cik("WMT"; by = :ticker))
+
+# 2. Fetch its latest Form 10-Q into memory.
+julia> filing = first(filings_by_cik(row.cik; forms = "10-Q"))
+julia> f = fetch_filing(row.cik, filing.accession)
+
+# 3. Render the fetched filing in the browser.
+julia> open_filing(f)
+
+# 4. Extract the Balance Sheet from the filing HTML (f.content).
+julia> balance_sheet = extract_section(f.content, ["Balance Sheet"])["Balance Sheet"]
+
+# 5. Save the full 10-Q to disk (also downloads its images).
+julia> path_10q = save_filing(f; destdir = "filings_demo")
+
+# 6. Save the extracted Balance Sheet as a small standalone HTML page.
+julia> path_bs = joinpath("filings_demo", "balance_sheet.html")
+julia> write(path_bs, "<!doctype html><html><body><pre>" *
+               balance_sheet * "</pre></body></html>")
+
+# 7. Load the saved 10-Q from disk and show it in the browser.
+julia> open_filing(path_10q)
+
+# 8. Load the saved Balance Sheet from disk and show it in the browser.
+julia> open_filing(path_bs)
+\end{lstlisting}
+
+\noindent Every step succeeds against the live filing; Table~\ref{tab:lifecycle}
+records what each produces (the public API only, no internals).
+
+\begin{table}[h]
+\centering
+\caption{The filings life-cycle, step by step (Walmart 10-Q).}
+\label{tab:lifecycle}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.36\textwidth}p{0.28\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Call} & \textbf{Result} \\
+\midrule
+1. Find CIK            & \texttt{cik("WMT"; by=:ticker)}               & \texttt{0000104169} \\
+2. Fetch 10-Q          & \texttt{filings\_by\_cik} $\to$ \texttt{fetch\_filing} & \texttt{wmt-20260430.htm}, iXBRL, 1.15\,MB \\
+3. Render in browser   & \texttt{open\_filing(f)}                      & throwaway temp copy + images \\
+4. Extract Balance Sheet & \texttt{extract\_section(f.content, ["Balance Sheet"])} & 1{,}965 chars, contains Total Assets \\
+5. Save full 10-Q      & \texttt{save\_filing(f; destdir)}             & \texttt{.htm} + downloaded image \\
+6. Save Balance Sheet  & \texttt{write(path\_bs, \ldots)}              & \texttt{balance\_sheet.html} \\
+7. Load 10-Q $\to$ browser   & \texttt{read} + open                    & 1{,}154{,}833 bytes round-trip \\
+8. Load Balance Sheet $\to$ browser & \texttt{read} + open           & renders the table \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Figures~\ref{fig:lc-10q}, \ref{fig:lc-bs} and \ref{fig:lc-image} show the
+rendered results: the 10-Q as opened in the browser, the saved Balance Sheet page,
+and a filing page that carries an embedded image (downloaded alongside the document
+by \texttt{save\_filing}).
+
+\newcommand{\screenshot}[1]{%
+  \IfFileExists{figures/#1}{\includegraphics[width=0.8\textwidth]{#1}}%
+  {\fbox{\parbox[c][0.28\textheight][c]{0.8\textwidth}{\centering\itshape
+   screenshot placeholder --- add \texttt{docs/manual/figures/\detokenize{#1}}}}}}
+
+\begin{figure}[h]
+\centering
+\screenshot{lifecycle_10q.png}
+\caption{The fetched Form 10-Q rendered in the browser (step 3 / step 7).}
+\label{fig:lc-10q}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\screenshot{lifecycle_balance_sheet.png}
+\caption{The extracted Balance Sheet, saved as a standalone page (step 6 / step 8).}
+\label{fig:lc-bs}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\screenshot{lifecycle_image_page.png}
+\caption{A filing page with an embedded image, shown self-contained because
+\texttt{save\_filing} downloaded the image next to the document.}
+\label{fig:lc-image}
+\end{figure}
+
+
+% ---- picker colours (match src/picker.jl) and small helpers ----------------
+\definecolor{pickergreen}{HTML}{2EA043}
+\definecolor{pickeramber}{HTML}{D29922}
+\definecolor{pickerpurple}{HTML}{8957E5}
+\newcommand{\swatch}[1]{\textcolor{#1}{\rule{1.4ex}{1.4ex}}}
+\newcommand{\htmltag}[1]{\texttt{\textless #1\textgreater}}
+
+\subsubsection{Interactive Extraction: \texttt{select\_section}}
+\label{sec:select-section}
+
+\sig{select\_section(f::Filing; timeout=1800) -> Selection}
+
+\noindent Sometimes the region you want is easier to \emph{point at} than to name.
+\texttt{select\_section} opens the rendered filing \texttt{f} in your browser with an
+interactive picker and hands the region you choose back to Julia as a
+\texttt{Selection}. A local HTTP server --- bound to \texttt{127.0.0.1} on a random
+port, so nothing is exposed off the machine --- serves the document with a small
+picker script injected, receives your pick, and shuts down as soon as one arrives or
+\texttt{timeout} seconds elapse. (Pass a larger \texttt{timeout} if you expect to
+browse for a while before choosing.)
+
+\paragraph{Hover, widen, capture.} As you move the cursor the picker outlines the
+element beneath it and a badge names what will be captured. A table is completely
+covered by its own cells, so you can never hover the \htmltag{table} directly --- the
+cursor always lands on a \htmltag{td}. Press \textbf{$\uparrow$} to widen the
+selection to the parent element (and \textbf{$\downarrow$} to narrow); the highlight
+\emph{sticks} as you press, so a stray mouse movement does not snap it back. Press
+\textbf{Enter} (or click) to capture, or \textbf{Esc} to cancel.
+
+\paragraph{The colour tells you what you will get.} The outline and badge are
+colour-coded by the \emph{kind} of the candidate element, which is exactly what
+determines how the capture is later exported. Widening from a number cell in a
+financial statement cycles through:
+
+\begin{center}\ttfamily
+\htmltag{td}~\swatch{pickerpurple} $\to$ \htmltag{tr}~\swatch{pickerpurple} $\to$
+\htmltag{tbody}~\swatch{pickerpurple} $\to$ \htmltag{table}~\swatch{pickergreen} $\to$
+\htmltag{div}~\swatch{pickeramber} (wrapper)
+\end{center}
+
+\begin{table}[h]
+\centering
+\caption{What each highlight captures. The same block on screen, but a different
+payload and a different \texttt{kind}.}
+\label{tab:picker-kinds}
+\begin{tabular}{@{}p{0.21\textwidth}p{0.10\textwidth}p{0.34\textwidth}p{0.25\textwidth}@{}}
+\toprule
+\textbf{Highlight} & \textbf{\texttt{kind}} & \textbf{What is captured} & \textbf{Good for} \\
+\midrule
+\swatch{pickergreen}~\htmltag{table} & \texttt{:table} &
+  The clean \htmltag{table} --- header and body rows, with every XBRL fact inside. &
+  The right pick: a structured Markdown table and resolved facts. \\
+\swatch{pickeramber}~\htmltag{div} (wrapper) & \texttt{:mixed} &
+  The table \emph{plus} the prose in its wrapper --- the
+  ``(Amounts in millions\ldots)'' caption, footnotes. &
+  A table together with its caption and notes (context for RAG). \\
+\swatch{pickerpurple}~\htmltag{tbody} & \texttt{:prose} &
+  The body rows only, as text --- \emph{not} parsed as a table, and it can omit the
+  column headers that sit above \htmltag{tbody}. &
+  Rarely what you want for a table. \\
+\swatch{pickerpurple}~\htmltag{tr} / \htmltag{td} & \texttt{:prose} &
+  One row / one cell, as text. & A single line or figure. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent So even though \htmltag{tbody} (purple) and \htmltag{table} (green) look
+like the same block, the green one round-trips as a structured table --- with its
+headers and facts --- while the purple \htmltag{tbody} comes back as a flat blob of
+text with no columns. \emph{That} is why the colour coding matters: it tells you what
+you will actually get, not just what is outlined.
+
+\paragraph{Prose is a feature, not a mistake.} A purple (\texttt{:prose}) pick is not
+a failed table pick --- it is its own use case. The narrative parts of a filing are
+often exactly what you are after: Management's Discussion and Analysis, a risk factor,
+a single footnote, the cover page. The picker captures those as readily as a table;
+reach for green when you want a grid of numbers, and purple when you want the words.
+
+\paragraph{Confirmation --- visual, audible, and in Julia.} On a successful capture the
+toolbar reports what was taken (e.g.\ ``Captured TABLE --- 23 rows $\times$ 3 cols'', or
+``\ldots\ 1{,}214 chars'' for prose), and a short synthesised ``shutter'' click plays ---
+generated with the browser's Web Audio API, so no sound file is shipped. Back in Julia,
+\texttt{select\_section}/\texttt{select\_sections} log a one-line \texttt{@info} summary on
+return (kind, selector, size), so you can see the pick landed without inspecting the value.
+
+\paragraph{Capturing several regions: \texttt{select\_sections}.} To grab more than one
+region in a single sitting --- the income statement, the balance sheet, a footnote --- use
+the plural form:
+
+\sig{select\_sections(f::Filing; timeout=1800) -> Vector\{Selection\}}
+
+\noindent It behaves like \texttt{select\_section}, except each \textbf{Enter}/click
+\emph{adds} the highlighted region (the toolbar keeps a running count) and \textbf{Esc}
+\emph{finishes}, returning everything as a \texttt{Vector\{Selection\}}. Repeated picks of
+the same element are de-duplicated by selector, and finishing without picking anything
+returns an empty vector (it does not throw, unlike the singular form). The two functions
+keep distinct, fixed return types --- \texttt{Selection} versus \texttt{Vector\{Selection\}}
+--- rather than overloading one with a mode flag. Note the difference in \textbf{Esc}: in
+\texttt{select\_section} it \emph{cancels} (nothing was chosen, so the call throws); in
+\texttt{select\_sections} it \emph{finishes} (returns what you have so far).
+
+\paragraph{Previewing a pick: \texttt{open\_filing(sel)}.} A \texttt{Selection} is not a
+\texttt{Filing}, so the \texttt{Filing} verbs do not apply to it --- \texttt{save\_filing(sel)}
+is a \texttt{MethodError}. There is, however, a \texttt{Selection} method of
+\texttt{open\_filing} for a quick visual check:
+
+\sig{open\_filing(sel::Selection) -> String}
+
+\noindent It wraps the captured HTML in a minimal page --- a \htmltag{base} so the
+fragment's relative images still resolve to the SEC Archives, plus a provenance header
+(filer, accession, selector) --- writes it to a throwaway temporary file and opens it,
+returning the path. To \emph{keep} a selection (as Markdown, facts, or a database row), use
+the export layers rather than \texttt{save\_filing}.
+
+\paragraph{Exporting to Markdown: \texttt{markdown}.} Turn a pick into Markdown --- a
+structured table becomes a Markdown table, prose becomes text --- ready to drop into a
+document or hand to a language model:
+
+\sig{markdown(sel::Selection; provenance=true) -> String}
+
+\noindent The faithful capture grid (Step 2.1) is cleaned up here. SEC iXBRL tables put
+the \texttt{\$} marker in its own column on only some rows (the first of a section,
+totals, per-share lines), which shifts the value from one column to another row by row;
+\texttt{markdown} drops the empty and lone-\texttt{\$} cells in each row and re-packs, so
+the columns line up again, and uses the first surviving row as the header. With
+\texttt{provenance = true} (the default) a blockquote recording the source --- CIK,
+accession, URL, selector --- is prepended, so the output is self-describing for
+citation/RAG (Step 2.3); pass \texttt{provenance = false} for just the table. Walmart's
+income statement renders as (abridged):
+
+\begin{verbatim}
+> Source: SEC EDGAR -- CIK 0000104169, accession 0000104169-26-000102 (table)
+> Selector: `div:nth-of-type(52) > table:nth-of-type(1)`
+
+| Three Months Ended April 30, |  |  |
+| --- | --- | --- |
+| (Amounts in millions, except per share data) | 2026 | 2025 |
+| Net sales | 175,684 | 163,981 |
+| Total revenues | 177,751 | 165,609 |
+| Interest income | (79) | (93) |
+\end{verbatim}
+
+\begin{lstlisting}
+f    = fetch_filing(104169, "0000104169-26-000102")  # Walmart 10-Q
+sel  = select_section(f)        # hover a number, press up to <table> (green), Enter
+sel.kind                        # :table
+open_filing(sel)                # preview exactly what you captured
+print(markdown(sel))            # Markdown table under a provenance header
+
+sels = select_sections(f)       # pick several regions, then Esc to finish
+length(sels)                    # how many you captured
+\end{lstlisting}
+
+\paragraph{Extracting XBRL facts: \texttt{facts}.} When the filing is inline XBRL, the
+picker also resolves the machine-readable \emph{facts} tagged inside the selection
+against the document's \texttt{<ix:header>} (its contexts and units). \texttt{facts}
+assembles them into a Tables.jl row table --- the hardened fact schema:
+
+\sig{facts(sel::Selection) -> Vector\{FactRow\}}
+
+\noindent Each row carries \texttt{cik}, \texttt{accession}, \texttt{statement},
+\texttt{concept} (e.g.\ \texttt{us-gaap:Revenues}), \texttt{label}, the \emph{normalised}
+\texttt{value} (\texttt{displayed} $\times\,10^{\mathrm{scale}}\times$ \texttt{sign}),
+\texttt{unit} (\texttt{USD}, \texttt{shares}, \texttt{USD/shares}), \texttt{period\_start}/
+\texttt{period\_end}, \texttt{is\_instant} (a balance-sheet instant vs an income-statement
+flow), \texttt{dimensions} (JSON), \texttt{decimals}, the raw \texttt{context\_ref}/
+\texttt{unit\_ref}, and \texttt{source\_selector}. Rows are de-duplicated on the natural
+key \texttt{(accession, concept, context\_ref, unit\_ref)}. A prose-only selection yields
+an \emph{empty} table --- no error. As a \texttt{Vector} of \texttt{NamedTuple}s it is a
+Tables.jl source, so it renders with \texttt{PrettyTables} and feeds \texttt{CSV}, Arrow,
+\texttt{DataFrames} or a database.
+
+\begin{lstlisting}
+sel = select_section(f)         # pick the income statement
+using PrettyTables
+pretty_table(facts(sel))        # the normalised facts as a table
+\end{lstlisting}
+
+\noindent\emph{Correctness.} The extraction is validated against the SEC's own
+\texttt{companyfacts} API (\S\ref{sec:api-xbrl}): for Walmart's 10-Q, every fact picked
+from the income statement (42) and the balance sheet (98) --- durations and instants,
+across all units --- equals the API's value for the same concept, period and unit. The
+picked numbers are the reported numbers.
+
+\begin{figure}[h]
+\centering
+\screenshot{picker_cycle_table.png}
+\caption{The picker on Walmart's income statement, widened to the \htmltag{table}
+(green): the whole statement is captured as a structured table. Pressing
+$\uparrow$/$\downarrow$ cycles through the surrounding elements, each a different
+colour and a different capture (Table~\ref{tab:picker-kinds}).}
+\label{fig:picker-green}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\screenshot{picker_cycle_td.png}
+\caption{One step narrower: a single \htmltag{td} (purple, \texttt{:prose}) --- one
+cell captured as text.}
+\label{fig:picker-td}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\screenshot{picker_cycle_div.png}
+\caption{One step wider: the wrapping \htmltag{div} (amber, \texttt{:mixed}) --- the
+table together with its caption and notes.}
+\label{fig:picker-div}
+\end{figure}
+
+
+\subsubsection{Exporting a Selection: iXBRL, Markdown, Facts JSON, DuckDB}
+\label{sec:export-layers}
+
+A picked \texttt{Selection} exports at three levels of abstraction --- \emph{preserve} it,
+\emph{read} it, or \emph{analyse} it --- across four formats (Table~\ref{tab:export-layers}).
+\texttt{save\_selection} is the one-stop ``Export As'' menu; each format is also available
+on its own.
+
+\begin{table}[h]
+\centering
+\caption{The export layers of a \texttt{Selection}.}
+\label{tab:export-layers}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.14\textwidth}p{0.30\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{Format} & \textbf{Function} & \textbf{Purpose} \\
+\midrule
+Presentation & iXBRL HTML & \texttt{sel.html} / \texttt{open\_filing} & Preserve the fragment exactly (lossless) \\
+Presentation & Markdown & \texttt{markdown(sel)} & Documentation, notes, RAG \\
+Semantic & Facts JSON & \texttt{facts\_json(sel)} & Portable XBRL semantics; LLM input; old-XBRL bridge \\
+Analytical & DuckDB & \texttt{to\_duckdb(sel, db)} & A queryable fact warehouse \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\sig{save\_selection(sel::Selection; as, dir=".", db=nothing) -> String | Int}
+
+\noindent \texttt{as} is \texttt{:ixbrl}, \texttt{:markdown}, \texttt{:facts} or
+\texttt{:duckdb}. The first three write a file under \texttt{dir} (named
+\texttt{<accession>\_<selector-slug>.<ext>}) and return its path; \texttt{:duckdb} appends
+to a warehouse (default \texttt{<dir>/facts.duckdb}) and returns the number of rows inserted.
+
+\begin{lstlisting}
+sel = select_section(f)                            # pick the income statement
+save_selection(sel; as = :ixbrl,    dir = "out")   # lossless fragment .ixbrl.html
+save_selection(sel; as = :markdown, dir = "out")   # .md
+save_selection(sel; as = :facts,    dir = "out")   # .facts.json
+using DuckDB
+save_selection(sel; as = :duckdb,   dir = "out")   # rows appended to out/facts.duckdb
+\end{lstlisting}
+
+\paragraph{Facts JSON --- the semantic layer.} \texttt{facts\_json} serialises the resolved
+facts to a portable JSON document: a provenance header plus a \texttt{facts} array, values
+already normalised. It is the convenient working representation of the iXBRL semantics ---
+clean to feed a language model, cheap to re-query, and (carrying no HTML) a \emph{common
+shape across modern inline XBRL, old classic XBRL, and extracted fragments}.
+\texttt{read\_facts\_json} reads it back into a \texttt{Selection}, so it round-trips and
+flows on to \texttt{facts}/\texttt{to\_duckdb} --- which is also how a pre-iXBRL filing,
+with no rendered HTML, enters the same pipeline.
+
+\sig{facts\_json(sel::Selection; pretty=true) -> String}
+\sig{read\_facts\_json(source) -> Selection}
+
+\begin{verbatim}
+{ "version": 1,
+  "cik": "0000104169", "accession": "0000104169-26-000102",
+  "selector": "div:nth-of-type(52) > table:nth-of-type(1)", "kind": "table",
+  "facts": [
+    { "concept": "us-gaap:Revenues", "label": "Total revenues",
+      "value": 177751000000, "unit": "USD",
+      "period_start": "2026-02-01", "period_end": "2026-04-30",
+      "is_instant": false, "dimensions": {}, "decimals": -6,
+      "context_ref": "c-1", "unit_ref": "usd" } ] }
+\end{verbatim}
+
+\paragraph{DuckDB --- the analytical warehouse.} \texttt{to\_duckdb} writes into a DuckDB
+warehouse (a package extension --- available after \texttt{using DuckDB}): a single
+\texttt{.duckdb} file holding three tables joined by \texttt{accession} ---
+\texttt{documents} (the lossless iXBRL HTML, Layer 1, written by
+\texttt{to\_duckdb(f::Filing, db)}), \texttt{extractions} (the Facts JSON snapshot of each
+pick or filing, Layer 2), and \texttt{facts} (the rows, Layer 3) --- plus an
+\texttt{edgar\_meta} schema marker. The \texttt{facts} table is the canonical sink every
+source maps into: the picker (\texttt{source='picker'}, with \texttt{source\_selector}
+tracing each row back to the picked region) and whole-filing extraction
+(\texttt{source='filing'}); the \texttt{form}/\texttt{fy}/\texttt{fp}/\texttt{frame} columns
+are reserved for structured-data sources. Its primary key is each fact's \emph{semantic
+identity} \texttt{(cik, accession, concept, unit, period, dimensions)} --- not the
+document-internal \texttt{context\_ref}/\texttt{unit\_ref}, kept only as provenance --- so
+rows are inserted \texttt{ON CONFLICT DO NOTHING}: re-importing a filing is idempotent, and
+the same fact from two sources collapses to one row. You grow the warehouse filing by filing,
+and every fact joins back to its source document and extraction.
+
+\sig{to\_duckdb(data, db; table="facts") -> Int}
+
+\noindent \texttt{statement\_view} pivots the long fact table back into a \emph{wide}
+statement --- one row per concept/label, one column per period --- and, because the warehouse
+may hold many filings, \emph{stitches} the statement across them:
+
+\sig{statement\_view(db; statement=nothing, accession=nothing, consolidated=true, months=nothing, by=:concept) -> Vector\{NamedTuple\}}
+
+\noindent \texttt{statement} restricts to one financial statement (e.g.\ \texttt{"IncomeStatement"};
+needs facts ingested with \texttt{classify=true}); \texttt{months} is \emph{smart period
+selection} --- keep only durations of about that many months (\texttt{3} quarterly, \texttt{12}
+annual) plus instants, so periods sharing an end date do not collide; and
+\texttt{by=:standard\_concept} groups by the standardized concept (\S\ref{sec:export-layers}) for
+cross-company comparison. For example, a quarterly income statement stitched across several
+10-Qs:
+
+\begin{lstlisting}
+using DuckDB, PrettyTables
+archive_filings(104169, "wmt.duckdb"; forms = "10-Q", limit = 4, classify = true)
+pretty_table(statement_view("wmt.duckdb"; statement = "IncomeStatement", months = 3,
+                            by = :standard_concept))
+\end{lstlisting}
+
+\noindent The result is a Tables.jl row table (the period dates are the column names).
+
+\paragraph{Bulk extraction: \texttt{facts(::Filing)} and \texttt{archive\_filings}.} The picker
+is for curated, one-at-a-time selection; for whole filings there is a native, browser-free
+extractor. \texttt{facts(f::Filing)} reads \emph{every} XBRL fact from a filing --- its inline
+XBRL (\texttt{<ix:nonFraction>}) or a classic \texttt{.xml} instance --- as the same row table.
+It honours the iXBRL display transforms: a dash shown via \texttt{ixt:fixed-zero} is read as the
+value \texttt{0}, and a spelled-out number (\texttt{ixt-sec:numwordsen}, e.g.\ a ``\,No\,'' par
+value or ``Forty-two'') is parsed from its words.
+
+\sig{facts(f::Filing; classify=false, labels=false) -> Vector\{FactRow\}}
+
+\noindent and \texttt{archive\_filings} bulk-archives a filer's filings into the warehouse in
+one pass: it lists them with \texttt{filings\_by\_cik}, then stores each document and (with
+\texttt{facts=true}) its extracted facts (\texttt{source='filing'}) and a filing-level snapshot,
+reusing one connection and skipping any filing that fails to fetch.
+
+\sig{archive\_filings(cik, db; forms=nothing, facts=true, classify=false, labels=false, kind=:auto, limit=nothing) -> NamedTuple}
+
+\begin{lstlisting}
+using DuckDB
+archive_filings(104169, "wmt.duckdb"; forms = "10-Q", limit = 4)
+# -> (filings = 4, documents = 4, facts = ...)   # then query across filings
+\end{lstlisting}
+
+\paragraph{Statement classification.} The \texttt{statement} column (\texttt{IncomeStatement},
+\texttt{BalanceSheet}, \texttt{CashFlow}, \texttt{Equity}, \texttt{ComprehensiveIncome},
+\texttt{CoverPage}) records which financial statement a fact belongs to. It is filled from the
+\emph{authoritative} source --- the filing's own presentation linkbase (\texttt{*\_pre.xml}),
+which groups concepts into statement sections --- so it is not a heuristic guess. Pass
+\texttt{classify=true} to \texttt{facts(::Filing)}, \texttt{archive\_filings},
+\texttt{to\_duckdb(f::Filing, db)}, or the interactive \texttt{select\_section} /
+\texttt{select\_sections} to fill it (one extra fetch of the linkbase); concepts that
+appear only in notes are left blank. The map is also available directly:
+
+\sig{statement\_map(f::Filing) -> Dict\{String, String\}}
+
+\paragraph{Native labels.} The picker reads a fact's human-readable \texttt{label} off the
+rendered table row; the browser-free extractor has no rendered page, so it reads the filing's
+\emph{label linkbase} (\texttt{*\_lab.xml}) instead --- the authoritative \texttt{concept => label}
+map (preferring the standard label, then terse, then verbose). Pass \texttt{labels=true} to
+\texttt{facts(::Filing)}, \texttt{archive\_filings} or \texttt{to\_duckdb(f::Filing, db)} to fill
+the \texttt{label} column (one extra fetch); without it native facts have an empty label. The map
+is also available directly:
+
+\sig{label\_map(f::Filing) -> Dict\{String, String\}}
+
+\paragraph{Calculation relationships.} A filing's \emph{calculation linkbase}
+(\texttt{*\_cal.xml}) is the arithmetic of each statement: which concepts sum into which, with
+a signed weight (\texttt{+1} added, \texttt{-1} subtracted). \texttt{calculations} returns it as
+a Tables.jl row table of \texttt{(statement, parent, child, weight)}.
+
+\sig{calculations(f::Filing) -> Vector\{NamedTuple\}}
+
+\noindent This is the authoritative \emph{how-it-rolls-up} structure --- use it to validate that
+children sum to their parent (a data-quality check) or to read a line's contribution sign. It
+does \emph{not} rewrite the stored fact values: those are XBRL-canonical and validated against the
+SEC \texttt{companyfacts} API, and the printed sign of a line depends on its parent, which is
+statement-specific. For Walmart, \texttt{us-gaap:OperatingIncomeLoss} =
+\texttt{Revenues}\,(+1)\,$-$\,\texttt{CostOfRevenue}\,(-1)\,$-$\,\texttt{SGA}\,(-1), and the
+children indeed sum to the reported operating income.
+
+\paragraph{Concept standardization (pluggable).} Each fact row carries a
+\texttt{standard\_concept}: the issuer's \texttt{concept} mapped to a common name so facts can be
+grouped and compared across companies (the original \texttt{concept} and \texttt{label} are
+always preserved --- the dual-label approach). A standardization mapping is, however, an
+\emph{opinionated} artifact --- two distinct lines (Net sales vs.\ Total revenues) must not
+collapse to one --- so EDGAR.jl ships \textbf{no} default: until you select a mapping with
+\texttt{set\_standardizer}, \texttt{standard\_concept} is \texttt{nothing}.
+
+\sig{standardize(concept) -> Union\{String, Nothing\}}
+\sig{set\_standardizer(mapping)}
+
+\noindent \texttt{mapping} is a \texttt{Dict} of \texttt{concept => standard\_concept}, a
+function \texttt{concept -> Union\{String, Nothing\}}, or \texttt{:none}. Supply your own, or
+select one of the mappings EDGAR.jl plans to offer, which fall into two kinds:
+\begin{itemize}
+\item \textbf{Reference} --- the us-gaap taxonomy and the SEC Financial Statement Data Sets give
+  \emph{canonical} concepts and labels, but do \emph{not} collapse synonyms (two tags for
+  ``revenue'' stay distinct);
+\item \textbf{Community} --- a curated mapping that collapses synonyms for cross-company
+  comparison, at the cost of being opinionated. EDGAR.jl \emph{bundles} one:
+  \texttt{set\_standardizer(:edgartools)} loads the edgartools mapping (vendored, MIT-licensed
+  and attributed --- see \texttt{src/data/edgartools\_concept\_mappings.NOTICE.md}), which maps,
+  for example, \texttt{us-gaap:Revenues} to \texttt{Revenue} but
+  \texttt{us-gaap:RevenueFromContractWithCustomer\ldots} to the \emph{distinct}
+  \texttt{Contract Revenue}, so Net sales and Total revenues do not collapse.
+\end{itemize}
+
+\begin{lstlisting}
+set_standardizer(:edgartools)               # the bundled community mapping (MIT, attributed)
+standardize("us-gaap:Revenues")             # "Revenue"
+standardize("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")  # "Contract Revenue"
+set_standardizer(Dict("xx:Foo" => "Bar"))   # or supply your own
+set_standardizer(:none)                     # the default: no standardization
+\end{lstlisting}
+
+\noindent The bundled edgartools mapping is a point-in-time snapshot. Maintainers can re-vendor it
+from upstream with \texttt{julia --project scripts/refresh\_standardizer.jl} (optionally passing a
+tag or commit); the script validates the download as JSON before it replaces the bundled copy. See
+\texttt{src/data/edgartools\_concept\_mappings.NOTICE.md}.
+
+\paragraph{No extra sinks needed.} Parquet, CSV and SQLite are deliberately \emph{not}
+separate exports. A fact table is a Tables.jl source, so \texttt{CSV.write(path, facts(sel))},
+\texttt{Arrow.write(\ldots)} and \texttt{SQLite.load!(\ldots)} already take it in one line;
+and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQUET)} or
+\texttt{ATTACH 'f.sqlite' (TYPE SQLITE)} export them with a single SQL statement. Wrapping
+these would only add dependencies for no gain.
+
 
 \subsection{Financial Data (XBRL)}
 \label{sec:api-xbrl}
@@ -733,11 +1538,11 @@ println(get(sections, "Item 7", "(not found)"))
 \textbf{Function} & \textbf{Purpose} \\
 \midrule
 \endhead
-\code{company\_facts(cik)} & Every XBRL fact a filer has reported, in one
+\texttt{company\_facts(cik)} & Every XBRL fact a filer has reported, in one
   (large) document. \\
-\code{company\_concept(cik, taxonomy, tag)} & One concept over time for a single
-  filer (lighter than \code{company\_facts}). \\
-\code{xbrl\_frames(taxonomy, tag, unit, period)} & One concept for one period
+\texttt{company\_concept(cik, taxonomy, tag)} & One concept over time for a single
+  filer (lighter than \texttt{company\_facts}). \\
+\texttt{xbrl\_frames(taxonomy, tag, unit, period)} & One concept for one period
   across every filer that reported it (a cross-section). \\
 \bottomrule
 \end{longtable}
@@ -747,29 +1552,29 @@ println(get(sections, "Item 7", "(not found)"))
 \sig{company\_facts(cik)}
 
 \noindent Every XBRL fact a company has ever reported, in a single (often several
-megabyte) document from the \code{/api/xbrl/companyfacts/} endpoint, as parsed
-JSON. \code{cik} may be an integer or a string, with or without leading zeros.
-Facts are grouped by taxonomy under \code{.facts} (e.g.\ \code{:dei},
-\code{Symbol("us-gaap")}).
+megabyte) document from the \texttt{/api/xbrl/companyfacts/} endpoint, as parsed
+JSON. \texttt{cik} may be an integer or a string, with or without leading zeros.
+Facts are grouped by taxonomy under \texttt{.facts} (e.g.\ \texttt{:dei},
+\texttt{Symbol("us-gaap")}).
 
 \subsubsection{company\_concept}
 
 \sig{company\_concept(cik, taxonomy, tag)}
 
 \noindent One XBRL concept over time for a single filer, from
-\code{/api/xbrl/companyconcept/} --- lighter than \code{company\_facts} when you
-want a single line item. Observations live under \code{.units} keyed by unit (e.g.
-\code{.units.USD}), each carrying \code{start}/\code{end}, \code{val}, \code{fy},
-\code{fp}, \code{form} and \code{filed}.
+\texttt{/api/xbrl/companyconcept/} --- lighter than \texttt{company\_facts} when you
+want a single line item. Observations live under \texttt{.units} keyed by unit (e.g.
+\texttt{.units.USD}), each carrying \texttt{start}/\texttt{end}, \texttt{val}, \texttt{fy},
+\texttt{fp}, \texttt{form} and \texttt{filed}.
 
 \subsubsection{xbrl\_frames}
 
 \sig{xbrl\_frames(taxonomy, tag, unit, period)}
 
 \noindent One XBRL concept for one period across \emph{every} filer that reported
-it, from \code{/api/xbrl/frames/} --- a cross-section rather than a time series. A
-trailing \code{I} on \code{period} denotes an instant (e.g.\ \code{"CY2022Q4I"});
-drop it for a duration (e.g.\ \code{"CY2022"}). Rows are under \code{.data}.
+it, from \texttt{/api/xbrl/frames/} --- a cross-section rather than a time series. A
+trailing \texttt{I} on \texttt{period} denotes an instant (e.g.\ \texttt{"CY2022Q4I"});
+drop it for a duration (e.g.\ \texttt{"CY2022"}). Rows are under \texttt{.data}.
 
 \begin{lstlisting}
 facts   = company_facts("320193")
@@ -782,11 +1587,10 @@ for o in filter(o -> o.form == "10-K", concept.units.USD)
 end
 \end{lstlisting}
 
-\subsection{Credentials and Caching}
-\label{sec:caching}
+\subsection{Credentials and Caching}\label{sec:caching}
 
 \paragraph{Credentials (the User-Agent).}
-There is no API key; the only credential is the SEC \code{User-Agent}
+There is no API key; the only credential is the SEC \texttt{User-Agent}
 (\S\ref{sec:ua}).
 
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
@@ -794,15 +1598,15 @@ There is no API key; the only credential is the SEC \code{User-Agent}
 \textbf{Function} & \textbf{Purpose} \\
 \midrule
 \endhead
-\code{set\_user\_agent(user\_agent)} & Set the User-Agent from a single
-  \code{"name email"} string (validated). \\
-\code{get\_user\_agent()} & Return the User-Agent that will be sent (explicit
-  value $\to$ \code{SEC\_USER\_AGENT} env var $\to$ error). \\
-\code{persist\_user\_agent(user\_agent; depot)} & Validate, set for this session,
-  and write \code{SEC\_USER\_AGENT} into the depot's \code{startup.jl} so every
+\texttt{set\_user\_agent(user\_agent)} & Set the User-Agent from a single
+  \texttt{"name email"} string (validated). \\
+\texttt{get\_user\_agent()} & Return the User-Agent that will be sent (explicit
+  value $\to$ \texttt{SEC\_USER\_AGENT} env var $\to$ error). \\
+\texttt{persist\_user\_agent(user\_agent; depot)} & Validate, set for this session,
+  and write \texttt{SEC\_USER\_AGENT} into the depot's \texttt{startup.jl} so every
   future session has it. \\
-\code{unpersist\_user\_agent(; depot)} & Remove the line that
-  \code{persist\_user\_agent} wrote. \\
+\texttt{unpersist\_user\_agent(; depot)} & Remove the line that
+  \texttt{persist\_user\_agent} wrote. \\
 \bottomrule
 \end{longtable}
 
@@ -810,8 +1614,8 @@ There is no API key; the only credential is the SEC \code{User-Agent}
 
 \sig{set\_user\_agent(user\_agent)}
 
-\noindent Set the SEC \code{User-Agent} for the current process from a single
-\code{"name email"} string. It is validated (non-empty, contains an email) and
+\noindent Set the SEC \texttt{User-Agent} for the current process from a single
+\texttt{"name email"} string. It is validated (non-empty, contains an email) and
 returned. A User-Agent is required before any request; without one EDGAR.jl stops
 with a clear error \emph{before} contacting the SEC.
 
@@ -819,45 +1623,45 @@ with a clear error \emph{before} contacting the SEC.
 
 \sig{get\_user\_agent()}
 
-\noindent Return the \code{User-Agent} that will be sent, following the resolution
-order: an explicit value from \code{set\_user\_agent}/\code{set\_config}, else the
-\code{SEC\_USER\_AGENT} environment variable, else an error.
+\noindent Return the \texttt{User-Agent} that will be sent, following the resolution
+order: an explicit value from \texttt{set\_user\_agent}/\texttt{set\_config}, else the
+\texttt{SEC\_USER\_AGENT} environment variable, else an error.
 
 \subsubsection{persist\_user\_agent}
 
 \sig{persist\_user\_agent(user\_agent; depot = first(DEPOT\_PATH))}
 
 \noindent Validate and set the User-Agent for this session, \emph{and} write
-\code{SEC\_USER\_AGENT} into the depot's \code{startup.jl} so every future Julia
-session has it. \code{depot} selects which Julia depot's startup file to write.
+\texttt{SEC\_USER\_AGENT} into the depot's \texttt{startup.jl} so every future Julia
+session has it. \texttt{depot} selects which Julia depot's startup file to write.
 
 \subsubsection{unpersist\_user\_agent}
 
 \sig{unpersist\_user\_agent(; depot = first(DEPOT\_PATH))}
 
-\noindent Remove the \code{SEC\_USER\_AGENT} line that \code{persist\_user\_agent}
-wrote from the depot's \code{startup.jl}. Returns \code{true} if a line was
-removed, \code{false} if there was nothing to remove.
+\noindent Remove the \texttt{SEC\_USER\_AGENT} line that \texttt{persist\_user\_agent}
+wrote from the depot's \texttt{startup.jl}. Returns \texttt{true} if a line was
+removed, \texttt{false} if there was nothing to remove.
 
 \paragraph{Caching.}
 Responses are cached so repeated calls in a session do not re-download the same
-data. The \code{cache} keyword of \code{set\_config} selects where the cache
+data. The \texttt{cache} keyword of \texttt{set\_config} selects where the cache
 lives and how long it survives:
 
 \begin{itemize}[nosep]
-  \item \code{:temporary} (default) --- an ephemeral per-process directory,
+  \item \texttt{:temporary} (default) --- an ephemeral per-process directory,
     deleted when Julia exits. Nothing persists across sessions.
-  \item \code{:persistent} --- kept in \code{\textasciitilde/.cache/EDGAR.jl}
-    (or \code{XDG\_CACHE\_HOME}) across sessions; files older than
-    \code{cache\_max\_age} are pruned automatically.
-  \item \code{:off} --- no caching; every call re-fetches.
+  \item \texttt{:persistent} --- kept in \texttt{\textasciitilde/.cache/EDGAR.jl}
+    (or \texttt{XDG\_CACHE\_HOME}) across sessions; files older than
+    \texttt{cache\_max\_age} are pruned automatically.
+  \item \texttt{:off} --- no caching; every call re-fetches.
 \end{itemize}
 
 \noindent
-Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
+Two \textbf{independent} time limits apply: \texttt{cache\_ttl} (default 24\,h) is
 \emph{freshness} --- how long a cached response is reused before being re-fetched
-(it deletes nothing); \code{cache\_max\_age} (default 7\,days) is \emph{retention}
---- how long a file is kept on disk before being pruned. \code{cache\_max\_size}
+(it deletes nothing); \texttt{cache\_max\_age} (default 7\,days) is \emph{retention}
+--- how long a file is kept on disk before being pruned. \texttt{cache\_max\_size}
 (default 10\,MB) caps the size of any single cached response.
 
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
@@ -865,12 +1669,12 @@ Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
 \textbf{Function} & \textbf{Purpose} \\
 \midrule
 \endhead
-\code{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size,
+\texttt{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size,
   cache\_max\_age, host\_whitelist, allow\_file, user\_agent)} & Override the
   global runtime configuration (only the keywords you pass change). \\
-\code{clean\_cache()} & Prune the cache on demand. \\
-\code{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
-\code{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
+\texttt{clean\_cache()} & Prune the cache on demand. \\
+\texttt{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
+\texttt{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
 \bottomrule
 \end{longtable}
 
@@ -879,31 +1683,31 @@ Two \textbf{independent} time limits apply: \code{cache\_ttl} (default 24\,h) is
 \sig{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist, allow\_file, user\_agent)}
 
 \noindent Override the global runtime configuration, returning the updated
-\code{EDGARConfig}. Only the keywords you pass are changed; the rest keep their
-current values. \code{cache} selects the mode (\code{:temporary} / \code{:persistent}
-/ \code{:off}); \code{cache\_ttl} sets freshness and \code{cache\_max\_age}
-retention; \code{cache\_max\_size} caps a single response; \code{user\_agent} is an
-alternative to \code{set\_user\_agent}.
+\texttt{EDGARConfig}. Only the keywords you pass are changed; the rest keep their
+current values. \texttt{cache} selects the mode (\texttt{:temporary} / \texttt{:persistent}
+/ \texttt{:off}); \texttt{cache\_ttl} sets freshness and \texttt{cache\_max\_age}
+retention; \texttt{cache\_max\_size} caps a single response; \texttt{user\_agent} is an
+alternative to \texttt{set\_user\_agent}.
 
 \subsubsection{clean\_cache}
 
 \sig{clean\_cache(max\_age\_seconds = CACHE\_TTL)}
 
 \noindent Prune the on-disk cache on demand, deleting entries older than
-\code{max\_age\_seconds} and returning the number removed.
+\texttt{max\_age\_seconds} and returning the number removed.
 
 \subsubsection{cache\_metrics}
 
 \sig{cache\_metrics()}
 
-\noindent Return a \code{Dict} of the session's cache counters --- hits, misses,
+\noindent Return a \texttt{Dict} of the session's cache counters --- hits, misses,
 requests and bytes --- for inspecting cache effectiveness.
 
 \subsubsection{cache\_path\_for}
 
 \sig{cache\_path\_for(url)}
 
-\noindent Return the on-disk cache path EDGAR.jl would use for \code{url}, whether
+\noindent Return the on-disk cache path EDGAR.jl would use for \texttt{url}, whether
 or not it is currently cached.
 
 \begin{lstlisting}
@@ -920,10 +1724,10 @@ clean_cache()
 \sig{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
 
 \noindent The primitive every function above is built on: it returns the raw
-response body as bytes (or \code{nothing} on failure), with the configured
-\code{User-Agent} and the cache applied. Use it as an escape hatch to reach SEC
+response body as bytes (or \texttt{nothing} on failure), with the configured
+\texttt{User-Agent} and the cache applied. Use it as an escape hatch to reach SEC
 endpoints EDGAR.jl does not yet wrap, then parse the bytes yourself (e.g.\ with
-\code{JSON3.read}).
+\texttt{JSON3.read}).
 
 \begin{lstlisting}
 body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")
@@ -935,51 +1739,140 @@ data = JSON3.read(body)
 \subsection{Glossary}
 \label{sec:glossary}
 
-SEC filings and their structured (XBRL) data come with their own vocabulary.
+SEC filings and their structured data come with their own vocabulary.
 The terms that matter here:
 
 \begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
   \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
-    zero-padded to 10 digits (Apple $\to$ \code{0000320193}). Functions accept it
-    as an integer or a string, with or without leading zeros (\code{320193}
-    $\equiv$ \code{0000320193}). Look one up from a ticker or company name with
-    \code{cik}.
+    zero-padded to 10 digits (Apple $\to$ \texttt{0000320193}). Functions accept it
+    as an integer or a string, with or without leading zeros (\texttt{320193}
+    $\equiv$ \texttt{0000320193}). Look one up from a ticker or company name with
+    \texttt{cik}.
   \item[Filing] a document submitted to the SEC, identified by an
-    \textbf{accession number} and a \textbf{form type} (\code{10-K} annual
-    report, \code{10-Q} quarterly, \code{8-K} current report, \dots). Get a
-    filer's filings with \code{filings\_by\_cik}.
-  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable
-    format companies tag their financial statements in; it is what makes the
-    numbers queryable rather than locked inside a document.
-  \item[iXBRL] \emph{Inline XBRL}: those same tags embedded directly inside the
-    filing's human-readable HTML, so one document is both readable and
-    machine-parseable. The SEC has required it for financial statements since
-    around 2019.
+    \textbf{accession number} and a \textbf{form type} (\texttt{10-K} annual
+    report, \texttt{10-Q} quarterly, \texttt{8-K} current report, \dots). Get a filer's filings with \texttt{filings\_by\_cik}.
+  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable format companies tag their financial statements in; it is what makes the numbers queryable rather than locked inside a document. A pure XBRL filing is an XML document whose primary purpose is to represent structured facts,
+  \begin{lstlisting}
+<us-gaap:Assets contextRef="CurrentYear" unitRef="USD">
+    1000000
+</us-gaap:Assets>
+\end{lstlisting}
+A browser won't render this as a nice financial statement. It's intended for software.
+\item[iXBRL] \emph{Inline-XBRL}: those same tags embedded directly inside the filing's human-readable HTML, so one document is both readable and
+machine-parseable. The SEC has required it for financial statements since
+around 2019. An iXBRL filing is an HTML document that looks like a normal report,
+\begin{lstlisting}
+<p>
+Total assets were
+<ix:nonFraction
+    name="us-gaap:Assets"
+    contextRef="CurrentYear"
+    unitRef="USD">
+    1000000
+</ix:nonFraction>.
+</p>
+\end{lstlisting}
+Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although modern tools often treat it as HTML with XML namespaces.
   \item[Fact] a single reported number: one \emph{concept}, for one
     \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
-    96{,}995{,}000{,}000 USD''). \code{company\_facts} returns every fact a
+    96{,}995{,}000{,}000 USD''). \texttt{company\_facts} returns every fact a
     company has reported.
   \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
-    (e.g.\ \code{NetIncomeLoss}, \code{Assets}, \code{Revenues}) --- ``what is
-    being measured''. \code{company\_concept} returns one concept over time.
+    (e.g.\ \texttt{NetIncomeLoss}, \texttt{Assets}, \texttt{Revenues}) --- ``what is
+    being measured''. \texttt{company\_concept} returns one concept over time.
   \item[Taxonomy] a dictionary that defines concepts. The big one is
-    \textbf{\code{us-gaap}} (US accounting standards); \textbf{\code{dei}}
+    \textbf{\texttt{us-gaap}} (US accounting standards); \textbf{\texttt{dei}}
     (\emph{Document and Entity Information}) holds metadata about the filing
-    itself; \textbf{\code{srt}} holds shared elements; \textbf{\code{ifrs-full}}
+    itself; \textbf{\texttt{srt}} holds shared elements; \textbf{\texttt{ifrs-full}}
     is for filers reporting under IFRS; and each company has its own
-    \textbf{extension} namespace (e.g.\ \code{aapl} for Apple-specific concepts).
+    \textbf{extension} namespace (e.g.\ \texttt{aapl} for Apple-specific concepts).
   \item[Frame] a cross-section: one concept, one unit, one period, across
-    \emph{every} filer that reported it. \code{xbrl\_frames} returns a frame.
-  \item[Unit] the unit of measure of a fact: \code{USD}, \code{shares},
-    \code{USD/shares} (per-share), \code{pure} (a ratio), \dots
+    \emph{every} filer that reported it. \texttt{xbrl\_frames} returns a frame.
+  \item[Unit] the unit of measure of a fact: \texttt{USD}, \texttt{shares},
+    \texttt{USD/shares} (per-share), \texttt{pure} (a ratio), \dots
   \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
-    use \emph{calendar} periods: \code{CY} + year, as in \code{CY2022} (a full
-    calendar year), \code{CY2022Q4} (a quarter), or \code{CY2022Q4I} (a single
-    instant --- note the trailing \code{I}). An \textbf{instant} is a point in
+    use \emph{calendar} periods: \texttt{CY} + year, as in \texttt{CY2022} (a full
+    calendar year), \texttt{CY2022Q4} (a quarter), or \texttt{CY2022Q4I} (a single
+    instant --- note the trailing \texttt{I}). An \textbf{instant} is a point in
     time (balance-sheet items such as Assets, at quarter-end); a
     \textbf{duration} is a span (income-statement items such as Revenue). By
-    contrast, \textbf{\code{FY}} in a company's own facts is its \emph{fiscal}
-    year, which need not match the calendar (Apple's \code{FY2023} ended in
+    contrast, \textbf{\texttt{FY}} in a company's own facts is its \emph{fiscal}
+    year, which need not match the calendar (Apple's \texttt{FY2023} ended in
     September 2023).
 \end{description}
+
+
+\section{Related Work and Comparison}
+\label{sec:related-work}
+
+EDGAR.jl enters a mature ecosystem of EDGAR/XBRL tooling, mostly in Python and R. It is
+worth being explicit about where it follows the field, where it differs, and what it does
+not (yet) do.
+
+\paragraph{The landscape.} In Python, \href{https://github.com/dgunning/edgartools}{\texttt{edgartools}}
+is the modern leader --- it turns filings into typed objects and is especially strong on XBRL
+statements, with two ideas we admire: \emph{concept standardization} (mapping each issuer's tag
+to a common concept for cross-company comparison) and \emph{statement stitching} (assembling a
+multi-period statement across filings). It is, however, in-memory --- it exports to
+\texttt{DataFrame}s rather than persisting a warehouse. \href{https://arelle.org/}{Arelle} is the
+reference open-source XBRL engine --- the SEC's own EDGAR Renderer is built on it --- and its
+\texttt{xbrlDB} plug-in persists facts using the canonical \emph{XBRL-US Public Database} schema.
+Tools such as \texttt{sec-edgar-downloader} and \texttt{sec-downloader} fetch raw filings and
+leave parsing to you. In R, \texttt{finstr} (on top of the \texttt{XBRL} package) organises
+instances into income statements, balance sheets and cash-flow statements. Julia, by contrast,
+has had no established EDGAR/XBRL library.
+
+\begin{table}[h]
+\centering
+\caption{EDGAR.jl among representative EDGAR/XBRL tools.}
+\label{tab:related-work}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.06\textwidth}p{0.27\textwidth}p{0.15\textwidth}p{0.10\textwidth}p{0.09\textwidth}@{}}
+\toprule
+\textbf{Tool} & \textbf{Lang} & \textbf{Focus} & \textbf{Persistent warehouse} & \textbf{Concept std.} & \textbf{Picker / prov.} \\
+\midrule
+\textbf{EDGAR.jl} & Julia & Pick a region $\to$ four-layer export + fact warehouse & DuckDB (embedded) & yes (opt-in) & \textbf{yes} \\
+edgartools & Python & Typed filings; XBRL statements & in-memory & yes & no \\
+Arelle & Python & Reference XBRL engine / renderer & Postgres, RDF, \ldots & --- & no \\
+sec-downloader & Python & Download raw filings & no & no & no \\
+finstr + XBRL & R & XBRL $\to$ IS / BS / CF & no & partial & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What EDGAR.jl does differently.} Three things set it apart. \emph{(1)~An interactive
+picker with provenance:} you select a region in the rendered filing, and every extracted fact
+carries a \texttt{source\_selector} back to the exact DOM node --- a bridge between document
+review, iXBRL semantics and relational analytics that the other tools, which extract purely
+programmatically, do not offer. \emph{(2)~An embedded DuckDB warehouse:} zero-server and
+single-file, where Arelle persists only to heavy databases and edgartools does not persist at
+all --- and facts from any source share one table under a semantic key
+(\S\ref{sec:export-layers}). \emph{(3)~A four-layer export} from a single selection --- lossless
+iXBRL, Markdown, Facts JSON and DuckDB --- with provenance threaded throughout. And it is
+Julia/Tables.jl-native, filling a gap in that ecosystem.
+
+\paragraph{Authoritative enrichment.} A second distinction is \emph{where} EDGAR.jl's enrichment
+comes from: a fact's statement is read from the filing's own presentation linkbase
+(\texttt{statement\_map}, \S\ref{sec:export-layers}) and its roll-up arithmetic from the
+calculation linkbase (\texttt{calculations}), rather than inferred --- and concept standardization
+is pluggable (\texttt{set\_standardizer}), defaulting to \emph{none} and offering the bundled,
+attributed edgartools mapping opt-in, instead of baking one opinionated mapping in.
+
+\paragraph{What it does not (yet) do.} In fairness, the established tools still lead in breadth.
+edgartools covers many more form types (Form 3/4/5, 13F, ADV, \dots) and now ships IFRS mappings,
+while Arelle implements the full XBRL specification --- formula, dimensional validation, table
+linkbases --- that EDGAR.jl does not. EDGAR.jl focuses on us-gaap financial-statement facts, and
+its standardization is the bundled edgartools concept mapping rather than that project's newer,
+data-driven one. The gaps an earlier draft named --- concept standardization, statement
+classification, and the calculation linkbase --- are now closed
+(\texttt{set\_standardizer(:edgartools)}, \texttt{statement\_map}, \texttt{calculations}).
+
+\paragraph{Validation from the reference schema.} Reassuringly, the design we arrived at matches
+the XBRL-US reference: it hashes each fact by its context so identical contexts collapse (our
+semantic \texttt{fact\_key}), and assigns a fiscal year and period to every fact (our
+\texttt{fy}/\texttt{fp}/\texttt{frame}). Where we diverge is deliberate --- the reference
+normalises context, unit and dimension into separate tables for transactional Postgres, whereas
+EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytical, columnar
+store like DuckDB prefers.
+
 \end{document}

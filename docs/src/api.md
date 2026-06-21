@@ -13,14 +13,47 @@ padded string.
 
 ## Filings
 
-Download filings and turn them into text. (To *list* a filer's filings, see
-[`filings_by_cik`](@ref) under Full-text search.)
+Fetch a filing's document, turn it into text, extract sections, and save it. (To
+*list* a filer's filings, see [`filings_by_cik`](@ref) under Filings search.)
 
 ```@docs
-download_filing
-parse_filing
-extract_section
+fetch_filing
+Filing
 save_filing
+open_filing
+download_assets
+extract_section
+```
+
+## Interactive extraction and export
+
+Pick a region from a rendered filing in the browser and get it back as a `Selection`,
+then export it across the four layers: the lossless iXBRL fragment, Markdown, a portable
+**Facts JSON** document, or a DuckDB fact warehouse. For whole filings, `facts(::Filing)`
+extracts every XBRL fact natively (no browser), and `archive_filings` bulk-loads a filer's
+filings into the warehouse. Each fact also carries a `standard_concept` from `standardize`,
+for cross-company comparison. `to_duckdb`, `statement_view` and `archive_filings` are
+provided by a package extension, available after `using DuckDB`.
+
+```@docs
+select_section
+select_sections
+Selection
+Fact
+markdown
+facts
+facts_json
+read_facts_json
+standardize
+set_standardizer
+edgartools_mapping
+statement_map
+label_map
+calculations
+save_selection
+to_duckdb
+statement_view
+archive_filings
 ```
 
 ## Financial data
