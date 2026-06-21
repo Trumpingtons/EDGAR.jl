@@ -41,9 +41,13 @@ jurisdiction adapter. Of edgartools' ~28 rules: ~45% common engine logic, ~30% `
   `STATEMENT_REGISTRY` (union load = behaviour-preserving; prefix-selection is a later refinement).
   Verified: merged registry identical to pre-split; offline suite green; live SAP/ORCL/STT unchanged.
   `classify.jl` removed.
-- **R1** — offline fail→correct corpus: `(jurisdiction, taxonomy, filer, accession, role+concept
-  snapshot, expected_statement)`; seed from SAP/AZN/STT/banks/BDCs/20-mainstream + reproducible
-  edgartools issue filings.
+- [x] **R1 (DONE)** — offline fail→correct corpus `test/data/classification_corpus.json` (65 cases,
+  8 filers spanning us-gaap mainstream/bank STT/BDC ARCC/FilingSummary MSFT/ProfitLoss PNC + ifrs-full
+  SAP/NVS/AZN), each `(filer, accession, taxonomy, jurisdiction, role, concepts, expected)` with
+  `concepts` = exactly what `_classify_role` receives. Generator `scripts/build_classification_corpus.jl`
+  (live → JSON). Harness testset "classification corpus (offline, Phase R)" asserts the classifier
+  over all cases — green baseline. To port a rule (R2): add the offending filing with `expected` =
+  correct → red → fix → green.
 - **R2** — port the cascade + each `#issue` rule, **one rule = one corpus test**; tag with the issue
   ref + edgartools attribution. Land green at each step (no blind 500-line drop).
 - **R3** — integrate: engine picks the best role per statement type → build the concept→statement map;

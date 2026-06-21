@@ -545,6 +545,21 @@ end
           [("BalanceSheet", "R2.htm"), ("CashFlow", "R6.htm")]
 end
 
+@testset "classification corpus (offline, Phase R)" begin
+    # Real filings' face-statement roles captured offline (test/data/classification_corpus.json,
+    # built by scripts/build_classification_corpus.jl) — the fail->correct baseline for the classifier
+    # across taxonomies/sectors (us-gaap mainstream/bank/BDC, ifrs-full 20-F incl. AZN combined P&L+OCI).
+    corpus = EDGAR.JSON3.read(read(joinpath(@__DIR__, "data", "classification_corpus.json"), String))
+    fails = String[]
+    for c in corpus.cases
+        got = EDGAR._classify_role(String(c.role), [String(x) for x in c.concepts])
+        got == String(c.expected) ||
+            push!(fails, "$(c.filer) [$(c.taxonomy)] $(last(split(String(c.role), '/'))): expected $(repr(String(c.expected))) got $(repr(got))")
+    end
+    isempty(fails) || @info "classification corpus mismatches" fails
+    @test (length(fails), length(corpus.cases)) == (0, length(corpus.cases))
+end
+
 @testset "calculations (calc linkbase, W7, offline)" begin
     cal = """
     <link:linkbase>
