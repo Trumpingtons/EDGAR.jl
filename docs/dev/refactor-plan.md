@@ -10,8 +10,14 @@
 
 - [x] **Step 0** — split `extract_xbrl.jl` into common parsers + `extract_xbrl_sec.jl`
   (SEC linkbase access: `_fetch_linkbase`, `statement_map`, `label_map`, `calculations(::Filing)`).
-  Tests green; GLEIF/ESEF native extraction unchanged.
-- [ ] **Phase A** — carve the rest of the monolith per the map below (mechanical, no behavior change).
+- [x] **Phase A** — monolith carved into the files below (mechanical, no behavior change). The
+  shell `EDGAR.jl` is now just deps + includes + exports. Verified: line-number partition (every
+  body line assigned exactly once — slice total 1737 = 1770 − 33 shell lines), full test suite
+  green, GLEIF/ESEF extraction byte-identical, and no SEC code leaks into 🟢 files.
+  Deviations from the original map, for contiguity (all within one colour, so harmless):
+  `_normalize_cik`/`_fetch_submissions`/`_str`/`_head` → `sec_data.jl` (not `filing.jl`/`text.jl`);
+  include order is `…types, sec_data, filing, selection, picker, present, facts, …` so every
+  cross-file reference is a call-time body reference, never an include-time one.
 - [ ] **Phase B** — introduce `abstract type Jurisdiction`, move 🔵 files behind `SEC <: Jurisdiction`,
   add `ESEF` as the second jurisdiction to validate the seam (and close the `classify_role` IFRS gap).
 
@@ -42,25 +48,27 @@ end
 Order rule: types/consts used in *signatures* or *const initializers* must be included before use;
 method *bodies* may forward-reference (resolved at call time).
 
-## File-by-file map (line refs from the pre-split monolith)
+## What landed
 
-| File | Contents | Fate |
-|---|---|---|
-| `standardize.jl` *(exists)* | `standardize`, `set_standardizer`, `edgartools_mapping`, `_STANDARDIZER`, `_EDGARTOOLS` | 🟢 mechanism (data stays in `src/data/`) |
-| `config.jl` *(new)* | `EDGARConfig` 26, `CONFIG` 38, `set_config` 100, `get_cache_dir/ttl/max_*` 115–121, user-agent get/set/persist/unpersist 137–227, `_is_persistent` 229, `_PERSIST_MARKER` 174, `_TEMP_CACHE_DIR`/`_temp_cache_dir` 43–98 | 🟢 |
-| `http.jl` *(new)* | cache consts 18–24, `host_allowed` 249, `cache_path_for` 267, `_read/_write_cache` 272–298, `clean_cache` 300, `cache_metrics` 330, `_maybe_prune_persistent`/`_LAST_PRUNE` 235–247, `fetch_url` 351, `_get_json` 483 | 🟢 generic HTTP+cache |
-| `util.jl` *(new)* | `_open_in_default_app` 963 | 🟢 (must be common — picker's default opener uses it) |
-| `text.jl` *(new)* | `levenshtein` 425, `similarity_ratio` 447, `_str`/`_head` 557–558, `html_to_text` 1065, `clean_text`/`_ENTITIES` 1096–1131, `extract_section` 1133–1311 | 🟢 generic HTML |
-| `types.jl` *(new)* | `Filing` 798, `Fact` 1345 (+kw ctor, `show`), `Selection` 1427 (+kw ctor, `show`), `FactRow` 1393, `SelectionTable` 1401, `SELECTION_SCHEMA_VERSION` 1467, `fact_row` 1382, `_tonum` 1470 | 🟢 |
-| `filing.jl` *(new)* | `fetch_filing` 879, `_normalize_cik` 459, `_fetch_submissions` 470, `_filing_dir` 811, `_xbrl_instance` 817, `_find_filing` 834, `_cik_dir` 785, `download_assets` 924, `open_filing(::Filing)`/`(::String)` 970–1013, `save_filing` 1086, `_inline_images`/`_IMAGE_MIME` 1020–1054, `show(MIME"text/html")` 1056, `_filing_base_url` 902, `_ASSET_EXT` 908 | 🔵 → `sec.jl` |
-| `sec_data.jl` *(new)* | `company_facts` 501, `company_concept` 516, `xbrl_frames` 533, EFTS `_efts_search`/`_entity_name`/`_efts_row` 541–616, `full_text_search`/`filings_by_text` 622–631, `filings_by_cik` 660, `profile` 707, `cik`/`_company_tickers_raw` 725–783 | 🔵 SEC-only |
-| `selection.jl` *(new)* | `parse_selection` 1520, `_parse_fact` 1474, `_with_statement` 1496, `_classify_selection` 1504, `_selection_page` 1556, `open_filing(::Selection)` 1568, `_selection_slug` 1715 | 🟢 |
-| `picker.jl` *(exists)* | unchanged | 🟢 |
-| `present.jl` *(exists)* | `markdown`, `facts_json`, `read_facts_json` | 🟢 |
-| `facts.jl` *(new)* | `facts(::AbstractVector{Selection})` 1600, `facts(::Selection)` 1611 | 🟢 |
-| `extract_xbrl.jl` *(exists)* | native extractor + linkbase parsers + `facts/facts_json(::Filing)` | 🟢 |
-| `extract_xbrl_sec.jl` *(DONE)* | `_fetch_linkbase`, `statement_map`, `label_map`, `calculations(::Filing)` | 🔵 |
-| `export.jl` *(new)* | `save_selection` 1744, DuckDB stub methods `to_duckdb`/`statement_view`/`archive_filings` 1641–1712 | 🟢 |
+All files, in include order (the 37-line `EDGAR.jl` shell is just deps + includes + exports).
+
+| File | Role | | |
+|---|---|---|---|
+| `standardize.jl` | concept standardization mechanism (data in `src/data/`) | 🟢 | pre-existing |
+| `config.jl` | runtime config + SEC User-Agent | 🟢 | new |
+| `http.jl` | HTTP client + on-disk cache, `fetch_url`/`_get_json` | 🟢 | new |
+| `util.jl` | OS opener helper | 🟢 | new |
+| `text.jl` | fuzzy match, `html_to_text`/`clean_text`, `extract_section` | 🟢 | new |
+| `types.jl` | `Filing`, `Fact`, `Selection`, row schemas | 🟢 | new |
+| `sec_data.jl` | `data.sec.gov`/EFTS APIs, CIK/ticker lookup | 🔵 | new |
+| `filing.jl` | fetch/open/save from EDGAR Archives | 🔵 | new |
+| `selection.jl` | picker transport → `Selection` | 🟢 | new |
+| `picker.jl` | browser picker overlay (`PICKER_JS`) | 🟢 | pre-existing |
+| `present.jl` | `markdown` / `facts_json` exports | 🟢 | pre-existing |
+| `facts.jl` | `facts(::Selection)` row table | 🟢 | new |
+| `extract_xbrl.jl` | native XBRL parsing + extraction + linkbase parsers | 🟢 | pre-existing |
+| `extract_xbrl_sec.jl` | SEC linkbase access (`statement_map`/`label_map`/`calculations`) | 🔵 | pre-existing |
+| `export.jl` | `save_selection` + DuckDB extension stubs | 🟢 | new |
 
 ## Acceptance (per step)
 
