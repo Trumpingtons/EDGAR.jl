@@ -200,40 +200,20 @@ _filing_selection(f::Filing, fcts) =
 
 # ── Statement classification from the presentation linkbase (W5) ─────────────
 # The authoritative grouping of concepts into financial statements is the filing's own
-# presentation linkbase (`*_pre.xml`): each extended-link role is a section, and the face
-# statements (Income / Balance Sheet / Cash Flows / Equity / Comprehensive Income) are named
-# recognisably and distinct from the note/disclosure/`Details`/`Tables` roles. We classify each
-# face role from its URI, then map every concept it contains to that statement.
-
-# A role URI -> a statement label, or "" for notes/details/cover (not a face statement).
-function _classify_role(role::AbstractString)
-    s = lowercase(replace(last(split(role, "/")), r"[^A-Za-z0-9]" => ""))
-    any(occursin(p, s) for p in ("parenthetical", "details", "tables", "policies", "narrative")) && return ""
-    # Balance sheet, incl. bank/broker-dealer naming ("Statement of Condition",
-    # "Statement of Financial Condition") which never says "balance sheet".
-    (occursin("balancesheet", s) || occursin("financialposition", s) ||
-     occursin("ofcondition", s) || occursin("financialcondition", s)) && return "BalanceSheet"
-    occursin("cashflow", s) && return "CashFlow"
-    occursin("comprehensiveincome", s) && return "ComprehensiveIncome"
-    (occursin("shareholdersequity", s) || occursin("stockholdersequity", s)) && return "Equity"
-    (occursin("statementsofincome", s) || occursin("statementofincome", s) ||
-     occursin("statementsofoperations", s)) && return "IncomeStatement"
-    occursin("coverpage", s) && return "CoverPage"
-    return ""
-end
-
-# When a concept appears in several face statements, keep the highest-priority one.
-const _STATEMENT_PRIORITY = ["IncomeStatement", "BalanceSheet", "CashFlow",
-                             "ComprehensiveIncome", "Equity", "CoverPage"]
+# presentation linkbase (`*_pre.xml`): each extended-link role is a section. We classify each role
+# from BOTH its name and the concepts it contains (see `_classify_role` in classify.jl), then map
+# every concept it holds to that statement. Passing the concepts (not just the role name) is what
+# makes it robust to bank/IFRS naming and opaque role URIs.
 
 # Parse a presentation-linkbase XML into a concept => statement map.
 function _concept_statements(pre_xml::AbstractString)
     cmap = Dict{String,String}()
     for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
-        stmt = _classify_role(m.captures[1])
+        concepts = String[replace(String(loc.captures[1]), "_" => ":"; count = 1)
+                          for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])]
+        stmt = _classify_role(m.captures[1], concepts)
         isempty(stmt) && continue
-        for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])
-            c = replace(String(loc.captures[1]), "_" => ":"; count = 1)
+        for c in concepts
             if !haskey(cmap, c) ||
                findfirst(==(stmt), _STATEMENT_PRIORITY) < findfirst(==(cmap[c]), _STATEMENT_PRIORITY)
                 cmap[c] = stmt

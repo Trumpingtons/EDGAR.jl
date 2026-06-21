@@ -21,6 +21,7 @@ include("selection.jl")          # 🟢 picker transport → Selection
 include("picker.jl")             # 🟢 browser picker overlay (PICKER_JS)
 include("present.jl")            # 🟢 markdown / facts_json exports
 include("facts.jl")              # 🟢 facts(::Selection) row table
+include("classify.jl")           # 🟢 statement classifier (adapted from edgartools, MIT)
 include("extract_xbrl.jl")       # 🟢 standard-agnostic XBRL parsing + native extraction
 include("extract_xbrl_sec.jl")   # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("export.jl")             # 🟢 save_selection + DuckDB extension stubs

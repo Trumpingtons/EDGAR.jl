@@ -435,6 +435,14 @@ end
            EDGAR._classify_role("CONSOLIDATED STATEMENT OF CONDITION (Parenthetical)")) ==
           ("BalanceSheet", "BalanceSheet", "")
 
+    # adapted-from-edgartools scorer: IFRS role names + concept-based rescue
+    @test (EDGAR._classify_role("StatementOfProfitOrLoss"),                       # IFRS income role
+           EDGAR._classify_role("StatementOfChangesInEquity"),                    # IFRS equity role
+           EDGAR._classify_role("r4", ["ifrs-full:StatementOfProfitOrLossAbstract", "ifrs-full:ProfitLoss"]),  # opaque role rescued by IFRS abstract root
+           EDGAR._classify_role("r7", ["ifrs-full:Assets", "ifrs-full:Liabilities", "ifrs-full:Equity"]),     # rescued by 3 IFRS anchors
+           EDGAR._classify_role("r9", ["us-gaap:SomethingRandom"])) ==            # nothing recognised
+          ("IncomeStatement", "Equity", "IncomeStatement", "BalanceSheet", "")
+
     pre = """
     <link:linkbase>
     <link:presentationLink xlink:role="http://x/role/StatementsofIncome">

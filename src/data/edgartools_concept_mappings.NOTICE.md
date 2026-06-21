@@ -13,6 +13,16 @@ company-specific XBRL concepts that should roll up to it. EDGAR.jl loads it when
 inverts the mapping to `concept => standard_concept`. The file is used unmodified; only the
 in-memory representation is transformed.
 
+## Adapted code: the statement classifier
+
+`src/classify.jl` is a **translation/adaptation** (not a verbatim copy) of the statement-type
+matching logic and registry data in edgartools' `edgar/xbrl/statement_resolver.py` — the per-
+statement `primary`/`alternative`/`key` concepts, concept-name patterns and role patterns (including
+the IFRS equivalents and issue-tracked refinements such as IFRS P&L role names). The matching logic
+was re-expressed in idiomatic Julia and is fed by EDGAR.jl's own XBRL data model; the surrounding
+edgartools object model was not ported. Same project, same MIT licence and attribution as the
+mapping data below.
+
 ## Refreshing the snapshot
 
 This is a point-in-time copy. To pick up upstream mapping fixes, re-vendor it with the maintainer
