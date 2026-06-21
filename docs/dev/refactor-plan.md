@@ -20,6 +20,34 @@
   cross-file reference is a call-time body reference, never an include-time one.
 - [ ] **Phase B** — introduce `abstract type Jurisdiction`, move 🔵 files behind `SEC <: Jurisdiction`,
   add `ESEF` as the second jurisdiction to validate the seam (and close the `classify_role` IFRS gap).
+- [x] **Classifier registry** — `classify.jl`: multi-signal scorer adapted from edgartools (MIT),
+  IFRS-aware. Replaced the brittle substring `_classify_role`. Validated 32/33 (BS/IS/CF) across
+  mainstream + IFRS 20-F + BDC. (See the durable write-up in the manual, § "Statement classification:
+  two orthogonal axes".)
+- [ ] **Phase R — port the edgartools resolver cascade** (the ~28 issue-tuned rules). See below.
+
+## Phase R — classification engine + taxonomy vocabularies (planned)
+
+Two **orthogonal axes**: a *jurisdiction* axis (fetch/identity, the `Jurisdiction` adapters) and a
+*taxonomy* axis (classification vocabularies, auto-selected by the concept prefixes a filing uses).
+Three knowledge layers — engine (common) / taxonomy vocabulary (per-taxonomy, `ifrs-full` shared) /
+jurisdiction adapter. Of edgartools' ~28 rules: ~45% common engine logic, ~30% `us-gaap`, ~20%
+`ifrs-full` (reused by ESEF/SEDAR+/Companies House/DART/MOPS/EDINET). The 7-function resolver
+(`statement_resolver.py` 732–1306, ~575 LoC) → est. ~400–500 Julia LoC; the rules are irreducible.
+
+- **R0** — factor `classify.jl` → `classify_engine.jl` (common cascade/scorer/validation over abstract
+  `(role, concepts, candidates)`) + `vocab_usgaap.jl` + `vocab_ifrs.jl` (split today's registry by
+  taxonomy; a filing loads the union for the taxonomies its concepts use).
+- **R1** — offline fail→correct corpus: `(jurisdiction, taxonomy, filer, accession, role+concept
+  snapshot, expected_statement)`; seed from SAP/AZN/STT/banks/BDCs/20-mainstream + reproducible
+  edgartools issue filings.
+- **R2** — port the cascade + each `#issue` rule, **one rule = one corpus test**; tag with the issue
+  ref + edgartools attribution. Land green at each step (no blind 500-line drop).
+- **R3** — integrate: engine picks the best role per statement type → build the concept→statement map;
+  keep the query-time combined-statement alias (the one-role-two-types case a single label can't store).
+- **R4** — per jurisdiction: a `Jurisdiction` adapter (fetch/identity/linkbase-location) + declare its
+  taxonomies. ESEF/SEDAR/MOPS/DART mostly reuse `vocab_ifrs`; Companies House/EDINET add `vocab_uk`/`vocab_jp`.
+  No re-port of the engine.
 
 ## Target shell — `src/EDGAR.jl`
 

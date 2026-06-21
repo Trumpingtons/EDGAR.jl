@@ -1858,6 +1858,47 @@ role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry ha
 of the package stays common --- which is what makes adding a second jurisdiction tractable rather
 than a rewrite.
 
+\subsection{Statement classification: two orthogonal axes}
+\label{sec:classification-layers}
+
+Deciding which financial statement a fact belongs to (\texttt{statement\_map}, \S\ref{sec:export-layers})
+is the part most exposed to the messy diversity of real filings, so it is worth being explicit about
+how that knowledge is layered. The robust approach --- a multi-signal scorer adapted from
+\href{https://github.com/dgunning/edgartools}{edgartools} (MIT; see Acknowledgements) --- factors
+along the \emph{taxonomy}, \emph{not} the jurisdiction. There are three layers
+(Table~\ref{tab:classify-layers}).
+
+\begin{table}[h]
+\centering
+\caption{The three layers of statement-classification knowledge.}
+\label{tab:classify-layers}
+\small
+\begin{tabular}{@{}p{0.17\textwidth}p{0.60\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{What it is} & \textbf{Shared by} \\
+\midrule
+\textbf{Engine logic} (common) & The cascade + scoring + validation \emph{meta-rules}: prefer a complete statement over a fragment, validate that essential concepts are present, reject the wrong type, penalize parentheticals, and combined-statement aliasing. Plus the structural semantics --- a balance sheet \emph{is} Assets + Liabilities + Equity; an income statement runs revenue $\to$ profit. & All taxonomies \& jurisdictions \\
+\textbf{Taxonomy vocabulary} (per-taxonomy, often shared) & The concept anchors, concept patterns and role-name patterns. \texttt{ifrs-full} (profit-or-loss, financial position, changes in equity) is reused by ESEF, SEDAR+ (IFRS), Companies House (IFRS), DART (K-IFRS), MOPS (TW-IFRS) and EDINET (IFRS filers). \texttt{us-gaap} (tax-disclosure penalties, comprehensive-income variants, roll-forwards) is SEC. National GAAPs (JP \texttt{jpcrp}/\texttt{jppfs}, UK FRS~101/102, KR) are one regime each. & the taxonomy's users \\
+\textbf{Jurisdiction adapter} (per-jurisdiction) & Discovery/fetch, linkbase location, identity (CIK / LEI / \ldots), the filing-package conventions (SEC's \texttt{FilingSummary.xml} + R-files; ESEF zip; EDINET/DART APIs), and which taxonomies the regime uses. & one jurisdiction each \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The edgartools scorer encodes roughly two dozen empirically-tuned, issue-driven rules
+(each a real filing that broke a naive classifier, then a fix). Of those, about \emph{45\%} is common
+engine logic, \emph{30\%} \texttt{us-gaap} data, and \emph{20\%} \texttt{ifrs-full} data --- and that
+IFRS slice is reused across the jurisdictions above. Almost nothing in the engine is SEC-specific, so
+adopting it front-loads both the engine \emph{and} the IFRS vocabulary: adding ESEF / Companies House
+/ DART / MOPS / EDINET becomes mostly adapters plus reuse, with a new national-GAAP vocabulary only
+where a regime actually uses one (chiefly Japan and the UK).
+
+This refines the portability picture above into \textbf{two orthogonal axes}: a \emph{jurisdiction}
+axis (\texttt{SEC <: Jurisdiction}, \ldots) handling fetch and identity, and a separate
+\emph{taxonomy} axis (\texttt{us-gaap} / \texttt{ifrs-full} / \ldots\ vocabularies, auto-selected from
+the concept prefixes a filing actually uses) handling classification. EDGAR.jl ships the
+classification \emph{registry} today; the full per-request scoring cascade is a planned, test-anchored
+port of the edgartools resolver. (This is a design direction and may change in detail.)
+
 \section{Related Work and Comparison}
 \label{sec:related-work}
 
