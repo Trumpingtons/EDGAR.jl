@@ -35,9 +35,12 @@ jurisdiction adapter. Of edgartools' ~28 rules: ~45% common engine logic, ~30% `
 `ifrs-full` (reused by ESEF/SEDAR+/Companies House/DART/MOPS/EDINET). The 7-function resolver
 (`statement_resolver.py` 732–1306, ~575 LoC) → est. ~400–500 Julia LoC; the rules are irreducible.
 
-- **R0** — factor `classify.jl` → `classify_engine.jl` (common cascade/scorer/validation over abstract
-  `(role, concepts, candidates)`) + `vocab_usgaap.jl` + `vocab_ifrs.jl` (split today's registry by
-  taxonomy; a filing loads the union for the taxonomies its concepts use).
+- [x] **R0 (DONE)** — factored `classify.jl` → `classify_engine.jl` (engine: scorer + `_STATEMENT_ROLES`
+  role/concept-patterns + priority/exclusions + `_build_statement_registry` merge) + `vocab_usgaap.jl`
+  + `vocab_ifrs.jl` (per-taxonomy concept anchors). The engine merges every vocabulary into
+  `STATEMENT_REGISTRY` (union load = behaviour-preserving; prefix-selection is a later refinement).
+  Verified: merged registry identical to pre-split; offline suite green; live SAP/ORCL/STT unchanged.
+  `classify.jl` removed.
 - **R1** — offline fail→correct corpus: `(jurisdiction, taxonomy, filer, accession, role+concept
   snapshot, expected_statement)`; seed from SAP/AZN/STT/banks/BDCs/20-mainstream + reproducible
   edgartools issue filings.

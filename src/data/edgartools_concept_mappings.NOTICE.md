@@ -15,7 +15,8 @@ in-memory representation is transformed.
 
 ## Adapted code: the statement classifier
 
-`src/classify.jl` is a **translation/adaptation** (not a verbatim copy) of the statement-type
+`src/classify_engine.jl` (with the taxonomy vocabularies `src/vocab_usgaap.jl` and
+`src/vocab_ifrs.jl`) is a **translation/adaptation** (not a verbatim copy) of the statement-type
 matching logic and registry data in edgartools' `edgar/xbrl/statement_resolver.py` — the per-
 statement `primary`/`alternative`/`key` concepts, concept-name patterns and role patterns (including
 the IFRS equivalents and issue-tracked refinements such as IFRS P&L role names). The matching logic
