@@ -62,8 +62,11 @@ for (filer, cikv, form) in SEED
         isempty(concepts) && continue
         cls = EDGAR._classify_role(role, concepts)
         nrole = lowercase(replace(last(split(role, "/")), r"[^A-Za-z0-9]" => ""))
+        looksface = any(any(occursin(rs, nrole) for rs in st.role_substrings) for st in EDGAR.STATEMENT_REGISTRY)
         isface = !isempty(cls)
-        isneg = isempty(cls) && (occursin("parenthetical", nrole) || occursin("details", nrole)) && negs < 2
+        # keep face statements + revealing negatives: parentheticals/details, and roles whose NAME
+        # looks like a face statement but classify "" (mislabel guards, e.g. disclosure-note roles).
+        isneg = isempty(cls) && (occursin("parenthetical", nrole) || occursin("details", nrole) || looksface) && negs < 3
         (isface || isneg) || continue
         isface ? (faces += 1) : (negs += 1)
         push!(cases, (filer=filer, accession=f.accession, taxonomy=taxonomy(concepts),

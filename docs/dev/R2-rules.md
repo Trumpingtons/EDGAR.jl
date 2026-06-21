@@ -26,10 +26,10 @@
 
 | Rule | edgartools | What it does | Status |
 |---|---|---|---|
-| T1 | #581 | penalize/exclude tax & similar **disclosure** roles that carry income concepts | 🔜 |
-| T2 | #659 | essential-concept validation: a role labelled X must actually contain X's anchor concepts | 🔜 |
-| T3 | #503 | prefer a complete statement over a tiny **fragment** role of the same type | 🔜 |
-| T4 | #506/#584 | refine pure-ComprehensiveIncome vs combined-operations scoring | 🔜 (assess; may be 🅰) |
+| T2 | #659 | essential-content validation: reject a role whose only concepts are abstract headers / note `TextBlock`s (a disclosure), even if its name matches a statement | ✅ **done** — line-item gate in `classify_engine.jl`; fixed 6 disclosure false-positives (ARCC/STT equity notes, MSFT/NVS/PNC comprehensive-income notes, SAP segment reconciliation) with zero regressions |
+| T1 | #581 | penalize tax **disclosure** roles that carry income concepts | 🅰 covered — our IS role patterns require "statement"+"income" adjacency (a bare "incometax…" role doesn't match), plus `details` exclusion + the #659 gate. Re-open if a counterexample appears. |
+| T3 | #503 | prefer a complete statement over a tiny **fragment** role of the same type | 🔜 no current evidence — the 2-concept "fragments" we saw were disclosures (fixed by T2). Needs a real same-type fragment filing to port responsibly. |
+| T4 | #506/#584 | refine pure-ComprehensiveIncome vs combined-operations scoring | 🅰/⏭ — combined ops+CI → IncomeStatement via registry order + priority; the pure-CI-serves-as-income case (AZN) is the R3 resolver item Q1. |
 
 ## R3 — query-time resolver (deferred)
 
@@ -41,4 +41,13 @@
 
 ## Log
 
-- (pending) — R2 started.
+- **T2 (#659) DONE** — essential-content / line-item gate in `_classify_role`: a role whose only
+  concepts are `…Abstract` headers or `…TextBlock` notes is rejected as a disclosure. The corpus
+  surfaced **6** such false-positives (seeded from the pre-gate classifier); all now correctly `""`,
+  full suite green. Generator updated to keep "name-looks-like-a-statement but classifies empty"
+  cases as regression guards.
+- After T2: of the remaining R2 rules, T1 and T4 are covered by our role-pattern specificity +
+  exclusions + priority (see table); T3 has no current failing filing. The substantive remaining
+  work is **R3** (the query-time resolver: AZN-style combined-statement aliasing #608, CI→Equity
+  #706, and the find_statement cascade). Next: either broaden the corpus to hunt more failures, or
+  start R3.

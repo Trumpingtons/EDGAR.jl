@@ -88,6 +88,12 @@ function _classify_role(role::AbstractString, concepts = String[])
     nrole = _norm_role(role)
     any(occursin(p, nrole) for p in _ROLE_EXCLUDE) && return ""
     cset = concepts isa AbstractSet ? concepts : Set(concepts)
+    # Essential-content validation (adapted from edgartools #659): a face statement is built from
+    # line-item concepts. A role whose only concepts are abstract headers (`…Abstract`) or note
+    # text blocks (`…TextBlock…`) is a disclosure/note — even if its *name* matches a statement
+    # (e.g. an equity NOTE role named "StockholdersEquity", or a segment reconciliation disclosure
+    # named "…IncomeStatements"). Reject it. (Only when concepts are supplied.)
+    isempty(cset) || any(c -> !endswith(c, "Abstract") && !occursin("TextBlock", c), cset) || return ""
     best = ""; bestscore = 0
     for t in STATEMENT_REGISTRY
         s = 0

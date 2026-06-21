@@ -350,7 +350,7 @@
             "taxonomy": "us-gaap",
             "jurisdiction": "SEC",
             "role": "http://www.arescapitalcorp.com/role/STOCKHOLDERSEQUITY",
-            "expected": "Equity",
+            "expected": "",
             "concepts": [
                 "us-gaap:EquityAbstract",
                 "us-gaap:StockholdersEquityNoteDisclosureTextBlock"
@@ -818,7 +818,7 @@
             "taxonomy": "us-gaap",
             "jurisdiction": "SEC",
             "role": "ComprehensiveIncome | R24.htm",
-            "expected": "ComprehensiveIncome",
+            "expected": "",
             "concepts": [
                 "us-gaap:ComprehensiveIncomeNoteTextBlock",
                 "us-gaap:EquityAbstract"
@@ -1012,7 +1012,7 @@
             "taxonomy": "ifrs-full",
             "jurisdiction": "SEC",
             "role": "http://novartis.com/20251231/role/DisclosureChangesInConsolidatedStatementsOfComprehensiveIncome",
-            "expected": "ComprehensiveIncome",
+            "expected": "",
             "concepts": [
                 "ifrs-full:ComprehensiveIncomeAbstract",
                 "nvs:ChangesInConsolidatedStatementsOfComprehensiveIncomeTextBlock"
@@ -1841,7 +1841,7 @@
             "taxonomy": "us-gaap",
             "jurisdiction": "SEC",
             "role": "http://www.pnc.com/role/TotalEquityandOtherComprehensiveIncome",
-            "expected": "ComprehensiveIncome",
+            "expected": "",
             "concepts": [
                 "us-gaap:EquityAbstract",
                 "us-gaap:StockholdersEquityNoteDisclosureTextBlock"
@@ -1866,7 +1866,7 @@
             "taxonomy": "us-gaap",
             "jurisdiction": "SEC",
             "role": "http://www.sap.com/role/DisclosureReconciliationOfSegmentMeasuresToConsolidatedIncomeStatements",
-            "expected": "IncomeStatement",
+            "expected": "",
             "concepts": [
                 "sap:ReconciliationOfTotalSegmentProfitForReportableSegmentsToProfitBeforeTaxAbstract",
                 "sap:ReconciliationOfTotalSegmentProfitForReportableSegmentsToProfitBeforeTextBlock"
@@ -2481,7 +2481,7 @@
             "taxonomy": "us-gaap",
             "jurisdiction": "SEC",
             "role": "http://www.statestreet.com/role/ShareholdersEquity",
-            "expected": "Equity",
+            "expected": "",
             "concepts": [
                 "us-gaap:EquityAbstract",
                 "us-gaap:StockholdersEquityNoteDisclosureTextBlock"
