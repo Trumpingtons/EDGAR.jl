@@ -429,6 +429,12 @@ end
            EDGAR._classify_role("http://x/role/Contingencies")) ==
           ("IncomeStatement", "BalanceSheet", "CashFlow", "Equity", "ComprehensiveIncome", "", "", "")
 
+    # bank / broker-dealer balance sheet naming (never says "balance sheet")
+    @test (EDGAR._classify_role("ConsolidatedStatementOfCondition"),
+           EDGAR._classify_role("StatementOfFinancialCondition"),
+           EDGAR._classify_role("CONSOLIDATED STATEMENT OF CONDITION (Parenthetical)")) ==
+          ("BalanceSheet", "BalanceSheet", "")
+
     pre = """
     <link:linkbase>
     <link:presentationLink xlink:role="http://x/role/StatementsofIncome">

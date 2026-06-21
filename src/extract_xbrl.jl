@@ -209,7 +209,10 @@ _filing_selection(f::Filing, fcts) =
 function _classify_role(role::AbstractString)
     s = lowercase(replace(last(split(role, "/")), r"[^A-Za-z0-9]" => ""))
     any(occursin(p, s) for p in ("parenthetical", "details", "tables", "policies", "narrative")) && return ""
-    (occursin("balancesheet", s) || occursin("financialposition", s)) && return "BalanceSheet"
+    # Balance sheet, incl. bank/broker-dealer naming ("Statement of Condition",
+    # "Statement of Financial Condition") which never says "balance sheet".
+    (occursin("balancesheet", s) || occursin("financialposition", s) ||
+     occursin("ofcondition", s) || occursin("financialcondition", s)) && return "BalanceSheet"
     occursin("cashflow", s) && return "CashFlow"
     occursin("comprehensiveincome", s) && return "ComprehensiveIncome"
     (occursin("shareholdersequity", s) || occursin("stockholdersequity", s)) && return "Equity"
