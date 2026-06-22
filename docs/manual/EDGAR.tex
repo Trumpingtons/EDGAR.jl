@@ -1469,6 +1469,28 @@ generically named detail R-file (e.g. ``Comprehensive Income Statements (Detail)
 embeds the word \emph{income statement}) is not mistaken for the statement itself. The map is empty
 (and a warning is emitted) only if \emph{both} sources are missing.
 
+\paragraph{Combined statements and the query-time resolver.} Classification reflects the filing's
+\emph{actual} structure, not an idealised one --- and that occasionally bites. Some filers (many
+foreign IFRS issuers, and a few domestic ones) present a single \emph{combined} ``Statement of Profit
+or Loss and Other Comprehensive Income'' rather than a standalone income statement. For those, the
+net-income line is correctly tagged \texttt{ComprehensiveIncome} --- that is the section the filing
+puts it in --- so a literal filter for \texttt{statement == "IncomeStatement"} returns \emph{nothing}.
+This is faithful, not a bug: silently re-tagging the fact would throw away the true fact that it lives
+in the combined statement. To ask for the income statement \emph{regardless} of how a filer arranged
+it, use the query-time resolver:
+
+\sig{select\_statement(rows, statement) -> rows}
+
+\noindent It returns the rows for \texttt{statement} directly when that section exists, and otherwise
+falls back to the section that \emph{subsumes} it --- income $\to$ comprehensive income $\to$ equity ---
+but only when that section actually carries the requested type's anchor concepts, so a pure
+other-comprehensive-income section is never mistaken for the income statement. The same caveat applies
+to the DuckDB \texttt{statement\_view}: querying \texttt{statement = "IncomeStatement"} for a
+combined-statement filer returns no rows --- query \texttt{"ComprehensiveIncome"} instead, or run the
+facts through \texttt{select\_statement} before loading them. The rule of thumb: the \texttt{statement}
+column tells you \emph{where the filer put a number}; \texttt{select\_statement} tells you \emph{which
+section answers your question}.
+
 \paragraph{Native labels.} The picker reads a fact's human-readable \texttt{label} off the
 rendered table row; the browser-free extractor has no rendered page, so it reads the filing's
 \emph{label linkbase} (\texttt{*\_lab.xml}) instead --- the authoritative \texttt{concept => label}

@@ -48,6 +48,7 @@ standardize
 set_standardizer
 edgartools_mapping
 statement_map
+select_statement
 label_map
 calculations
 save_selection
