@@ -238,6 +238,18 @@ _stmt_rank(s) = something(findfirst(==(s), _STATEMENT_PRIORITY), length(_STATEME
 # Priority-sort a concept's statement memberships in place (primary first) and return it.
 _sort_statements!(v) = sort!(v; by = _stmt_rank)
 
+# Union each concept's intrinsic key-anchor statement memberships (see `_INTRINSIC_STATEMENTS`) into its
+# role-based memberships, then priority-sort. Applied by both classification paths.
+function _add_intrinsic_statements!(cmap::AbstractDict)
+    for (c, v) in cmap
+        for s in get(_INTRINSIC_STATEMENTS, c, String[])
+            s in v || push!(v, s)
+        end
+        _sort_statements!(v)
+    end
+    return cmap
+end
+
 # Parse a presentation-linkbase XML into a `concept => Vector{statement}` map — EVERY statement section
 # the concept appears in, priority-sorted so the first is the primary. A concept is commonly multi-homed
 # (e.g. StockholdersEquity ∈ BalanceSheet + Equity; NetIncomeLoss ∈ IncomeStatement + CashFlow + Equity).
@@ -253,8 +265,7 @@ function _concept_statements(pre_xml::AbstractString)
             stmt in v || push!(v, stmt)
         end
     end
-    foreach(_sort_statements!, values(cmap))
-    return cmap
+    return _add_intrinsic_statements!(cmap)
 end
 
 """

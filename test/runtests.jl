@@ -505,6 +505,26 @@ end
     @test (fwith[1].statement, fwith[1].statements) == ("IncomeStatement", ["IncomeStatement"])
 end
 
+@testset "concept-intrinsic membership (combined statements, offline)" begin
+    # A combined statement is one role serving two statements. The role classifies to one, but a curated
+    # key-anchor concept belongs to its statement by definition: ComprehensiveIncomeNetOfTax in a combined
+    # operations+CI role (classifies IncomeStatement) is still a CI member; NetIncomeLoss in a combined CI
+    # role (classifies ComprehensiveIncome) is still an income-statement member.
+    pre = """
+    <link:linkbase>
+    <link:presentationLink xlink:role="http://x/role/StatementsOfOperationsAndComprehensiveIncome">
+      <link:loc xlink:href="x.xsd#us-gaap_Revenues"/>
+      <link:loc xlink:href="x.xsd#us-gaap_ComprehensiveIncomeNetOfTax"/></link:presentationLink>
+    <link:presentationLink xlink:role="http://x/role/StatementsOfComprehensiveIncome">
+      <link:loc xlink:href="x.xsd#us-gaap_NetIncomeLoss"/>
+      <link:loc xlink:href="x.xsd#us-gaap_OtherComprehensiveIncomeNetOfTax"/></link:presentationLink>
+    </link:linkbase>"""
+    cs = EDGAR._concept_statements(pre)
+    @test (cs["us-gaap:ComprehensiveIncomeNetOfTax"],   # role IncomeStatement + intrinsic ComprehensiveIncome
+           cs["us-gaap:NetIncomeLoss"]) ==              # role ComprehensiveIncome + intrinsic IncomeStatement (primary)
+          (["IncomeStatement", "ComprehensiveIncome"], ["IncomeStatement", "ComprehensiveIncome"])
+end
+
 @testset "reconstruct_from_notes (statement filed as a note, offline)" begin
     # A filer that presents the statement of changes in equity only as a NOTE: the role is a "…Details"
     # disclosure (rejected by classification) but relaxed-classifies to Equity by name + roll-forward

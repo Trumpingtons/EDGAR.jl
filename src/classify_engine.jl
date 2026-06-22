@@ -93,6 +93,19 @@ end
 
 const STATEMENT_REGISTRY = _build_statement_registry()
 
+# A concept that is a curated *key-anchor* of a statement belongs to that statement *by definition*,
+# regardless of how a filer packages it — `ComprehensiveIncomeNetOfTax` is comprehensive income, and
+# `NetIncomeLoss` is the income statement, even inside a *combined* "Operations and Comprehensive
+# Income" role (which classifies to one of the two). This `concept => intrinsic statement(s)` map is
+# unioned into a concept's role-based memberships so a combined statement (one role serving two
+# statements) carries both — closing the gap where it otherwise had only its primary membership.
+const _INTRINSIC_STATEMENTS = let d = Dict{String,Vector{String}}()
+    for t in STATEMENT_REGISTRY, c in t.key_concepts
+        s = get!(d, c, String[]); t.label in s || push!(s, t.label)
+    end
+    d
+end
+
 # The FilingSummary `<LongName>` categories whose reports are face statements (or the cover);
 # anything else (Disclosure/Schedule/…) is a note/detail. Fed to `_classify_role` as a scoring signal.
 const _FACE_REPORT_CATEGORIES = ("statement", "document", "cover")

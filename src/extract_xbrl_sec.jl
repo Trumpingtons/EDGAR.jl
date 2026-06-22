@@ -119,8 +119,7 @@ function _filing_summary_statements(f::Filing)
             r.statement in v || push!(v, r.statement)
         end
     end
-    foreach(_sort_statements!, values(cmap))
-    return cmap
+    return _add_intrinsic_statements!(cmap)
 end
 
 """
