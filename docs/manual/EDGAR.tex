@@ -469,12 +469,12 @@ Searching typically begins with identifying a filer and then retrieving either c
 \texttt{cik(entity; by = :name | :ticker | :any)} & The rows matching \texttt{entity}
   by company name (case-insensitive substring), exact (case-insensitive) ticker, or
   either --- \texttt{:any} is the default. Same row-table type in every case. \\
-\texttt{ftext(text; exact, forms, startdate, enddate, from)} &
+\texttt{full\_text\_search(text; exact, forms, startdate, enddate, from)} &
   Full-text search of filing contents (2001+) via the EDGAR full-text search
   (EFTS) API. Matched as an exact phrase by default (\texttt{exact = false} for
   loose words); \texttt{forms} may be a string or a collection; dates are
   \texttt{"YYYY-MM-DD"}. Returns a row table. \\
-\texttt{fcik(cik; forms, startdate, enddate, from)} &
+\texttt{filings\_by\_cik(cik; forms, startdate, enddate, from)} &
   A single filer's filings (2001+) via the same EFTS endpoint, using its entity
   filter rather than a text query --- a true "filed by this filer" search.
   Returns a per-filing row table (with XBRL flags and \texttt{acceptanceDateTime}). \\
@@ -566,15 +566,15 @@ julia> cik()[1:5]                # first 5 rows
  (entity = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
 \end{lstlisting}
 
-\subsubsection{\texttt{ftext}}
+\subsubsection{\texttt{full\_text\_search}}
 
 \paragraph{Signature}
 \begin{description}
-  \item[\sig{ftext(text; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}] 
+  \item[\sig{full\_text\_search(text; exact=true, forms=nothing, startdate=nothing, enddate=nothing, from=0)}]
 \end{description}
 
-\noindent Also exported as \texttt{full\_text\_search}, which is the SEC's own name for this endpoint (EFTS), and pairs with \texttt{fcik}. The function
-\texttt{ftext} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{text} through the EDGAR full-text search (EFTS) API. 
+\noindent \texttt{full\_text\_search} is the SEC's own name for this endpoint (EFTS); it is also exported under the alias \texttt{filings\_by\_text}, and pairs with \texttt{filings\_by\_cik}. The function
+\texttt{full\_text\_search} discovers \textit{filings} by their content (e.g. "which filings mention 'supply chain disruption'?"). Search the full text of SEC filings, everything filed from 2001 onward, for some \texttt{text} through the EDGAR full-text search (EFTS) API. 
 
 \paragraph{Keyword Arguments}
 \begin{description}[nosep]
@@ -589,13 +589,13 @@ By default the (\texttt{text}) is matched \textbf{exactly}, so
 pass \texttt{exact = false} to match the words loosely instead. Results come back
 ranked by relevance, not by date.
 
-\paragraph{Return Values.} The method \texttt{ftext()} returns a \texttt{Tables.jl} \emph{row table}, a row per matching filing for the current page (up to 100). There is no total-match count; to page, advance (\texttt{from}) in steps of 100 until you get fewer than 100 rows. The returned columns are described in Table~\ref{tab:ftext}.
+\paragraph{Return Values.} The method \texttt{full\_text\_search()} returns a \texttt{Tables.jl} \emph{row table}, a row per matching filing for the current page (up to 100). There is no total-match count; to page, advance (\texttt{from}) in steps of 100 until you get fewer than 100 rows. The returned columns are described in Table~\ref{tab:full_text_search}.
 
 
 \begin{table}[t]
 \centering
-\caption{\texttt{ftext()} Return Columns}
-\label{tab:ftext}
+\caption{\texttt{full\_text\_search()} Return Columns}
+\label{tab:full_text_search}
 \begin{tabular}{@{}p{0.22\textwidth}p{0.70\textwidth}@{}}
 \toprule
 \textbf{Column} & \textbf{Description} \\
@@ -614,7 +614,7 @@ ranked by relevance, not by date.
 
 \paragraph{Julia Example:} Finding the accession number and the document's filename identifying a filing.
 \begin{lstlisting}
-julia> rows = ftext("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
+julia> rows = full_text_search("supply chain disruption"; forms = "10-K", startdate = "2026-01-01");
 
 julia> rows[1]
 # Output:
@@ -627,14 +627,14 @@ julia> rows[1]
 \noindent The submissions-only fields
 (\texttt{acceptanceDateTime} and the \texttt{XBRL} flags) are \emph{not} included here: a text
 search spans many filers, so adding them would cost one submissions request per
-distinct filer (up to $\sim$100 per page). The method \texttt{fcik} adds them cheaply
-for a single filer (Table \ref{tab:fcik}).
+distinct filer (up to $\sim$100 per page). The method \texttt{filings\_by\_cik} adds them cheaply
+for a single filer (Table \ref{tab:filings_by_cik}).
 
-\subsubsection{\texttt{fcik}}
+\subsubsection{\texttt{filings\_by\_cik}}
 
 \paragraph{Signature}
 \begin{center}
-\textbf{\sig{fcik(cik; forms = nothing, startdate = nothing, enddate = nothing, from = 0)}}
+\textbf{\sig{filings\_by\_cik(cik; forms = nothing, startdate = nothing, enddate = nothing, from = 0)}}
 \end{center}
 
 
@@ -647,21 +647,21 @@ the company among its holdings).
 
 \paragraph{Keyword Arguments}
 \begin{description}[nosep]
-  \item[\quad - \texttt{forms}] behaves as for \texttt{ftext}
+  \item[\quad - \texttt{forms}] behaves as for \texttt{full\_text\_search}
   \item[\quad - \texttt{startdate}] is a \texttt{"YYYY-MM-DD"} format string
   \item[\quad - \texttt{enddate}] is a \texttt{"YYYY-MM-DD"} format string 
   \item[\quad - \texttt{from}] is the 0-based offset used to page (EFTS returns a fixed page of 100 results per request). 
 \end{description}
 
 \paragraph{Return Value.}
-The method \texttt{fcik()} returns a \texttt{Tables.jl} row table ordered from newest to oldest filing. Each row corresponds to a single filing. The returned columns are described in Table~\ref{tab:fcik}.
+The method \texttt{filings\_by\_cik()} returns a \texttt{Tables.jl} row table ordered from newest to oldest filing. Each row corresponds to a single filing. The returned columns are described in Table~\ref{tab:filings_by_cik}.
 
 Filer-level attributes such as company name, entity type, and SIC code are not included because they are invariant for a given filer. These can be obtained separately using \texttt{profile()}. The fields \texttt{acceptanceDateTime}, \texttt{isXBRL}, \texttt{isInlineXBRL}, and \texttt{isXBRLNumeric} are associated with individual filings and are joined using the accession number. Values may be \texttt{missing} for filings outside the SEC’s recent submissions window. In addition, \texttt{isXBRLNumeric} may be \texttt{missing} when the SEC does not report a value.
 
 \begin{table}[t]
 \centering
-\caption{\texttt{fcik()} Return Columns}
-\label{tab:fcik}
+\caption{\texttt{filings\_by\_cik()} Return Columns}
+\label{tab:filings_by_cik}
 \begin{tabular}{@{}p{0.25\textwidth}p{0.65\textwidth}@{}}
 \toprule
 \textbf{Column} & \textbf{Description} \\
@@ -681,7 +681,7 @@ Filer-level attributes such as company name, entity type, and SIC code are not i
 
 \paragraph{Julia Example:} Finding the accession number and the document's filename identifying a filing.
 \begin{lstlisting}
-julia> rows = fcik(320193; forms = "8-K", startdate = "2026-01-01");
+julia> rows = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01");
 
 julia> rows[1]
 (form = "8-K", reportDate = "2026-04-30", filed = "2026-04-30",
@@ -699,7 +699,7 @@ julia> rows[1]
 \end{center}
 
 \noindent Provides a filer's row-invariant data from the SEC submissions document
-containing the fields that are the same across all of a filer's filings, returned once as a \texttt{NamedTuple} rather than repeated on every row created by (\texttt{fcik}). 
+containing the fields that are the same across all of a filer's filings, returned once as a \texttt{NamedTuple} rather than repeated on every row created by (\texttt{filings\_by\_cik}). 
 
 \paragraph{Keyword Arguments}
 
@@ -1542,6 +1542,12 @@ select one of the mappings EDGAR.jl plans to offer, which fall into two kinds:
   \texttt{us-gaap:RevenueFromContractWithCustomer\ldots} to the \emph{distinct}
   \texttt{Contract Revenue}, so Net sales and Total revenues do not collapse.
 \end{itemize}
+
+\noindent The bundled edgartools mapping is also available directly --- as a plain
+\texttt{concept => standard\_concept} \texttt{Dict} --- for inspection or to use as a base you
+extend before passing to \texttt{set\_standardizer}:
+
+\sig{edgartools\_mapping() -> Dict\{String, String\}}
 
 \begin{lstlisting}
 set_standardizer(:edgartools)               # the bundled community mapping (MIT, attributed)
