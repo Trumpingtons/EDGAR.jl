@@ -770,6 +770,31 @@ end
     end
 end
 
+@testset "statement_view multi-statement membership (offline)" begin
+    # A multi-homed concept (StockholdersEquity ∈ BalanceSheet + Equity) is returned for the Equity
+    # view even though its PRIMARY statement is BalanceSheet — the membership-aware filter reconstructs
+    # the full statement of equity (totals + movements), the gap a single `statement` tag could not fill.
+    se = EDGAR.Fact(; concept = "us-gaap:StockholdersEquity", value = 5000.0, unit = "USD",
+        period_end = Date("2026-04-30"), is_instant = true, statement = "BalanceSheet",
+        statements = ["BalanceSheet", "Equity"], cik = "c", accession = "a",
+        context_ref = "se", unit_ref = "usd", label = "Total equity")
+    dv = EDGAR.Fact(; concept = "us-gaap:DividendsCommonStock", value = 30.0, unit = "USD",
+        period_start = Date("2026-02-01"), period_end = Date("2026-04-30"), is_instant = false,
+        statement = "Equity", statements = ["Equity"], cik = "c", accession = "a",
+        context_ref = "dv", unit_ref = "usd", label = "Dividends")
+    sel = EDGAR.Selection(; cik = "c", accession = "a", kind = :filing, facts = [se, dv])
+    path = tempname() * ".duckdb"
+    try
+        to_duckdb(sel, path)
+        @test (Set(r.concept for r in statement_view(path; statement = "Equity")),
+               Set(r.concept for r in statement_view(path; statement = "BalanceSheet"))) ==
+              (Set(["us-gaap:StockholdersEquity", "us-gaap:DividendsCommonStock"]),  # Equity: totals + movements
+               Set(["us-gaap:StockholdersEquity"]))                                  # BS: the total, multi-homed
+    finally
+        isfile(path) && rm(path)
+    end
+end
+
 @testset "warehouse: documents + extractions + facts (W1, offline)" begin
     f = EDGAR.Filing("0000104169", "0000104169-26-000102", "wmt.htm", "https://x/wmt.htm",
         :ixbrl, "<html><body><table>x</table></body></html>")
@@ -794,7 +819,7 @@ end
         nextr = q("SELECT count(*) AS n FROM extractions").n
         DBInterface.close!(con)
         @test (nd, nf, ndup, ver, nextr, joined) ==
-              (1, 1, 0, "2", 1, "wmt.htm")
+              (1, 1, 0, "3", 1, "wmt.htm")
     finally
         isfile(path) && rm(path)
     end

@@ -31,7 +31,7 @@ function _ddl(table::AbstractString)
       fact_key VARCHAR PRIMARY KEY,
       source VARCHAR,
       cik VARCHAR, accession VARCHAR, form VARCHAR, fy INTEGER, fp VARCHAR,
-      statement VARCHAR, concept VARCHAR, standard_concept VARCHAR, label VARCHAR,
+      statement VARCHAR, statements VARCHAR, concept VARCHAR, standard_concept VARCHAR, label VARCHAR,
       value DOUBLE, unit VARCHAR, period_start DATE, period_end DATE, is_instant BOOLEAN,
       dimensions VARCHAR, decimals INTEGER, frame VARCHAR,
       context_ref VARCHAR, unit_ref VARCHAR, source_selector VARCHAR
@@ -57,7 +57,7 @@ function _check_table(table::AbstractString)
     return table
 end
 
-const _COLS = "fact_key, source, cik, accession, form, fy, fp, statement, concept, " *
+const _COLS = "fact_key, source, cik, accession, form, fy, fp, statement, statements, concept, " *
               "standard_concept, label, value, unit, period_start, period_end, is_instant, " *
               "dimensions, decimals, frame, context_ref, unit_ref, source_selector"
 
@@ -66,12 +66,12 @@ function _append!(con, table::AbstractString, rows; source::AbstractString="pick
     DBInterface.execute(con, _ddl(table))
     before = _count(con, table)
     stmt = DBInterface.prepare(con, "INSERT INTO $table ($_COLS) VALUES (" *
-        join(fill("?", 22), ",") * ") ON CONFLICT DO NOTHING")
+        join(fill("?", 23), ",") * ") ON CONFLICT DO NOTHING")
     try
         for r in rows
             DBInterface.execute(stmt, (_fact_key(r), source, r.cik, r.accession,
                 missing, missing, missing,                 # form, fy, fp — API-only (NULL here)
-                r.statement, r.concept, something(r.standard_concept, missing),
+                r.statement, get(r, :statements, "[]"), r.concept, something(r.standard_concept, missing),
                 r.label, r.value, r.unit,
                 something(r.period_start, missing), r.period_end, r.is_instant,
                 r.dimensions, something(r.decimals, missing), missing,   # frame — API-only
@@ -86,7 +86,7 @@ end
 # ── Warehouse meta + the documents / extractions tables (W1) ────────────────
 # One `.duckdb` holds all three layers, joinable by accession: `documents` (lossless iXBRL
 # HTML), `extractions` (the Facts JSON snapshot of each pick), and `facts` (the rows).
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 function _ensure_meta(con)
     DBInterface.execute(con, "CREATE TABLE IF NOT EXISTS edgar_meta (key VARCHAR PRIMARY KEY, value VARCHAR)")
@@ -244,7 +244,12 @@ function _statement_view(con, table, statement, accession, consolidated, months,
             throw(ArgumentError("invalid accession: $(repr(accession))"))
         push!(conds, "accession = $(_lit(accession))")
     end
-    statement === nothing || push!(conds, "statement = $(_lit(statement))")
+    # Membership-aware: a fact belongs to `statement` if it is in the fact's full `statements` set
+    # (multi-homed concepts), not only its primary `statement` — so e.g. the Equity view includes the
+    # StockholdersEquity totals that are primarily tagged BalanceSheet. The OR keeps facts whose
+    # `statements` is empty but whose primary matches (e.g. rows loaded without multi-classification).
+    statement === nothing || push!(conds,
+        "(statement = $(_lit(statement)) OR statements LIKE $(_lit("%\"" * statement * "\"%")))")
     # Smart period selection (W6): keep instants (no duration), and durations of ~`months`
     # months — so the 3-month and 9-month periods that share an end date do not collide in
     # one period_end column, and a consistent quarterly/annual view stitches across filings.
