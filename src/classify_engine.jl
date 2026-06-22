@@ -37,7 +37,7 @@ const _STATEMENT_ROLES = [
      concept_patterns = [r"StatementOfStockholdersEquityAbstract$"i, r"StatementOfShareholdersEquityAbstract$"i,
                          r"StatementOfChangesInEquityAbstract$"i, r"StockholdersEquityRollForward$"i]),
     (label = "ComprehensiveIncome",
-     role_substrings = ["comprehensiveincome", "othercomprehensive"],
+     role_substrings = ["comprehensiveincome", "othercomprehensive", "comprehensiveearnings"],
      concept_patterns = [r"ComprehensiveIncomeAbstract$"i]),
     # Fund / BDC / investment-company face statements (us-gaap only; no IFRS equivalent).
     (label = "ScheduleOfInvestments",
