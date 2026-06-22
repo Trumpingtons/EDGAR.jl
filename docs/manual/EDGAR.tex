@@ -1503,6 +1503,22 @@ facts through \texttt{select\_statement} before loading them. The rule of thumb:
 column tells you \emph{where the filer put a number}; \texttt{select\_statement} tells you \emph{which
 section answers your question}.
 
+\paragraph{Statements filed as a note.} A related case: some filers present a whole statement --- most
+often the statement of changes in equity --- \emph{only} as a note/detail disclosure, never as an XBRL
+face section. Classification then leaves it blank, faithfully: the note's ``\ldots Details'' or
+text-block role is not a face statement. To recover it on demand:
+
+\sig{reconstruct\_from\_notes(f::Filing, statement) -> Vector\{FactRow\}}
+
+\noindent finds the note role whose \emph{intent} is \texttt{statement} (a relaxed classification that
+ignores the note/detail markers) and returns its facts re-tagged to \texttt{statement}. The result is
+explicitly \textbf{reconstructed, not classified}: every row is marked \texttt{source\_selector =
+"reconstructed:<role>"} (directly extracted facts carry an empty \texttt{source\_selector}), so the two
+are never confused. It is opt-in --- ordinary \texttt{facts(f; classify=true)} stays faithful and never
+includes these. The logic is jurisdiction-agnostic (a two-argument
+\texttt{reconstruct\_from\_notes(pre\_xml, rows, statement)} takes any presentation linkbase and facts
+table); the \texttt{Filing} method fetches both for an SEC filing.
+
 \paragraph{Native labels.} The picker reads a fact's human-readable \texttt{label} off the
 rendered table row; the browser-free extractor has no rendered page, so it reads the filing's
 \emph{label linkbase} (\texttt{*\_lab.xml}) instead --- the authoritative \texttt{concept => label}
