@@ -37,7 +37,7 @@
 |---|---|---|---|
 | Q1 | #518/#608 | IncomeStatement → ComprehensiveIncome fallback, validating the CI role holds real P&L data | ✅ **done** — `select_statement` in `classify_engine.jl` |
 | Q2 | #706 | ComprehensiveIncome → StatementOfEquity fallback (older filings embed CI in equity) | ✅ **done** — transitive fallback chain in `select_statement` |
-| Q3 | — | the 5-strategy `find_statement` cascade (per-request best-role selection) | 🔜 next |
+| Q3 | #503/#506/#584 | complete-statement-over-fragment selection + pure-CI-vs-income disambiguation | ✅ **done** — in EDGAR.jl's concept-tagging model this is *authoritative gating*, not a heuristic ranker: FilingSummary `LongName` category gate (Statement vs Disclosure) + pure-CI guard in the scorer |
 
 ## Log
 
@@ -60,7 +60,25 @@
   hop validated against the requested type's `key_concepts`. Operates on any `facts(...)` row table
   (reads only `.statement`/`.concept`). Offline testset "statement resolver (R3 …)" — direct-wins,
   #608 alias, pure-OCI no-alias, #706 CI→Equity, transitive IS→CI→Equity. Full suite green.
-- **Remaining R3 = Q3** — the 5-strategy `find_statement` cascade (per-request best-role *selection*
-  when multiple candidate roles classify to the same statement: complete-over-fragment #503,
-  parenthetical penalty, recency/quality scoring). Distinct from Q1/Q2 (which alias *across* types);
-  Q3 ranks *within* a type. Needs a multi-candidate corpus to port responsibly.
+- **Q3 (#503/#506/#584) DONE** — ported responsibly after a live probe (15 filers). Two evidence-led
+  findings: (1) **zero** fragment false-positives in the linkbase path — `_ROLE_EXCLUDE` + the #659
+  gate already stop fragment roles getting a face label (same outcome as T1/T3). (2) The real
+  multi-candidate problem lives in the **FilingSummary fallback** (DFIN inline-only filers, accession
+  prefix 0001193125: MSFT/PLD/ORCL): detail R-files reuse a *generic* `ShortName`/role that embeds a
+  statement word (MSFT R54 role `…ComprehensiveIncomeStatementsDetail` → matched IncomeStatement; the
+  path also never passed concepts, so #659 couldn't fire), so MSFT yielded ~79 disclosure reports
+  mis-tagged as face statements + same-type collisions.
+  edgartools solves this by *scoring/ranking* candidate roles. EDGAR.jl is **concept-tagging**, not
+  role-selecting, so the right port is an **authoritative gate**, not a ranker: SEC's FilingSummary
+  `<LongName>` grammar `"<sortcode> - <Category> - <Title>"` carries the category (**Statement** for
+  face statements vs **Disclosure**/**Schedule** for notes) — `_filing_summary_reports` now keeps only
+  `Statement`/`Document`/`Cover` reports (`_longname_category` + `_FACE_REPORT_CATEGORIES`). Plus a
+  **pure-CI guard** in `_classify_role` (#506/#584): a "Comprehensive Income Statements" name embeds
+  "incomestatement" but is **not** the income statement unless it is a *combined* operations+CI role
+  (distinct operations/income indicator). Defensive: `_ROLE_EXCLUDE` "details"→"detail" (singular) +
+  "schedule". **Live MSFT: 79+ mis-tags + collisions → 6 clean face reports** (Cover/Income/CI/BS/CF/
+  Equity), R3 now correctly ComprehensiveIncome (was IncomeStatement). Tests: FilingSummary 3/3 (gate
+  + R54 regression), scorer pure-CI 1/1, corpus + W5 unchanged-green. Docs: manual FilingSummary ¶.
+- **R3 COMPLETE** (Q1+Q2 cross-type aliasing resolver + Q3 within-type authoritative gating). Phase R
+  is functionally done; remaining edgartools rules are either covered (table above) or have no current
+  failing-filing evidence (re-open fail→correct if one appears).

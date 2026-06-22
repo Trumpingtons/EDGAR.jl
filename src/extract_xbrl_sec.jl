@@ -67,15 +67,30 @@ end
 _rfile_concepts(html::AbstractString) =
     unique(_defref_concept(m.match) for m in eachmatch(r"defref_[A-Za-z0-9_-]+", html))
 
-# Parse FilingSummary.xml into the face-statement reports `(statement, r-file)`: each <Report>
-# whose role/name classifies to a face statement (notes/details/parentheticals drop out via
-# `_classify_role`). Pure (no I/O), so it is offline-testable.
+# A FilingSummary <Report>'s `<LongName>` follows the grammar "<sortcode> - <Category> - <Title>",
+# where the category authoritatively marks a face statement ("Statement") versus a note/detail
+# ("Disclosure"/"Schedule"/…) or the cover ("Document"/"Cover"). Returns the lowercased category, or
+# "" when no LongName is present (older/edge filers) so the caller can fall back to name matching.
+_longname_category(block::AbstractString) =
+    (m = match(r"(?is)<LongName>\s*[^-<]*-\s*([^-<]+?)\s*-", block); m === nothing ? "" : lowercase(strip(m.captures[1])))
+
+# The LongName categories whose reports are face statements (or the cover) — everything else
+# (Disclosure/Schedule/…) is a note/detail and must not be classified as a statement.
+const _FACE_REPORT_CATEGORIES = ("statement", "document", "cover")
+
+# Parse FilingSummary.xml into the face-statement reports `(statement, r-file)`: each <Report> whose
+# LongName category is a face statement (and whose role/name then classifies). The category gate is
+# the authoritative discriminator — without it a generically-named detail R-file (e.g. MSFT's
+# "…Comprehensive Income Statements (Detail)", whose role still embeds "incomestatement") is mistaken
+# for a face statement and pollutes the statement. Pure (no I/O), so it is offline-testable.
 function _filing_summary_reports(fs_xml::AbstractString)
     out = @NamedTuple{statement::String, file::String}[]
     for m in eachmatch(r"(?is)<Report\b[^>]*>(.*?)</Report>", fs_xml)
         b = m.captures[1]
         fm = match(r"(?is)<HtmlFileName>\s*(R\d+\.htm)\s*</HtmlFileName>", b)
         fm === nothing && continue
+        cat = _longname_category(b)
+        isempty(cat) || cat in _FACE_REPORT_CATEGORIES || continue   # authoritative: skip Disclosure/Schedule/…
         rm = match(r"(?is)<Role>(.*?)</Role>", b)
         nm = match(r"(?is)<ShortName>(.*?)</ShortName>", b)
         stmt = rm === nothing ? "" : _classify_role(strip(rm.captures[1]))

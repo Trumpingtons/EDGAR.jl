@@ -47,8 +47,10 @@ const _STATEMENT_ROLES = [
 const _STATEMENT_PRIORITY = ["IncomeStatement", "BalanceSheet", "CashFlow",
                              "ComprehensiveIncome", "Equity", "CoverPage"]
 
-# Role-name fragments that mark a non-face section (notes/details/parenthetical/policies).
-const _ROLE_EXCLUDE = ("parenthetical", "details", "tables", "policies", "narrative")
+# Role-name fragments that mark a non-face section (notes/details/parenthetical/policies/schedules).
+# "detail" (singular) also catches "...Detail"/"...Details"; without it a detail role whose name
+# happens to embed a statement word (e.g. "...ComprehensiveIncomeStatementsDetail") slips through.
+const _ROLE_EXCLUDE = ("parenthetical", "detail", "tables", "policies", "narrative", "schedule")
 
 # The taxonomy vocabularies merged into the effective registry. Loading every taxonomy is the
 # behaviour-preserving default; selecting only the taxonomies a filing actually uses (by concept
@@ -94,10 +96,17 @@ function _classify_role(role::AbstractString, concepts = String[])
     # (e.g. an equity NOTE role named "StockholdersEquity", or a segment reconciliation disclosure
     # named "…IncomeStatements"). Reject it. (Only when concepts are supplied.)
     isempty(cset) || any(c -> !endswith(c, "Abstract") && !occursin("TextBlock", c), cset) || return ""
+    # Pure comprehensive-income guard (adapted from edgartools #506/#584): a "Comprehensive Income
+    # Statements" role name embeds the substring "incomestatement" without being the income statement.
+    # Suppress the income-statement role match for such names UNLESS the role is a *combined* operations
+    # + comprehensive-income statement (which is a valid income statement), detected by a distinct
+    # operations/income indicator.
+    pure_ci = (occursin("comprehensiveincome", nrole) || occursin("othercomprehensive", nrole)) &&
+              !any(occursin(x, nrole) for x in ("operations", "statementofincome", "statementsofincome"))
     best = ""; bestscore = 0
     for t in STATEMENT_REGISTRY
         s = 0
-        any(rs -> occursin(rs, nrole), t.role_substrings) && (s += 3)
+        any(rs -> occursin(rs, nrole), t.role_substrings) && !(pure_ci && t.label == "IncomeStatement") && (s += 3)
         any(in(cset), t.primary) && (s += 4)
         any(in(cset), t.alternative) && (s += 4)
         any(cp -> any(c -> occursin(cp, c), cset), t.concept_patterns) && (s += 3)

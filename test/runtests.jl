@@ -443,6 +443,13 @@ end
            EDGAR._classify_role("r9", ["us-gaap:SomethingRandom"])) ==            # nothing recognised
           ("IncomeStatement", "Equity", "IncomeStatement", "BalanceSheet", "")
 
+    # Pure-comprehensive-income guard (#506/#584): "Comprehensive Income Statements" embeds the
+    # substring "incomestatement" but is NOT the income statement; a combined operations + CI role is.
+    @test (EDGAR._classify_role("Role_StatementCOMPREHENSIVEINCOMESTATEMENTS"),       # MSFT R3: pure CI
+           EDGAR._classify_role("StatementsOfOperationsAndComprehensiveIncome"),      # combined: still income
+           EDGAR._classify_role("Role_StatementINCOMESTATEMENTS")) ==                 # plain income
+          ("ComprehensiveIncome", "IncomeStatement", "IncomeStatement")
+
     pre = """
     <link:linkbase>
     <link:presentationLink xlink:role="http://x/role/StatementsofIncome">
@@ -534,15 +541,22 @@ end
     @test Set(EDGAR._rfile_concepts(rfile)) ==
           Set(["us-gaap:Assets", "us-gaap:LiabilitiesAndStockholdersEquity"])
 
-    # FilingSummary <Report> parsing: face statements kept, parenthetical/notes dropped
+    # FilingSummary <Report> parsing: face statements kept; parentheticals/notes dropped; and the
+    # authoritative LongName category gate (Q3 #503) rejects a generically-named detail R-file whose
+    # role still embeds a statement word ("…IncomeStatementsDetail", MSFT R54) — without it that
+    # detail would mis-classify to IncomeStatement and pollute the statement. Reports without a
+    # LongName fall back to name matching (R2/R6 below), preserving older-filer behaviour.
     fs = """<FilingSummary><MyReports>
-      <Report><Role>http://x/role/StatementBalanceSheets</Role><ShortName>Balance Sheets</ShortName><HtmlFileName>R2.htm</HtmlFileName></Report>
+      <Report><LongName>1010 - Statement - INCOME STATEMENTS</LongName><Role>http://x/role/StatementIncomeStatements</Role><ShortName>Income Statements</ShortName><HtmlFileName>R2.htm</HtmlFileName></Report>
+      <Report><LongName>9010 - Disclosure - Derivatives Recognized in Comprehensive Income Statements (Detail)</LongName><Role>http://x/role/DisclosureDerivativesComprehensiveIncomeStatementsDetail</Role><ShortName>Derivatives (Detail)</ShortName><HtmlFileName>R54.htm</HtmlFileName></Report>
       <Report><Role>http://x/role/BalanceSheetsParenthetical</Role><ShortName>Balance Sheets (Parenthetical)</ShortName><HtmlFileName>R3.htm</HtmlFileName></Report>
       <Report><ShortName>Statements of Cash Flows</ShortName><HtmlFileName>R6.htm</HtmlFileName></Report>
       <Report><Role>http://x/role/Notes</Role><ShortName>Basis of Presentation</ShortName><HtmlFileName>R7.htm</HtmlFileName></Report>
     </MyReports></FilingSummary>"""
-    @test [(r.statement, r.file) for r in EDGAR._filing_summary_reports(fs)] ==
-          [("BalanceSheet", "R2.htm"), ("CashFlow", "R6.htm")]
+    @test (EDGAR._longname_category("<LongName>9010 - Disclosure - Foo (Detail)</LongName>"),
+           EDGAR._longname_category("<Report><HtmlFileName>R6.htm</HtmlFileName></Report>"),
+           [(r.statement, r.file) for r in EDGAR._filing_summary_reports(fs)]) ==
+          ("disclosure", "", [("IncomeStatement", "R2.htm"), ("CashFlow", "R6.htm")])
 end
 
 @testset "classification corpus (offline, Phase R)" begin

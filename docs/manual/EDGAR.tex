@@ -1461,7 +1461,11 @@ appear only in notes are left blank. The map is also available directly:
 linkbase. For those, classification falls back automatically to the SEC-generated
 \texttt{FilingSummary.xml} and the rendered statement R-files --- present for \emph{every}
 XBRL filing --- so \texttt{classify=true} works across filers rather than silently returning
-nothing. The map is empty (and a warning is emitted) only if \emph{both} sources are missing.
+nothing. Only the face statements are read: each report's \texttt{LongName} category
+(\texttt{Statement} vs \texttt{Disclosure}) is the authoritative discriminator, so a generically
+named detail R-file (e.g. ``Comprehensive Income Statements (Detail)'', whose role still embeds the
+word \emph{income statement}) is not mistaken for the statement itself. The map is empty (and a
+warning is emitted) only if \emph{both} sources are missing.
 
 \paragraph{Native labels.} The picker reads a fact's human-readable \texttt{label} off the
 rendered table row; the browser-free extractor has no rendered page, so it reads the filing's
