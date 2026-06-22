@@ -168,7 +168,11 @@ end
 # Classic XBRL instance: numeric facts are concept-named elements carrying a unitRef.
 function _classic_facts(content, cik, accession, ctxs, units, statements, labels)
     out = Fact[]
-    for m in eachmatch(r"(?is)<([\w-]+:[\w.-]+)\b([^>]*\bcontextRef=\"[^\"]+\"[^>]*)>(.*?)</\1>", content)
+    # Content of a numeric fact is a plain number (no nested tags), so `[^<]*` keeps this linear — a
+    # lazy `.*?` with the `</\1>` backreference catastrophically backtracks and trips PCRE's match
+    # limit on large instances (10k+ facts, 10-50 MB). Text-block elements (with nested HTML) don't
+    # match `[^<]*</\1>` and are skipped — which is correct, they are not numeric facts anyway.
+    for m in eachmatch(r"(?is)<([\w-]+:[\w.-]+)\b([^>]*\bcontextRef=\"[^\"]+\"[^>]*)>([^<]*)</\1>", content)
         tag = m.captures[1]
         startswith(lowercase(tag), "xbrli:") && continue   # structural, not a fact
         a = _attrs(m.captures[2])
@@ -185,12 +189,33 @@ end
 # Internal: extract every numeric XBRL fact from a filing's document. `statements` maps each
 # concept to its statement (presentation linkbase); `labels` maps each concept to its human label
 # (label linkbase); both empty for no classification / no labels.
+# Parse one document's facts (inline iXBRL or a classic `.xml` instance) given its `kind`.
+function _facts_of(content, kind::Symbol, cik, accession, statements, labels)
+    ctxs = _xbrl_contexts(content)
+    units = _xbrl_units(content)
+    return kind === :xbrl ? _classic_facts(content, cik, accession, ctxs, units, statements, labels) :
+                            _ixbrl_facts(content, cik, accession, ctxs, units, statements, labels)
+end
+
 function _extract_facts(f::Filing; statements::AbstractDict=Dict{String,String}(),
                         labels::AbstractDict=Dict{String,String}())
-    ctxs = _xbrl_contexts(f.content)
-    units = _xbrl_units(f.content)
-    return f.kind === :xbrl ? _classic_facts(f.content, f.cik, f.accession, ctxs, units, statements, labels) :
-                              _ixbrl_facts(f.content, f.cik, f.accession, ctxs, units, statements, labels)
+    inline = _facts_of(f.content, f.kind, f.cik, f.accession, statements, labels)
+    # Prefer the SEC's complete *extracted* instance (`<doc>_htm.xml`) when it yields strictly more
+    # facts — for a foreign/40-F/20-F or multi-part filing the primary inline document is only a
+    # cover/wrapper, so the extracted instance is far richer. Guarded three ways so it never regresses
+    # a filing whose inline document is already complete: URL-gated to real SEC archives (in-memory
+    # fixtures stay offline-testable), only adopted on a strictly larger fact count, and any
+    # fetch/parse failure falls back to the inline result.
+    (f.kind === :xbrl || !startswith(f.url, "https://www.sec.gov/Archives/")) && return inline
+    try
+        base = _filing_dir(f.cik, f.accession)
+        body = fetch_url(base * "/" * _xbrl_instance(base))
+        body === nothing && return inline
+        instance = _facts_of(String(body), :xbrl, f.cik, f.accession, statements, labels)
+        return length(instance) > length(inline) ? instance : inline
+    catch
+        return inline
+    end
 end
 
 # Internal: a whole filing as a Selection (kind `:filing`, no DOM selector) — the unit the
