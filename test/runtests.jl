@@ -504,6 +504,30 @@ end
     @test (fwith[1].statement, fwith[1].statements) == ("IncomeStatement", ["IncomeStatement"])
 end
 
+@testset "reconstruct_from_notes (statement filed as a note, offline)" begin
+    # A filer that presents the statement of changes in equity only as a NOTE: the role is a "…Details"
+    # disclosure (rejected by classification) but relaxed-classifies to Equity by name + roll-forward
+    # concept. reconstruct_from_notes re-tags its facts to Equity, MARKED as reconstructed; facts outside
+    # the note (Assets) are untouched.
+    pre = """
+    <link:linkbase>
+    <link:presentationLink xlink:role="http://x/role/ConsolidatedStatementsOfChangesInEquityDetails">
+      <link:loc xlink:href="x.xsd#us-gaap_StockholdersEquity"/>
+      <link:loc xlink:href="x.xsd#us-gaap_IncreaseDecreaseInStockholdersEquityRollForward"/>
+      <link:loc xlink:href="x.xsd#us-gaap_DividendsCommonStock"/></link:presentationLink>
+    <link:presentationLink xlink:role="http://x/role/BalanceSheets">
+      <link:loc xlink:href="x.xsd#us-gaap_Assets"/></link:presentationLink>
+    </link:linkbase>"""
+    row(concept, val) = EDGAR.fact_row(EDGAR.Fact(; concept, value = val, period_end = Date("2026-04-30"),
+        is_instant = true, cik = "c", accession = "a", unit = "USD", context_ref = concept, unit_ref = "usd"))
+    rows = [row("us-gaap:StockholdersEquity", 5000.0), row("us-gaap:DividendsCommonStock", 30.0),
+            row("us-gaap:Assets", 9000.0)]   # Assets is not in the equity note -> not reconstructed
+    rec = EDGAR.reconstruct_from_notes(pre, rows, "Equity")
+    @test Set((r.concept, r.statement, r.statements, startswith(r.source_selector, "reconstructed:")) for r in rec) ==
+          Set([("us-gaap:StockholdersEquity", "Equity", "[\"Equity\"]", true),
+               ("us-gaap:DividendsCommonStock", "Equity", "[\"Equity\"]", true)])
+end
+
 @testset "numwordsen spelled-out numbers (offline)" begin
     # the word -> digits parser
     @test (EDGAR._numwordsen("No"), EDGAR._numwordsen("Forty-two"),

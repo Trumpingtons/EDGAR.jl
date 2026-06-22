@@ -257,6 +257,45 @@ function _concept_statements(pre_xml::AbstractString)
     return cmap
 end
 
+"""
+    reconstruct_from_notes(pre_xml, rows, statement) -> Vector{FactRow}
+    reconstruct_from_notes(f::Filing, statement) -> Vector{FactRow}
+
+Reconstruct a financial `statement` from the filing's **notes** when the filer did not file it as a
+face section. Some filers present the statement of changes in equity (and occasionally others) only as
+a note/detail disclosure, so no presentation-linkbase role classifies to it — the note's
+TextBlock/abstract-only or "…Details" role is *correctly* rejected by the classifier. This finds the
+note role(s) whose *intent* is `statement` (a **relaxed** classification that ignores the note/detail
+markers) but which are not already a face section, and returns their facts re-tagged to `statement`.
+
+The returned rows are **reconstructed, not directly classified**: each is marked
+`source_selector = "reconstructed:<role>"` (directly-extracted facts carry an empty `source_selector`),
+so a consumer can always tell reconstruction from authoritative classification. It is opt-in — ordinary
+`facts(f; classify=true)` never includes these. Returns an empty vector when no qualifying note is found
+(e.g. the statement is already a face section).
+
+The two-argument form is **jurisdiction-agnostic**: pass any presentation-linkbase XML and a facts row
+table; the [`Filing`](@ref) method fetches both for an SEC filing (see `extract_xbrl_sec.jl`).
+"""
+function reconstruct_from_notes(pre_xml::AbstractString, rows, statement::AbstractString)
+    rolefor = Dict{String,String}()          # concept -> the note role it is reconstructed from
+    for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
+        role = m.captures[1]
+        concepts = unique(String[replace(String(loc.captures[1]), "_" => ":"; count = 1)
+                                 for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])])
+        _classify_role(role, concepts; relaxed = true) == statement || continue   # the role's intent
+        isempty(_classify_role(role, concepts)) || continue                       # but NOT a face section
+        rname = String(last(split(role, "/")))
+        for c in concepts
+            get!(rolefor, c, rname)
+        end
+    end
+    isempty(rolefor) && return FactRow[]
+    return FactRow[merge(r, (statement = statement, statements = JSON3.write([statement]),
+                             source_selector = "reconstructed:" * rolefor[r.concept]))
+                   for r in rows if haskey(rolefor, r.concept)]
+end
+
 # ── Label linkbase (native human labels) ─────────────────────────────────────
 # The picker captures a fact's label from the rendered DOM row; the browser-less native path has
 # no DOM, so it reads the filing's **label linkbase** (`*_lab.xml`) — the authoritative

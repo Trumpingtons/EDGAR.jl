@@ -32,7 +32,7 @@ const _STATEMENT_ROLES = [
      concept_patterns = [r"StatementOfCashFlowsAbstract$"i, r"CashFlowsAbstract$"i]),
     (label = "Equity",
      role_substrings = ["stockholdersequity", "shareholdersequity", "changesinequity",
-                        "partnerscapital", "statementofequity", "changesinnetassets"],
+                        "partnerscapital", "statementofequity", "changesinnetassets", "componentsofequity"],
      concept_patterns = [r"StatementOfStockholdersEquityAbstract$"i, r"StatementOfShareholdersEquityAbstract$"i,
                          r"StatementOfChangesInEquityAbstract$"i, r"StockholdersEquityRollForward$"i]),
     (label = "ComprehensiveIncome",
@@ -109,7 +109,8 @@ decision where the role name is opaque. `category` is the SEC FilingSummary `<Lo
 report is a note/detail rather than a face statement. Multi-signal scoring adapted from edgartools,
 over the taxonomy-merged [`STATEMENT_REGISTRY`](@ref).
 """
-function _classify_role(role::AbstractString, concepts = String[]; category::AbstractString = "")
+function _classify_role(role::AbstractString, concepts = String[]; category::AbstractString = "",
+                        relaxed::Bool = false)
     nrole = _norm_role(role)
     cset = concepts isa AbstractSet ? concepts : Set(concepts)
     # Role-level penalty deltas, additive with the positive signals below so the whole decision is one
@@ -121,10 +122,13 @@ function _classify_role(role::AbstractString, concepts = String[]; category::Abs
     #    (#659; only when concepts are supplied);
     #  • a FilingSummary report whose authoritative LongName category is not a face category is a
     #    note/detail even when its generic role/name matches a statement word (MSFT detail R-files).
-    # All three are disqualifying — the penalty exceeds the maximum attainable positive score.
+    # All three are disqualifying — the penalty exceeds the maximum attainable positive score. With
+    # `relaxed=true` the fragment + abstract/TextBlock disqualifiers are skipped, so a note/detail role
+    # is classified by its statement *intent* (used by `reconstruct_from_notes` to find the note that
+    # stands in for a statement a filer did not file as a face section). The category gate still applies.
     penalty = 0
-    any(occursin(t, nrole) for t in _FRAGMENT_TERMS) && (penalty += _DISQUALIFY)
-    (!isempty(cset) && all(c -> endswith(c, "Abstract") || occursin("TextBlock", c), cset)) && (penalty += _DISQUALIFY)
+    relaxed || any(occursin(t, nrole) for t in _FRAGMENT_TERMS) && (penalty += _DISQUALIFY)
+    relaxed || (!isempty(cset) && all(c -> endswith(c, "Abstract") || occursin("TextBlock", c), cset)) && (penalty += _DISQUALIFY)
     (!isempty(category) && lowercase(category) ∉ _FACE_REPORT_CATEGORIES) && (penalty += _DISQUALIFY)
     # Pure comprehensive-income demotion (adapted from edgartools #506/#584): a "Comprehensive Income
     # Statements" role name embeds the substring "incomestatement" without being the income statement;

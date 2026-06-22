@@ -31,7 +31,7 @@ include("export.jl")             # 🟢 save_selection + DuckDB extension stubs
 export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
-       label_map, calculations, select_statement, to_duckdb, statement_view, save_selection, archive_filings,
+       label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik,

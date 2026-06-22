@@ -24,7 +24,8 @@ const _VOCAB_USGAAP = Dict(
         alternative = ["us-gaap:StatementOfShareholdersEquityAbstract",
                        "us-gaap:StatementOfPartnersCapitalAbstract"],
         key_concepts = ["us-gaap:StockholdersEquity", "us-gaap:RetainedEarningsAccumulatedDeficit",
-                        "us-gaap:CommonStockValue", "us-gaap:RetainedEarnings"]),
+                        "us-gaap:CommonStockValue", "us-gaap:RetainedEarnings",
+                        "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]),
     "ComprehensiveIncome" => (
         primary = ["us-gaap:StatementOfIncomeAndComprehensiveIncomeAbstract"],
         alternative = ["us-gaap:StatementOfComprehensiveIncomeAbstract"],

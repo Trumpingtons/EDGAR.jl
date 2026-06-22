@@ -50,6 +50,12 @@ end
 
 statement_map(f::Filing) = Dict{String,String}(c => first(v) for (c, v) in statement_map_multi(f))
 
+# SEC convenience over the jurisdiction-agnostic `reconstruct_from_notes(pre_xml, rows, statement)`
+# (extract_xbrl.jl): fetch this filing's presentation linkbase and facts, then reconstruct. Mirrors how
+# `statement_map` wraps `_concept_statements`.
+reconstruct_from_notes(f::Filing, statement::AbstractString) =
+    reconstruct_from_notes(_fetch_linkbase(f, "pre"), facts(f), statement)
+
 # ── FilingSummary fallback (statement classification without a presentation linkbase) ─────────
 # Inline-only filers ship no loose linkbases (and their `*-xbrl.zip` carries none either), so the
 # `*_pre.xml` path yields nothing for them. But every XBRL filing carries an SEC-generated
