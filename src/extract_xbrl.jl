@@ -114,7 +114,7 @@ end
 # Resolve one fact's parts against the maps into a Fact, or `nothing` if it cannot be resolved
 # (unknown/incomplete context, non-numeric value).
 function _assemble_fact(cik, accession, concept, valtext, signattr, scaleattr, decimalsattr,
-                        ctxRef, unitRef, ctxs, units, stmts::Vector{String}, label)
+                        ctxRef, unitRef, ctxs, units, stmts::Vector{String}, negated::Bool, label)
     statement = isempty(stmts) ? "" : first(stmts)
     ctx = get(ctxs, ctxRef, nothing)
     ctx === nothing && return nothing
@@ -130,7 +130,7 @@ function _assemble_fact(cik, accession, concept, valtext, signattr, scaleattr, d
     scale = something(tryparse(Int, scaleattr), 0)
     dec = (decimalsattr == "" || uppercase(decimalsattr) == "INF") ? nothing : tryparse(Int, decimalsattr)
     return Fact(; cik, accession, concept, statement, statements = stmts, label,
-                value = num * 10.0^scale * (neg ? -1.0 : 1.0),
+                value = num * 10.0^scale * (neg ? -1.0 : 1.0) * (negated ? -1.0 : 1.0),
                 unit = get(units, unitRef, ""),
                 period_start = isinstant ? nothing : (ctx.start === nothing ? nothing : tryparse(Date, ctx.start)),
                 period_end = pe, is_instant = isinstant, dimensions = ctx.dims, decimals = dec,
@@ -151,7 +151,7 @@ end
 
 # Inline-XBRL facts: every <ix:nonFraction> (numeric). Non-numeric <ix:nonNumeric> are text,
 # skipped.
-function _ixbrl_facts(content, cik, accession, ctxs, units, statements, labels)
+function _ixbrl_facts(content, cik, accession, ctxs, units, statements, negations, labels)
     out = Fact[]
     for m in eachmatch(r"(?is)<ix:nonFraction\b([^>]*)>(.*?)</ix:nonFraction>", content)
         a = _attrs(m.captures[1])
@@ -160,14 +160,14 @@ function _ixbrl_facts(content, cik, accession, ctxs, units, statements, labels)
         f = _assemble_fact(cik, accession, concept, _ix_valtext(get(a, "format", ""), m.captures[2]),
                            get(a, "sign", ""), get(a, "scale", "0"), get(a, "decimals", ""),
                            get(a, "contextRef", ""), get(a, "unitRef", ""), ctxs, units,
-                           get(statements, concept, String[]), get(labels, concept, ""))
+                           get(statements, concept, String[]), concept in negations, get(labels, concept, ""))
         f === nothing || push!(out, f)
     end
     return out
 end
 
 # Classic XBRL instance: numeric facts are concept-named elements carrying a unitRef.
-function _classic_facts(content, cik, accession, ctxs, units, statements, labels)
+function _classic_facts(content, cik, accession, ctxs, units, statements, negations, labels)
     out = Fact[]
     # Content of a numeric fact is a plain number (no nested tags), so `[^<]*` keeps this linear — a
     # lazy `.*?` with the `</\1>` backreference catastrophically backtracks and trips PCRE's match
@@ -181,7 +181,7 @@ function _classic_facts(content, cik, accession, ctxs, units, statements, labels
         f = _assemble_fact(cik, accession, tag, m.captures[3], get(a, "sign", ""),
                            get(a, "scale", "0"), get(a, "decimals", ""),
                            a["contextRef"], a["unitRef"], ctxs, units,
-                           get(statements, tag, String[]), get(labels, tag, ""))
+                           get(statements, tag, String[]), tag in negations, get(labels, tag, ""))
         f === nothing || push!(out, f)
     end
     return out
@@ -191,16 +191,16 @@ end
 # concept to its statement (presentation linkbase); `labels` maps each concept to its human label
 # (label linkbase); both empty for no classification / no labels.
 # Parse one document's facts (inline iXBRL or a classic `.xml` instance) given its `kind`.
-function _facts_of(content, kind::Symbol, cik, accession, statements, labels)
+function _facts_of(content, kind::Symbol, cik, accession, statements, negations, labels)
     ctxs = _xbrl_contexts(content)
     units = _xbrl_units(content)
-    return kind === :xbrl ? _classic_facts(content, cik, accession, ctxs, units, statements, labels) :
-                            _ixbrl_facts(content, cik, accession, ctxs, units, statements, labels)
+    return kind === :xbrl ? _classic_facts(content, cik, accession, ctxs, units, statements, negations, labels) :
+                            _ixbrl_facts(content, cik, accession, ctxs, units, statements, negations, labels)
 end
 
 function _extract_facts(f::Filing; statements::AbstractDict=Dict{String,String}(),
-                        labels::AbstractDict=Dict{String,String}())
-    inline = _facts_of(f.content, f.kind, f.cik, f.accession, statements, labels)
+                        negations::AbstractSet=Set{String}(), labels::AbstractDict=Dict{String,String}())
+    inline = _facts_of(f.content, f.kind, f.cik, f.accession, statements, negations, labels)
     # Prefer the SEC's complete *extracted* instance (`<doc>_htm.xml`) when it yields strictly more
     # facts — for a foreign/40-F/20-F or multi-part filing the primary inline document is only a
     # cover/wrapper, so the extracted instance is far richer. Guarded three ways so it never regresses
@@ -212,7 +212,7 @@ function _extract_facts(f::Filing; statements::AbstractDict=Dict{String,String}(
         base = _filing_dir(f.cik, f.accession)
         body = fetch_url(base * "/" * _xbrl_instance(base))
         body === nothing && return inline
-        instance = _facts_of(String(body), :xbrl, f.cik, f.accession, statements, labels)
+        instance = _facts_of(String(body), :xbrl, f.cik, f.accession, statements, negations, labels)
         return length(instance) > length(inline) ? instance : inline
     catch
         return inline
@@ -266,6 +266,37 @@ function _concept_statements(pre_xml::AbstractString)
         end
     end
     return _add_intrinsic_statements!(cmap)
+end
+
+# Concepts presented with a NEGATED preferred-label in their primary face-statement role. XBRL's
+# `negatedLabel`/`negatedTerseLabel`/`negatedTotalLabel`/… display roles flip a fact's sign for
+# presentation, so the filing's *rendered* statement shows the opposite sign of the stored value (e.g.
+# treasury stock as a contra-equity, or a filer that stores operating cash flow negated). General — driven
+# entirely by the linkbase's `preferredLabel`, no concept hardcoding. Used to flip such facts' signs so
+# `facts(f; classify=true)` matches the as-reported statement. A concept negated only in a lower-priority
+# (or non-face) role does not count — the negation of the primary (highest-priority) face role wins.
+function _concept_negations(pre_xml::AbstractString)
+    best = Dict{String,Tuple{Int,Bool}}()        # concept => (lowest face-role rank seen, negated there)
+    for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
+        role, body = m.captures[1], m.captures[2]
+        loc = Dict{String,String}()               # loc xlink:label => concept
+        for l in eachmatch(r"(?is)<(?:link:)?loc\b([^>]*?)/?>", body)
+            a = _attrs(l.captures[1]); href = get(a, "xlink:href", ""); lbl = get(a, "xlink:label", "")
+            i = findfirst('#', href)
+            (isempty(lbl) || i === nothing) && continue
+            loc[lbl] = replace(href[nextind(href, i):end], "_" => ":"; count = 1)
+        end
+        stmt = _classify_role(role, unique(collect(values(loc))))
+        isempty(stmt) && continue
+        rank = _stmt_rank(stmt)
+        for arc in eachmatch(r"(?is)<(?:link:)?presentationArc\b([^>]*?)/?>", body)
+            a = _attrs(arc.captures[1]); c = get(loc, get(a, "xlink:to", ""), "")
+            isempty(c) && continue
+            (!haskey(best, c) || rank < best[c][1]) &&
+                (best[c] = (rank, occursin("negated", lowercase(get(a, "preferredLabel", "")))))
+        end
+    end
+    return Set(c for (c, (_, neg)) in best if neg)
 end
 
 """
@@ -409,6 +440,7 @@ facts(f; classify = true, labels = true)  # …with the `statement` and `label` 
 facts(f::Filing; classify::Bool=false, labels::Bool=false) =
     facts(_filing_selection(f, _extract_facts(f;
         statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
+        negations = classify ? statement_negations(f) : Set{String}(),
         labels = labels ? label_map(f) : Dict{String,String}())))
 
 """
@@ -422,4 +454,5 @@ via [`read_facts_json`](@ref).
 facts_json(f::Filing; pretty::Bool=true, classify::Bool=false, labels::Bool=false) =
     facts_json(_filing_selection(f, _extract_facts(f;
         statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
+        negations = classify ? statement_negations(f) : Set{String}(),
         labels = labels ? label_map(f) : Dict{String,String}())); pretty)

@@ -432,6 +432,33 @@ end
           (1, "us-gaap:NetCashProvidedByUsedInOperatingActivities", -19001000000.0)
 end
 
+@testset "negated presentation labels flip the sign (offline)" begin
+    # A face-statement role may present a concept with a negatedLabel/negatedTerseLabel, so the rendered
+    # statement shows the opposite sign of the stored value (general: treasury stock as contra-equity, or
+    # a filer that stores operating cash flow negated). _concept_negations finds them; classify-time
+    # extraction flips them so the value matches the as-reported statement.
+    pre = """
+    <link:linkbase>
+    <link:presentationLink xlink:role="http://x/role/StatementsOfCashFlows">
+      <link:loc xlink:href="x.xsd#us-gaap_NetCashProvidedByUsedInOperatingActivities" xlink:label="op"/>
+      <link:loc xlink:href="x.xsd#us-gaap_NetCashProvidedByUsedInFinancingActivities" xlink:label="fin"/>
+      <link:presentationArc xlink:to="op" preferredLabel="http://www.xbrl.org/2009/role/negatedTerseLabel"/>
+      <link:presentationArc xlink:to="fin" preferredLabel="http://www.xbrl.org/2003/role/terseLabel"/>
+    </link:presentationLink></link:linkbase>"""
+    @test EDGAR._concept_negations(pre) == Set(["us-gaap:NetCashProvidedByUsedInOperatingActivities"])
+
+    xml = """
+    <xbrl xmlns="http://www.xbrl.org/2003/instance">
+    <context id="d"><entity><identifier scheme="x">x</identifier></entity><period><startDate>2026-01-01</startDate><endDate>2026-03-31</endDate></period></context>
+    <unit id="usd"><measure>iso4217:USD</measure></unit>
+    <us-gaap:NetCashProvidedByUsedInOperatingActivities contextRef="d" unitRef="usd" decimals="-6">-2873000000</us-gaap:NetCashProvidedByUsedInOperatingActivities>
+    </xbrl>"""
+    f = EDGAR.Filing("x", "acc", "x.xml", "https://x/x.xml", :xbrl, xml)
+    raw = EDGAR._extract_facts(f)
+    flipped = EDGAR._extract_facts(f; negations = Set(["us-gaap:NetCashProvidedByUsedInOperatingActivities"]))
+    @test (raw[1].value, flipped[1].value) == (-2873000000.0, 2873000000.0)   # negated -> as reported (+)
+end
+
 @testset "statement classification from presentation linkbase (W5, offline)" begin
     @test (EDGAR._classify_role("http://x/role/CondensedConsolidatedStatementsofIncome"),
            EDGAR._classify_role("http://x/role/CondensedConsolidatedBalanceSheets"),

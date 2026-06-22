@@ -50,6 +50,11 @@ end
 
 statement_map(f::Filing) = Dict{String,String}(c => first(v) for (c, v) in statement_map_multi(f))
 
+# Concepts the filing presents with a NEGATED label in their face-statement role (see
+# `_concept_negations`) — their sign is flipped so `facts(f; classify=true)` matches the rendered
+# statement. Empty for filers with no presentation linkbase (FilingSummary fallback carries no labels).
+statement_negations(f::Filing) = _concept_negations(_fetch_linkbase(f, "pre"))
+
 # SEC convenience over the jurisdiction-agnostic `reconstruct_from_notes(pre_xml, rows, statement)`
 # (extract_xbrl.jl): fetch this filing's presentation linkbase and facts, then reconstruct. Mirrors how
 # `statement_map` wraps `_concept_statements`.
