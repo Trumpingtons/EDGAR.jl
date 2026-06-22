@@ -1528,6 +1528,15 @@ includes these. The logic is jurisdiction-agnostic (a two-argument
 \texttt{reconstruct\_from\_notes(pre\_xml, rows, statement)} takes any presentation linkbase and facts
 table); the \texttt{Filing} method fetches both for an SEC filing.
 
+\paragraph{Negated presentation labels.} A filing's presentation linkbase may show a concept with a
+\emph{negated} preferred label (\texttt{negatedLabel}, \texttt{negatedTerseLabel}, \ldots), which flips
+the sign for display --- so the \emph{rendered} statement shows the opposite of the stored value
+(treasury stock as a contra-equity; some filers even store operating cash flow negated). With
+\texttt{classify=true}, \texttt{facts(::Filing)} honours these labels and flips the affected facts'
+signs, so a value matches the statement as the company reports it. With \texttt{classify=false} you get
+the \emph{raw} stored fact value (identical to the SEC \texttt{companyfacts} API), unnegated. Filers with
+no presentation linkbase (the FilingSummary fallback) carry no labels, so this does not apply to them.
+
 \paragraph{Native labels.} The picker reads a fact's human-readable \texttt{label} off the
 rendered table row; the browser-free extractor has no rendered page, so it reads the filing's
 \emph{label linkbase} (\texttt{*\_lab.xml}) instead --- the authoritative \texttt{concept => label}
