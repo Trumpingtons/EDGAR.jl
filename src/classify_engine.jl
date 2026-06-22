@@ -152,23 +152,26 @@ end
 
 # ── Query-time statement resolution (resolver) ───────────────────────────────
 # Adapted from edgartools' find_statement fallbacks. When a requested face statement is not present
-# as its own section, fall back to the section that *subsumes* it — but only when that section
-# actually holds the requested type's essential concepts (#608: never alias a pure-OCI statement to
-# the income statement). The fallbacks chain: a combined "Statement of Profit or Loss and Other
-# Comprehensive Income" carries the income statement (Q1 #608), and an older filing may in turn embed
-# that comprehensive-income statement inside the statement of changes in equity (Q2 #706). So the
-# income statement is sought in CI, then transitively in Equity, each step gated on essential content.
-const _STATEMENT_FALLBACK = ["IncomeStatement" => "ComprehensiveIncome",   # Q1 #608
-                             "ComprehensiveIncome" => "Equity"]            # Q2 #706
+# as its own section, fall back to a section that *subsumes* it — but only when that section actually
+# holds the requested type's essential concepts (#608: never alias a pure-OCI statement to the income
+# statement). A *combined* "Statement of Operations and Comprehensive Income" serves BOTH, so income
+# and comprehensive income fall back to each other (#608, either direction — the income statement is
+# sought in CI, and CI is sought in the combined income statement); an older filing may instead embed
+# comprehensive income inside the statement of changes in equity (#706). Each hop is gated on content.
+const _STATEMENT_FALLBACK = Dict(
+    "IncomeStatement"     => ["ComprehensiveIncome"],            # combined P&L + OCI carries the income statement
+    "ComprehensiveIncome" => ["IncomeStatement", "Equity"],     # combined statement carries CI; or CI embedded in equity
+)
 
-# The ordered fallback sections to try for a requested `statement`, following the fallback chain
-# transitively (IncomeStatement -> ComprehensiveIncome -> Equity) without revisiting a section.
+# The ordered fallback sections to try for a requested `statement` — every section reachable through
+# the fallback graph (breadth-first, nearest first, no revisits).
 function _fallback_chain(statement::AbstractString)
-    chain = String[]; cur = statement
-    while (i = findfirst(p -> first(p) == cur, _STATEMENT_FALLBACK)) !== nothing
-        cur = last(_STATEMENT_FALLBACK[i])
-        cur in chain && break
-        push!(chain, cur)
+    chain = String[]; seen = Set([statement]); queue = copy(get(_STATEMENT_FALLBACK, statement, String[]))
+    while !isempty(queue)
+        s = popfirst!(queue)
+        s in seen && continue
+        push!(seen, s); push!(chain, s)
+        append!(queue, get(_STATEMENT_FALLBACK, s, String[]))
     end
     return chain
 end

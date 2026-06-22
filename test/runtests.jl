@@ -633,13 +633,19 @@ end
     embedeq = [row("Equity", "us-gaap:StockholdersEquity"),            # old filing: CI embedded in equity
                row("Equity", "us-gaap:ComprehensiveIncomeNetOfTax"),
                row("Equity", "us-gaap:NetIncomeLoss")]                  # ...and P&L in turn embedded there
+    combinedis = [row("IncomeStatement", "us-gaap:Revenues"),          # SPG/REIT combined operations + CI:
+                  row("IncomeStatement", "us-gaap:NetIncomeLoss"),     #   the CI total lives in the income statement
+                  row("IncomeStatement", "us-gaap:ComprehensiveIncomeNetOfTax")]
+    plainis = [row("IncomeStatement", "us-gaap:Revenues")]             # plain income statement, no CI content
 
     @test (EDGAR.select_statement(combined, "IncomeStatement") == combined,           # #608 alias to CI
            EDGAR.select_statement(pureoci, "IncomeStatement"),                         # pure OCI: no alias
            EDGAR.select_statement(direct, "IncomeStatement"),                          # direct wins, no alias
            EDGAR.select_statement(embedeq, "ComprehensiveIncome") == embedeq,          # #706 CI -> Equity
-           EDGAR.select_statement(embedeq, "IncomeStatement") == embedeq) ==           # transitive IS -> CI -> Equity
-          (true, [], [direct[1]], true, true)
+           EDGAR.select_statement(embedeq, "IncomeStatement") == embedeq,              # transitive IS -> CI -> Equity
+           EDGAR.select_statement(combinedis, "ComprehensiveIncome") == combinedis,    # #608 CI <- combined income statement
+           EDGAR.select_statement(plainis, "ComprehensiveIncome")) ==                  # no CI content: no false alias
+          (true, [], [direct[1]], true, true, true, [])
 end
 
 @testset "calculations (calc linkbase, W7, offline)" begin
