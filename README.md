@@ -200,6 +200,10 @@ set_config(cache_ttl = 3600, cache_max_age = 30*24*3600)  # re-fetch hourly, kee
 
 Full documentation: **https://trumpingtons.github.io/EDGAR.jl/**
 
+Recent changes are in [CHANGELOG.md](CHANGELOG.md). Note: `facts(f; classify=true)` applies the
+filing's **negated presentation labels** so signs match the statement as reported (treasury stock,
+cash outflows, …); pass `classify=false` for the raw stored fact values.
+
 ## License
 
 [MIT](LICENSE) © Antonio Saragga Seabra
