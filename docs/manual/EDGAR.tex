@@ -1458,6 +1458,18 @@ appear only in notes are left blank. The map is also available directly:
 
 \sig{statement\_map(f::Filing) -> Dict\{String, String\}}
 
+\paragraph{Multi-homed concepts.} A concept frequently belongs to \emph{more than one} statement:
+\texttt{StockholdersEquity} appears in both the balance sheet and the statement of equity;
+\texttt{NetIncomeLoss} appears in the income statement, the cash-flow reconciliation, the statement
+of comprehensive income \emph{and} the equity roll-forward. The single \texttt{statement} column
+records only the \emph{primary} (highest-priority) section, so every fact also carries a
+\texttt{statements} column --- the JSON array of \emph{all} sections it belongs to, primary first (so
+\texttt{statement} equals \texttt{statements[1]}). Without it, a literal \texttt{statement ==
+"Equity"} filter would miss the \texttt{StockholdersEquity} totals (which are primarily the balance
+sheet's). Accordingly the DuckDB \texttt{statement\_view} is \emph{membership-aware}: querying
+\texttt{statement = "Equity"} returns every fact whose \texttt{statements} set contains \texttt{Equity}
+--- the equity movements \emph{and} the multi-homed totals --- reconstructing the full statement.
+
 \noindent Some filers (typically inline-only filings) ship \emph{no} loose presentation
 linkbase. For those, classification falls back automatically to the SEC-generated
 \texttt{FilingSummary.xml} and the rendered statement R-files --- present for \emph{every}
