@@ -440,8 +440,9 @@ end
            EDGAR._classify_role("http://x/role/StatementsofComprehensiveIncome"),
            EDGAR._classify_role("http://x/role/BalanceSheetsParenthetical"),
            EDGAR._classify_role("http://x/role/NetIncomePerCommonShareDetails"),
-           EDGAR._classify_role("http://x/role/Contingencies")) ==
-          ("IncomeStatement", "BalanceSheet", "CashFlow", "Equity", "ComprehensiveIncome", "", "", "")
+           EDGAR._classify_role("http://x/role/Contingencies"),
+           EDGAR._classify_role("http://x/role/ConsolidatedStatementsOfEarnings")) ==   # NUE: income statement named "Earnings"
+          ("IncomeStatement", "BalanceSheet", "CashFlow", "Equity", "ComprehensiveIncome", "", "", "", "IncomeStatement")
 
     # bank / broker-dealer balance sheet naming (never says "balance sheet")
     @test (EDGAR._classify_role("ConsolidatedStatementOfCondition"),
