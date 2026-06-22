@@ -92,7 +92,7 @@ end
 
 # Internal: one Fact as the JSON object (the top-level cik/accession are not repeated).
 _fact_json(f::Fact) = (; concept = f.concept, standard_concept = standardize(f.concept),
-    label = f.label, value = f.value, unit = f.unit, statement = f.statement,
+    label = f.label, value = f.value, unit = f.unit, statement = f.statement, statements = f.statements,
     period_start = f.period_start === nothing ? nothing : string(f.period_start),
     period_end = string(f.period_end), is_instant = f.is_instant,
     dimensions = f.dimensions, decimals = f.decimals,
@@ -156,6 +156,7 @@ function read_facts_json(source::AbstractString)
             concept = String(fj.concept), label = String(get(fj, :label, "")),
             value = Float64(fj.value), unit = String(get(fj, :unit, "")),
             statement = String(get(fj, :statement, "")),
+            statements = String[String(x) for x in get(fj, :statements, String[])],
             period_start = (ps === nothing || ps == "") ? nothing : Date(String(ps)),
             period_end = Date(String(fj.period_end)),
             is_instant = Bool(get(fj, :is_instant, false)), dimensions = dims,

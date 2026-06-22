@@ -74,17 +74,21 @@ struct Fact
     context_ref::String
     unit_ref::String
     source_selector::String
+    # ALL the statement sections this fact's concept belongs to (a concept can be multi-homed, e.g.
+    # StockholdersEquity ∈ BalanceSheet + Equity), priority-sorted so `statement` == first. Empty
+    # unless classified. The primary `statement` field is kept for back-compatible filtering/grouping.
+    statements::Vector{String}
 end
 
-# Keyword constructor — the positional form has 15 fields; this keeps construction
+# Keyword constructor — the positional form has 16 fields; this keeps construction
 # (in Phase 3 and in tests) readable, with sensible defaults for the optional ones.
 function Fact(; concept, value, period_end, is_instant, unit="",
               cik="", accession="", statement="", label="",
               period_start=nothing, dimensions=Dict{String,String}(), decimals=nothing,
-              context_ref="", unit_ref="", source_selector="")
+              context_ref="", unit_ref="", source_selector="", statements=String[])
     return Fact(cik, accession, statement, concept, label, Float64(value), unit,
                 period_start, period_end, is_instant, dimensions, decimals,
-                context_ref, unit_ref, source_selector)
+                context_ref, unit_ref, source_selector, statements)
 end
 
 Base.show(io::IO, f::Fact) =
@@ -96,7 +100,8 @@ Base.show(io::IO, f::Fact) =
 # warehouse dedup key is (accession, concept, context_ref, unit_ref) — i.e. one fact
 # per concept × context × unit within a filing — so re-importing a filing is a no-op.
 fact_row(f::Fact) =
-    (cik = f.cik, accession = f.accession, statement = f.statement, concept = f.concept,
+    (cik = f.cik, accession = f.accession, statement = f.statement,
+     statements = JSON3.write(f.statements), concept = f.concept,
      standard_concept = standardize(f.concept), label = f.label, value = f.value, unit = f.unit,
      period_start = f.period_start, period_end = f.period_end, is_instant = f.is_instant,
      dimensions = JSON3.write(f.dimensions), decimals = f.decimals,
@@ -105,8 +110,9 @@ fact_row(f::Fact) =
 # The fact row-table schema: the element type of the Tables.jl row table that `facts`
 # returns. It mirrors `fact_row` exactly, so an empty table (from a prose-only
 # selection) is still concretely typed rather than a `Vector{Any}`. `standard_concept`
-# is the cross-company mapping (W4), `nothing` when the concept is unmapped.
-const FactRow = @NamedTuple{cik::String, accession::String, statement::String,
+# is the cross-company mapping (W4), `nothing` when the concept is unmapped. `statement` is the
+# primary section; `statements` is the JSON array of every section the concept belongs to (multi-homed).
+const FactRow = @NamedTuple{cik::String, accession::String, statement::String, statements::String,
     concept::String, standard_concept::Union{Nothing,String}, label::String, value::Float64,
     unit::String, period_start::Union{Nothing,Date}, period_end::Date, is_instant::Bool,
     dimensions::String, decimals::Union{Nothing,Int}, context_ref::String,

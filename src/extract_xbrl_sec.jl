@@ -38,13 +38,17 @@ which is present for every XBRL filing. Concepts that appear only in notes/discl
 absent. Returns a `concept => statement` dictionary (empty only if **both** sources fail).
 This is what `facts(f; classify=true)` uses to fill the `statement` column.
 """
-function statement_map(f::Filing)
+# concept => EVERY statement section it belongs to (priority-sorted, primary first) — a concept is
+# often multi-homed (StockholdersEquity ∈ BalanceSheet + Equity). Linkbase first, FilingSummary fallback.
+function statement_map_multi(f::Filing)
     m = _concept_statements(_fetch_linkbase(f, "pre"))     # authoritative: presentation linkbase
     isempty(m) && (m = _filing_summary_statements(f))      # universal fallback: FilingSummary + R-files
     isempty(m) && @warn "No statement classification for $(f.accession): no presentation " *
         "linkbase and no usable FilingSummary.xml — facts will be left unclassified (`statement` empty)."
     return m
 end
+
+statement_map(f::Filing) = Dict{String,String}(c => first(v) for (c, v) in statement_map_multi(f))
 
 # ── FilingSummary fallback (statement classification without a presentation linkbase) ─────────
 # Inline-only filers ship no loose linkbases (and their `*-xbrl.zip` carries none either), so the
@@ -94,20 +98,22 @@ function _filing_summary_reports(fs_xml::AbstractString)
     return out
 end
 
-# Build concept => statement from FilingSummary.xml + the R-files it points to.
+# Build concept => Vector{statement} (every section it appears in, priority-sorted) from
+# FilingSummary.xml + the R-files it points to.
 function _filing_summary_statements(f::Filing)
     base = _filing_dir(f.cik, f.accession)
     fs = fetch_url("$base/FilingSummary.xml")
-    fs === nothing && return Dict{String,String}()
-    prio(s) = something(findfirst(==(s), _STATEMENT_PRIORITY), length(_STATEMENT_PRIORITY) + 1)
-    cmap = Dict{String,String}()
+    fs === nothing && return Dict{String,Vector{String}}()
+    cmap = Dict{String,Vector{String}}()
     for r in _filing_summary_reports(String(fs))
         body = fetch_url("$base/$(r.file)")
         body === nothing && continue
         for c in _rfile_concepts(String(body))
-            (!haskey(cmap, c) || prio(r.statement) < prio(cmap[c])) && (cmap[c] = r.statement)
+            v = get!(cmap, c, String[])
+            r.statement in v || push!(v, r.statement)
         end
     end
+    foreach(_sort_statements!, values(cmap))
     return cmap
 end
 

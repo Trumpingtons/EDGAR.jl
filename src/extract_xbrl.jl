@@ -114,7 +114,8 @@ end
 # Resolve one fact's parts against the maps into a Fact, or `nothing` if it cannot be resolved
 # (unknown/incomplete context, non-numeric value).
 function _assemble_fact(cik, accession, concept, valtext, signattr, scaleattr, decimalsattr,
-                        ctxRef, unitRef, ctxs, units, statement, label)
+                        ctxRef, unitRef, ctxs, units, stmts::Vector{String}, label)
+    statement = isempty(stmts) ? "" : first(stmts)
     ctx = get(ctxs, ctxRef, nothing)
     ctx === nothing && return nothing
     isinstant = ctx.instant !== nothing
@@ -128,7 +129,7 @@ function _assemble_fact(cik, accession, concept, valtext, signattr, scaleattr, d
     num === nothing && return nothing
     scale = something(tryparse(Int, scaleattr), 0)
     dec = (decimalsattr == "" || uppercase(decimalsattr) == "INF") ? nothing : tryparse(Int, decimalsattr)
-    return Fact(; cik, accession, concept, statement, label,
+    return Fact(; cik, accession, concept, statement, statements = stmts, label,
                 value = num * 10.0^scale * (neg ? -1.0 : 1.0),
                 unit = get(units, unitRef, ""),
                 period_start = isinstant ? nothing : (ctx.start === nothing ? nothing : tryparse(Date, ctx.start)),
@@ -159,7 +160,7 @@ function _ixbrl_facts(content, cik, accession, ctxs, units, statements, labels)
         f = _assemble_fact(cik, accession, concept, _ix_valtext(get(a, "format", ""), m.captures[2]),
                            get(a, "sign", ""), get(a, "scale", "0"), get(a, "decimals", ""),
                            get(a, "contextRef", ""), get(a, "unitRef", ""), ctxs, units,
-                           get(statements, concept, ""), get(labels, concept, ""))
+                           get(statements, concept, String[]), get(labels, concept, ""))
         f === nothing || push!(out, f)
     end
     return out
@@ -180,7 +181,7 @@ function _classic_facts(content, cik, accession, ctxs, units, statements, labels
         f = _assemble_fact(cik, accession, tag, m.captures[3], get(a, "sign", ""),
                            get(a, "scale", "0"), get(a, "decimals", ""),
                            a["contextRef"], a["unitRef"], ctxs, units,
-                           get(statements, tag, ""), get(labels, tag, ""))
+                           get(statements, tag, String[]), get(labels, tag, ""))
         f === nothing || push!(out, f)
     end
     return out
@@ -231,21 +232,28 @@ _filing_selection(f::Filing, fcts) =
 # every concept it holds to that statement. Passing the concepts (not just the role name) is what
 # makes it robust to bank/IFRS naming and opaque role URIs.
 
-# Parse a presentation-linkbase XML into a concept => statement map.
+# Priority rank of a statement (lower = higher priority); unknown labels sort last.
+_stmt_rank(s) = something(findfirst(==(s), _STATEMENT_PRIORITY), length(_STATEMENT_PRIORITY) + 1)
+
+# Priority-sort a concept's statement memberships in place (primary first) and return it.
+_sort_statements!(v) = sort!(v; by = _stmt_rank)
+
+# Parse a presentation-linkbase XML into a `concept => Vector{statement}` map — EVERY statement section
+# the concept appears in, priority-sorted so the first is the primary. A concept is commonly multi-homed
+# (e.g. StockholdersEquity ∈ BalanceSheet + Equity; NetIncomeLoss ∈ IncomeStatement + CashFlow + Equity).
 function _concept_statements(pre_xml::AbstractString)
-    cmap = Dict{String,String}()
+    cmap = Dict{String,Vector{String}}()
     for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
         concepts = String[replace(String(loc.captures[1]), "_" => ":"; count = 1)
                           for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])]
         stmt = _classify_role(m.captures[1], concepts)
         isempty(stmt) && continue
         for c in concepts
-            if !haskey(cmap, c) ||
-               findfirst(==(stmt), _STATEMENT_PRIORITY) < findfirst(==(cmap[c]), _STATEMENT_PRIORITY)
-                cmap[c] = stmt
-            end
+            v = get!(cmap, c, String[])
+            stmt in v || push!(v, stmt)
         end
     end
+    foreach(_sort_statements!, values(cmap))
     return cmap
 end
 
@@ -350,7 +358,7 @@ facts(f; classify = true, labels = true)  # …with the `statement` and `label` 
 """
 facts(f::Filing; classify::Bool=false, labels::Bool=false) =
     facts(_filing_selection(f, _extract_facts(f;
-        statements = classify ? statement_map(f) : Dict{String,String}(),
+        statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
         labels = labels ? label_map(f) : Dict{String,String}())))
 
 """
@@ -363,5 +371,5 @@ via [`read_facts_json`](@ref).
 """
 facts_json(f::Filing; pretty::Bool=true, classify::Bool=false, labels::Bool=false) =
     facts_json(_filing_selection(f, _extract_facts(f;
-        statements = classify ? statement_map(f) : Dict{String,String}(),
+        statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
         labels = labels ? label_map(f) : Dict{String,String}())); pretty)

@@ -53,7 +53,7 @@ end
 _with_statement(f::Fact, statement::AbstractString) =
     Fact(f.cik, f.accession, String(statement), f.concept, f.label, f.value, f.unit,
          f.period_start, f.period_end, f.is_instant, f.dimensions, f.decimals,
-         f.context_ref, f.unit_ref, f.source_selector)
+         f.context_ref, f.unit_ref, f.source_selector, [String(statement)])
 
 # Internal: fill a picked Selection's facts' `statement` from a concept => statement map (from the
 # filing's presentation linkbase). Concepts absent from the map (e.g. note-only) keep their empty

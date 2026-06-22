@@ -485,10 +485,12 @@ end
     <link:presentationLink xlink:role="http://x/role/ContingenciesDetails">
       <link:loc xlink:href="x.xsd#us-gaap_LossContingency"/></link:presentationLink>
     </link:linkbase>"""
-    cs = EDGAR._concept_statements(pre)
+    cs = EDGAR._concept_statements(pre)   # concept -> every section it appears in (priority-sorted)
     @test (cs["us-gaap:Revenues"], cs["us-gaap:Assets"], cs["us-gaap:NetIncomeLoss"],
-           get(cs, "us-gaap:LossContingency", "(none)")) ==
-          ("IncomeStatement", "BalanceSheet", "IncomeStatement", "(none)")   # NetIncome -> IS (priority); Details skipped
+           get(cs, "us-gaap:LossContingency", ["(none)"])) ==
+          (["IncomeStatement"], ["BalanceSheet"],
+           ["IncomeStatement", "Equity"],   # multi-homed: in both the income statement and the equity roll-forward
+           ["(none)"])                       # only in a Details role -> unclassified, absent
 
     # the statements map flows into the extracted facts' `statement` field
     ix = """<html><body><ix:header><ix:resources>
@@ -498,8 +500,8 @@ end
     <ix:nonFraction name="us-gaap:Revenues" contextRef="d1" unitRef="usd" scale="6" id="f1">100</ix:nonFraction>
     </body></html>"""
     f = EDGAR.Filing("c", "a", "x.htm", "u", :ixbrl, ix)
-    fwith = EDGAR._extract_facts(f; statements = Dict("us-gaap:Revenues" => "IncomeStatement"))
-    @test fwith[1].statement == "IncomeStatement"
+    fwith = EDGAR._extract_facts(f; statements = Dict("us-gaap:Revenues" => ["IncomeStatement"]))
+    @test (fwith[1].statement, fwith[1].statements) == ("IncomeStatement", ["IncomeStatement"])
 end
 
 @testset "numwordsen spelled-out numbers (offline)" begin
