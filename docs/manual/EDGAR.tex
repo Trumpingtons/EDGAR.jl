@@ -1470,6 +1470,15 @@ sheet's). Accordingly the DuckDB \texttt{statement\_view} is \emph{membership-aw
 \texttt{statement = "Equity"} returns every fact whose \texttt{statements} set contains \texttt{Equity}
 --- the equity movements \emph{and} the multi-homed totals --- reconstructing the full statement.
 
+The \texttt{statements} set also captures \emph{combined} statements --- one role serving two, such as
+a ``Statement of Operations and Comprehensive Income'' (common for REITs and many foreign filers).
+The role classifies to a single primary, but a curated \emph{key-anchor} concept belongs to its
+statement by definition regardless of packaging: \texttt{ComprehensiveIncomeNetOfTax} is comprehensive
+income, \texttt{NetIncomeLoss} is the income statement. So a combined statement's facts carry
+\emph{both} memberships, and querying \texttt{statement = "ComprehensiveIncome"} (or
+\texttt{"IncomeStatement"}) finds the combined filer directly --- the \texttt{select\_statement}
+resolver remains for row tables that lack the membership column.
+
 \noindent Some filers (typically inline-only filings) ship \emph{no} loose presentation
 linkbase. For those, classification falls back automatically to the SEC-generated
 \texttt{FilingSummary.xml} and the rendered statement R-files --- present for \emph{every}
