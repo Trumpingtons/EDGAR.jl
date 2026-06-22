@@ -20,6 +20,7 @@ function _xbrl_number(valtext::AbstractString, signattr::AbstractString)
         neg = true
         t = t[nextind(t, firstindex(t)):prevind(t, lastindex(t))]
     end
+    startswith(t, "-") && (neg = !neg)   # classic instances carry the sign in the value text, not a `sign` attribute
     return (replace(t, r"[^0-9.]" => ""), neg)
 end
 
@@ -71,15 +72,15 @@ _measure_local(s) = (i = findlast(':', s); i === nothing ? s : s[nextind(s, i):e
 function _xbrl_contexts(content::AbstractString)
     ctxs = Dict{String,@NamedTuple{instant::Union{Nothing,String}, start::Union{Nothing,String},
                                    stop::Union{Nothing,String}, dims::Dict{String,String}}}()
-    for m in eachmatch(r"(?is)<\w+:context\b([^>]*)>(.*?)</\w+:context>", content)
+    for m in eachmatch(r"(?is)<(?:\w+:)?context\b([^>]*)>(.*?)</(?:\w+:)?context>", content)
         id = get(_attrs(m.captures[1]), "id", "")
         isempty(id) && continue
         body = m.captures[2]
-        inst = match(r"(?is)<\w+:instant>\s*([^<\s]+)\s*</\w+:instant>", body)
-        sd = match(r"(?is)<\w+:startDate>\s*([^<\s]+)\s*</\w+:startDate>", body)
-        ed = match(r"(?is)<\w+:endDate>\s*([^<\s]+)\s*</\w+:endDate>", body)
+        inst = match(r"(?is)<(?:\w+:)?instant>\s*([^<\s]+)\s*</(?:\w+:)?instant>", body)
+        sd = match(r"(?is)<(?:\w+:)?startDate>\s*([^<\s]+)\s*</(?:\w+:)?startDate>", body)
+        ed = match(r"(?is)<(?:\w+:)?endDate>\s*([^<\s]+)\s*</(?:\w+:)?endDate>", body)
         dims = Dict{String,String}()
-        for d in eachmatch(r"(?is)<\w+:explicitMember\b[^>]*\bdimension=\"([^\"]+)\"[^>]*>\s*([^<]+?)\s*</\w+:explicitMember>", body)
+        for d in eachmatch(r"(?is)<(?:\w+:)?explicitMember\b[^>]*\bdimension=\"([^\"]+)\"[^>]*>\s*([^<]+?)\s*</(?:\w+:)?explicitMember>", body)
             dims[d.captures[1]] = strip(d.captures[2])
         end
         ctxs[id] = (instant = inst === nothing ? nothing : inst.captures[1],
@@ -92,17 +93,17 @@ end
 # units: id -> "USD" / "shares" / "USD/shares".
 function _xbrl_units(content::AbstractString)
     units = Dict{String,String}()
-    measure(block) = (m = match(r"(?is)<\w+:measure>\s*([^<]+?)\s*</\w+:measure>", block);
+    measure(block) = (m = match(r"(?is)<(?:\w+:)?measure>\s*([^<]+?)\s*</(?:\w+:)?measure>", block);
                       m === nothing ? "" : _measure_local(strip(m.captures[1])))
-    for m in eachmatch(r"(?is)<\w+:unit\b([^>]*)>(.*?)</\w+:unit>", content)
+    for m in eachmatch(r"(?is)<(?:\w+:)?unit\b([^>]*)>(.*?)</(?:\w+:)?unit>", content)
         id = get(_attrs(m.captures[1]), "id", "")
         isempty(id) && continue
-        div = match(r"(?is)<\w+:divide>(.*?)</\w+:divide>", m.captures[2])
+        div = match(r"(?is)<(?:\w+:)?divide>(.*?)</(?:\w+:)?divide>", m.captures[2])
         if div === nothing
             units[id] = measure(m.captures[2])
         else
-            num = match(r"(?is)<\w+:unitNumerator>(.*?)</\w+:unitNumerator>", div.captures[1])
-            den = match(r"(?is)<\w+:unitDenominator>(.*?)</\w+:unitDenominator>", div.captures[1])
+            num = match(r"(?is)<(?:\w+:)?unitNumerator>(.*?)</(?:\w+:)?unitNumerator>", div.captures[1])
+            den = match(r"(?is)<(?:\w+:)?unitDenominator>(.*?)</(?:\w+:)?unitDenominator>", div.captures[1])
             units[id] = (num === nothing ? "" : measure(num.captures[1])) * "/" *
                         (den === nothing ? "" : measure(den.captures[1]))
         end

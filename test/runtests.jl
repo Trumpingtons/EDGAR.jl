@@ -416,6 +416,20 @@ end
     rxml = facts(fxml)   # the non-numeric dei element (no unitRef) is skipped
     @test (length(rxml), rxml[1].concept, rxml[1].value, rxml[1].period_end) ==
           (1, "us-gaap:Revenues", 177751000000.0, Date("2026-04-30"))
+
+    # A classic instance that declares the XBRL namespace as the default (unprefixed <context>/<unit>)
+    # and carries the sign in the value text (-19001…) — both must parse (prefix-optional regexes +
+    # leading-minus handling); without either, contexts/units parse as 0 (so 0 facts) or the negative
+    # cash-flow value flips positive.
+    bare = """
+    <xbrl xmlns="http://www.xbrl.org/2003/instance">
+    <context id="d1"><entity><identifier scheme="x">x</identifier></entity><period><startDate>2025-01-01</startDate><endDate>2025-12-31</endDate></period></context>
+    <unit id="usd"><measure>iso4217:USD</measure></unit>
+    <us-gaap:NetCashProvidedByUsedInOperatingActivities contextRef="d1" unitRef="usd" decimals="-6">-19001000000</us-gaap:NetCashProvidedByUsedInOperatingActivities>
+    </xbrl>"""
+    rbare = facts(EDGAR.Filing("x", "acc", "x.xml", "https://x/x.xml", :xbrl, bare))
+    @test (length(rbare), rbare[1].concept, rbare[1].value) ==
+          (1, "us-gaap:NetCashProvidedByUsedInOperatingActivities", -19001000000.0)
 end
 
 @testset "statement classification from presentation linkbase (W5, offline)" begin
