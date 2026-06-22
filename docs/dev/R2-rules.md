@@ -37,7 +37,7 @@
 |---|---|---|---|
 | Q1 | #518/#608 | IncomeStatement → ComprehensiveIncome fallback, validating the CI role holds real P&L data | ✅ **done** — `select_statement` in `classify_engine.jl` |
 | Q2 | #706 | ComprehensiveIncome → StatementOfEquity fallback (older filings embed CI in equity) | ✅ **done** — transitive fallback chain in `select_statement` |
-| Q3 | #503/#506/#584 | complete-statement-over-fragment selection + pure-CI-vs-income disambiguation | ✅ **done** — in EDGAR.jl's concept-tagging model this is *authoritative gating*, not a heuristic ranker: FilingSummary `LongName` category gate (Statement vs Disclosure) + pure-CI guard in the scorer |
+| Q3 | #503/#506/#584/#659/8ad8 | complete-statement-over-fragment selection + pure-CI-vs-income disambiguation | ✅ **done** — ported as **additive score deltas in the one `_classify_role` scorer** (uniform with the existing `+3/+4` signals, single threshold): fragment-term penalty, #659 disclosure-only-concepts penalty, FilingSummary `LongName` category penalty, and pure-CI demotion. No separate gate. |
 
 ## Log
 
@@ -79,6 +79,20 @@
   "schedule". **Live MSFT: 79+ mis-tags + collisions → 6 clean face reports** (Cover/Income/CI/BS/CF/
   Equity), R3 now correctly ComprehensiveIncome (was IncomeStatement). Tests: FilingSummary 3/3 (gate
   + R54 regression), scorer pure-CI 1/1, corpus + W5 unchanged-green. Docs: manual FilingSummary ¶.
-- **R3 COMPLETE** (Q1+Q2 cross-type aliasing resolver + Q3 within-type authoritative gating). Phase R
-  is functionally done; remaining edgartools rules are either covered (table above) or have no current
-  failing-filing evidence (re-open fail→correct if one appears).
+- **Q3 refactored to a single uniform scorer** (no parallel mechanisms). All of edgartools'
+  `_score_statement_quality` adjustments are now **additive score deltas inside `_classify_role`**,
+  scored against the one `>= 3` threshold alongside the existing `+3` role / `+4` primary/alternative /
+  `+pattern` / `+key_concepts` signals:
+  - `_FRAGMENT_TERMS` (parenthetical/detail/tables/policies/narrative/schedule/disclosure) → `_DISQUALIFY` (#503/8ad8);
+  - disclosure-only concept set (all `…Abstract`/`…TextBlock`) → `_DISQUALIFY` (#659);
+  - FilingSummary `<LongName>` category not in `_FACE_REPORT_CATEGORIES` (Statement/Document/Cover) → `_DISQUALIFY` — passed via the new `category=` kwarg, the authoritative SEC signal the role text alone misses;
+  - pure-CI role name → income match demoted `-4` below the comprehensive-income match (#506/#584).
+  `_DISQUALIFY` (100) exceeds the max attainable positive score, so a disqualified role lands `< 3` and
+  classifies `""` — the additive equivalent of the old hard gate, but now one code path. The separate
+  `_filing_summary_reports` LongName gate was removed; it now just passes the parsed category into the
+  scorer. **Live MSFT/PLD/ORCL: one report per statement type, no collisions** (MSFT 6, PLD 5, ORCL 6).
+  Tests: FilingSummary 3/3 (fragment-role + clean-named-Disclosure-category regressions), scorer
+  pure-CI, corpus + W5 green.
+- **R3 COMPLETE** (Q1+Q2 cross-type aliasing resolver + Q3 within-type disqualifying score deltas).
+  Phase R is functionally done; remaining edgartools rules are either covered (table above) or have no
+  current failing-filing evidence (re-open fail→correct if one appears).

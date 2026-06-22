@@ -47,10 +47,15 @@ const _STATEMENT_ROLES = [
 const _STATEMENT_PRIORITY = ["IncomeStatement", "BalanceSheet", "CashFlow",
                              "ComprehensiveIncome", "Equity", "CoverPage"]
 
-# Role-name fragments that mark a non-face section (notes/details/parenthetical/policies/schedules).
-# "detail" (singular) also catches "...Detail"/"...Details"; without it a detail role whose name
-# happens to embed a statement word (e.g. "...ComprehensiveIncomeStatementsDetail") slips through.
-const _ROLE_EXCLUDE = ("parenthetical", "detail", "tables", "policies", "narrative", "schedule")
+# Role-name fragment terms that mark a non-face section (notes/details/parenthetical/policies/
+# schedules/disclosures). Scored as a strong negative delta in `_classify_role`. "detail" (singular)
+# also catches "...Detail"/"...Details"; "disclosure" catches the generically-named detail R-files in
+# the FilingSummary path whose role still embeds a statement word (e.g. "...IncomeStatementsDetail").
+const _FRAGMENT_TERMS = ("parenthetical", "detail", "tables", "policies", "narrative", "schedule", "disclosure")
+
+# A score delta large enough to push any positive match below the classification threshold — the
+# additive equivalent of an outright reject (for fragment roles and disclosure-only concept sets).
+const _DISQUALIFY = 100
 
 # The taxonomy vocabularies merged into the effective registry. Loading every taxonomy is the
 # behaviour-preserving default; selecting only the taxonomies a filing actually uses (by concept
@@ -76,41 +81,54 @@ end
 
 const STATEMENT_REGISTRY = _build_statement_registry()
 
+# The FilingSummary `<LongName>` categories whose reports are face statements (or the cover);
+# anything else (Disclosure/Schedule/…) is a note/detail. Fed to `_classify_role` as a scoring signal.
+const _FACE_REPORT_CATEGORIES = ("statement", "document", "cover")
+
 """
-    _classify_role(role, concepts=String[]) -> String
+    _classify_role(role, concepts=String[]; category="") -> String
 
 Classify a presentation/calculation role into a face statement label (`"BalanceSheet"`,
 `"IncomeStatement"`, `"CashFlow"`, `"Equity"`, `"ComprehensiveIncome"`, `"CoverPage"`) or `""`
 for notes/details/other. `role` is the role URI or human name; `concepts` is the (optional) set of
 concepts in the role — when supplied (the presentation-linkbase path) it strengthens or rescues the
-decision where the role name is opaque. Multi-signal scoring adapted from edgartools, over the
-taxonomy-merged [`STATEMENT_REGISTRY`](@ref).
+decision where the role name is opaque. `category` is the SEC FilingSummary `<LongName>` category
+(`"Statement"`/`"Disclosure"`/…) when classifying from FilingSummary — an authoritative signal that a
+report is a note/detail rather than a face statement. Multi-signal scoring adapted from edgartools,
+over the taxonomy-merged [`STATEMENT_REGISTRY`](@ref).
 """
-function _classify_role(role::AbstractString, concepts = String[])
+function _classify_role(role::AbstractString, concepts = String[]; category::AbstractString = "")
     nrole = _norm_role(role)
-    any(occursin(p, nrole) for p in _ROLE_EXCLUDE) && return ""
     cset = concepts isa AbstractSet ? concepts : Set(concepts)
-    # Essential-content validation (adapted from edgartools #659): a face statement is built from
-    # line-item concepts. A role whose only concepts are abstract headers (`…Abstract`) or note
-    # text blocks (`…TextBlock…`) is a disclosure/note — even if its *name* matches a statement
-    # (e.g. an equity NOTE role named "StockholdersEquity", or a segment reconciliation disclosure
-    # named "…IncomeStatements"). Reject it. (Only when concepts are supplied.)
-    isempty(cset) || any(c -> !endswith(c, "Abstract") && !occursin("TextBlock", c), cset) || return ""
-    # Pure comprehensive-income guard (adapted from edgartools #506/#584): a "Comprehensive Income
-    # Statements" role name embeds the substring "incomestatement" without being the income statement.
-    # Suppress the income-statement role match for such names UNLESS the role is a *combined* operations
-    # + comprehensive-income statement (which is a valid income statement), detected by a distinct
-    # operations/income indicator.
+    # Role-level penalty deltas, additive with the positive signals below so the whole decision is one
+    # uniform score against a single threshold (adapted from edgartools' _score_statement_quality):
+    #  • a notes/detail/parenthetical/schedule/disclosure role is not a face statement (#503/8ad8);
+    #  • a role whose only concepts are abstract headers (`…Abstract`) or note text blocks
+    #    (`…TextBlock…`) is a disclosure, even if its name matches a statement — e.g. an equity NOTE
+    #    role named "StockholdersEquity", or a segment-reconciliation role named "…IncomeStatements"
+    #    (#659; only when concepts are supplied);
+    #  • a FilingSummary report whose authoritative LongName category is not a face category is a
+    #    note/detail even when its generic role/name matches a statement word (MSFT detail R-files).
+    # All three are disqualifying — the penalty exceeds the maximum attainable positive score.
+    penalty = 0
+    any(occursin(t, nrole) for t in _FRAGMENT_TERMS) && (penalty += _DISQUALIFY)
+    (!isempty(cset) && all(c -> endswith(c, "Abstract") || occursin("TextBlock", c), cset)) && (penalty += _DISQUALIFY)
+    (!isempty(category) && lowercase(category) ∉ _FACE_REPORT_CATEGORIES) && (penalty += _DISQUALIFY)
+    # Pure comprehensive-income demotion (adapted from edgartools #506/#584): a "Comprehensive Income
+    # Statements" role name embeds the substring "incomestatement" without being the income statement;
+    # demote the income match below the comprehensive-income match UNLESS the role is a *combined*
+    # operations + comprehensive-income statement, detected by a distinct operations/income indicator.
     pure_ci = (occursin("comprehensiveincome", nrole) || occursin("othercomprehensive", nrole)) &&
               !any(occursin(x, nrole) for x in ("operations", "statementofincome", "statementsofincome"))
     best = ""; bestscore = 0
     for t in STATEMENT_REGISTRY
-        s = 0
-        any(rs -> occursin(rs, nrole), t.role_substrings) && !(pure_ci && t.label == "IncomeStatement") && (s += 3)
+        s = -penalty
+        any(rs -> occursin(rs, nrole), t.role_substrings) && (s += 3)
         any(in(cset), t.primary) && (s += 4)
         any(in(cset), t.alternative) && (s += 4)
         any(cp -> any(c -> occursin(cp, c), cset), t.concept_patterns) && (s += 3)
         s += min(count(in(cset), t.key_concepts), 3)
+        (pure_ci && t.label == "IncomeStatement") && (s -= 4)
         s > bestscore && (bestscore = s; best = t.label)
     end
     return bestscore >= 3 ? best : ""
