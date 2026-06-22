@@ -450,6 +450,15 @@ end
            EDGAR._classify_role("Role_StatementINCOMESTATEMENTS")) ==                 # plain income
           ("ComprehensiveIncome", "IncomeStatement", "IncomeStatement")
 
+    # Expanded vocabulary (edgartools-parity audit): fund/BDC face statements + name-only rescues.
+    @test (EDGAR._classify_role("ConsolidatedStatementsOfAssetsAndLiabilities"),            # BDC balance sheet (name only)
+           EDGAR._classify_role("ConsolidatedScheduleOfInvestments"),                        # fund schedule of investments
+           EDGAR._classify_role("r", ["us-gaap:InvestmentOwnedAtFairValue",                  # ...rescued by 3 holdings concepts
+                                       "us-gaap:InvestmentOwnedAtCost", "us-gaap:InvestmentOwnedBalanceShares"]),
+           EDGAR._classify_role("FinancialHighlights"),                                       # investment-company highlights
+           EDGAR._classify_role("ScheduleOfInvestmentsDetails")) ==                           # ...its detail is still rejected
+          ("BalanceSheet", "ScheduleOfInvestments", "ScheduleOfInvestments", "FinancialHighlights", "")
+
     pre = """
     <link:linkbase>
     <link:presentationLink xlink:role="http://x/role/StatementsofIncome">

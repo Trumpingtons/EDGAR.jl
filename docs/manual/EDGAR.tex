@@ -1446,7 +1446,8 @@ archive_filings(104169, "wmt.duckdb"; forms = "10-Q", limit = 4)
 \end{lstlisting}
 
 \paragraph{Statement classification.} The \texttt{statement} column (\texttt{IncomeStatement},
-\texttt{BalanceSheet}, \texttt{CashFlow}, \texttt{Equity}, \texttt{ComprehensiveIncome},
+\texttt{BalanceSheet}, \texttt{CashFlow}, \texttt{Equity}, \texttt{ComprehensiveIncome}, the
+fund/BDC statements \texttt{ScheduleOfInvestments} and \texttt{FinancialHighlights}, or
 \texttt{CoverPage}) records which financial statement a fact belongs to. It is filled from the
 \emph{authoritative} source --- the filing's own presentation linkbase (\texttt{*\_pre.xml}),
 which groups concepts into statement sections --- so it is not a heuristic guess. Pass

@@ -21,37 +21,48 @@ const _StmtDef = @NamedTuple{label::String, primary::Vector{String}, alternative
 const _STATEMENT_ROLES = [
     (label = "BalanceSheet",
      role_substrings = ["balancesheet", "statementoffinancialposition", "financialposition",
-                        "statementofcondition", "financialcondition"],
-     concept_patterns = [r"StatementOfFinancialPositionAbstract$"i, r"BalanceSheetAbstract$"i]),
+                        "statementofcondition", "financialcondition", "assetsandliabilities"],
+     concept_patterns = [r"StatementOfFinancialPositionAbstract$"i, r"BalanceSheets?Abstract$"i]),
     (label = "IncomeStatement",
      role_substrings = ["incomestatement", "statementofincome", "statementsofincome",
                         "statementofoperations", "statementsofoperations", "profitorloss"],
-     concept_patterns = [r"IncomeStatementAbstract$"i, r"StatementOfIncomeAbstract$"i]),
+     concept_patterns = [r"IncomeStatementAbstract$"i, r"Statements?OfIncomeAbstract$"i]),
     (label = "CashFlow",
      role_substrings = ["cashflow", "statementofcashflows"],
      concept_patterns = [r"StatementOfCashFlowsAbstract$"i, r"CashFlowsAbstract$"i]),
     (label = "Equity",
      role_substrings = ["stockholdersequity", "shareholdersequity", "changesinequity",
-                        "partnerscapital", "statementofequity"],
+                        "partnerscapital", "statementofequity", "changesinnetassets"],
      concept_patterns = [r"StatementOfStockholdersEquityAbstract$"i, r"StatementOfShareholdersEquityAbstract$"i,
                          r"StatementOfChangesInEquityAbstract$"i, r"StockholdersEquityRollForward$"i]),
     (label = "ComprehensiveIncome",
      role_substrings = ["comprehensiveincome", "othercomprehensive"],
      concept_patterns = [r"ComprehensiveIncomeAbstract$"i]),
+    # Fund / BDC / investment-company face statements (us-gaap only; no IFRS equivalent).
+    (label = "ScheduleOfInvestments",
+     role_substrings = ["scheduleofinvestments", "investmentholdings", "portfolioinvestments"],
+     concept_patterns = [r"ScheduleOfInvestmentsAbstract$"i, r"InvestmentHoldingsAbstract$"i]),
+    (label = "FinancialHighlights",
+     role_substrings = ["financialhighlights"],
+     concept_patterns = [r"FinancialHighlightsAbstract$"i]),
     (label = "CoverPage",
      role_substrings = ["coverpage", "documentandentity", "coverabstract"],
-     concept_patterns = Regex[]),
+     concept_patterns = [r"CoverAbstract$"i]),
 ]
 
-# When a concept appears in several face statements, keep the highest-priority one.
+# When a concept appears in several face statements, keep the highest-priority one. The core six rank
+# ahead of the fund-specific statements so a shared concept (e.g. an equity total) stays with the core.
 const _STATEMENT_PRIORITY = ["IncomeStatement", "BalanceSheet", "CashFlow",
-                             "ComprehensiveIncome", "Equity", "CoverPage"]
+                             "ComprehensiveIncome", "Equity",
+                             "ScheduleOfInvestments", "FinancialHighlights", "CoverPage"]
 
 # Role-name fragment terms that mark a non-face section (notes/details/parenthetical/policies/
-# schedules/disclosures). Scored as a strong negative delta in `_classify_role`. "detail" (singular)
-# also catches "...Detail"/"...Details"; "disclosure" catches the generically-named detail R-files in
-# the FilingSummary path whose role still embeds a statement word (e.g. "...IncomeStatementsDetail").
-const _FRAGMENT_TERMS = ("parenthetical", "detail", "tables", "policies", "narrative", "schedule", "disclosure")
+# disclosures). Scored as a strong negative delta in `_classify_role`. "detail" (singular) also catches
+# "...Detail"/"...Details"; "disclosure" catches the generically-named detail R-files in the
+# FilingSummary path whose role still embeds a statement word (e.g. "...IncomeStatementsDetail").
+# NB: "schedule" is deliberately NOT a fragment term — "Schedule of Investments" is a fund face
+# statement; a generic "Schedule of X" disclosure matches no face statement and is rejected anyway.
+const _FRAGMENT_TERMS = ("parenthetical", "detail", "tables", "policies", "narrative", "disclosure")
 
 # A score delta large enough to push any positive match below the classification threshold — the
 # additive equivalent of an outright reject (for fragment roles and disclosure-only concept sets).
@@ -89,8 +100,9 @@ const _FACE_REPORT_CATEGORIES = ("statement", "document", "cover")
     _classify_role(role, concepts=String[]; category="") -> String
 
 Classify a presentation/calculation role into a face statement label (`"BalanceSheet"`,
-`"IncomeStatement"`, `"CashFlow"`, `"Equity"`, `"ComprehensiveIncome"`, `"CoverPage"`) or `""`
-for notes/details/other. `role` is the role URI or human name; `concepts` is the (optional) set of
+`"IncomeStatement"`, `"CashFlow"`, `"Equity"`, `"ComprehensiveIncome"`, the fund/BDC statements
+`"ScheduleOfInvestments"` and `"FinancialHighlights"`, or `"CoverPage"`) or `""` for
+notes/details/other. `role` is the role URI or human name; `concepts` is the (optional) set of
 concepts in the role — when supplied (the presentation-linkbase path) it strengthens or rescues the
 decision where the role name is opaque. `category` is the SEC FilingSummary `<LongName>` category
 (`"Statement"`/`"Disclosure"`/…) when classifying from FilingSummary — an authoritative signal that a

@@ -23,9 +23,25 @@ const _VOCAB_USGAAP = Dict(
         primary = ["us-gaap:StatementOfStockholdersEquityAbstract"],
         alternative = ["us-gaap:StatementOfShareholdersEquityAbstract",
                        "us-gaap:StatementOfPartnersCapitalAbstract"],
-        key_concepts = ["us-gaap:StockholdersEquity", "us-gaap:RetainedEarningsAccumulatedDeficit"]),
+        key_concepts = ["us-gaap:StockholdersEquity", "us-gaap:RetainedEarningsAccumulatedDeficit",
+                        "us-gaap:CommonStockValue", "us-gaap:RetainedEarnings"]),
     "ComprehensiveIncome" => (
         primary = ["us-gaap:StatementOfIncomeAndComprehensiveIncomeAbstract"],
         alternative = ["us-gaap:StatementOfComprehensiveIncomeAbstract"],
-        key_concepts = ["us-gaap:ComprehensiveIncomeNetOfTax"]),
+        key_concepts = ["us-gaap:ComprehensiveIncomeNetOfTax",
+                        "us-gaap:ComprehensiveIncomeNetOfTaxIncludingPortionAttributableToNoncontrollingInterest"]),
+    # Fund / BDC / investment-company face statements (no IFRS equivalent — us-gaap only).
+    "ScheduleOfInvestments" => (
+        primary = ["us-gaap:ScheduleOfInvestmentsAbstract"],
+        alternative = ["us-gaap:InvestmentsDebtAndEquitySecuritiesAbstract",
+                       "us-gaap:InvestmentHoldingsAbstract"],
+        key_concepts = ["us-gaap:InvestmentOwnedAtFairValue", "us-gaap:InvestmentOwnedAtCost",
+                        "us-gaap:InvestmentOwnedBalancePrincipalAmount",
+                        "us-gaap:InvestmentOwnedBalanceShares",
+                        "us-gaap:InvestmentOwnedPercentOfNetAssets"]),
+    "FinancialHighlights" => (
+        primary = ["us-gaap:InvestmentCompanyFinancialHighlightsAbstract"],
+        alternative = ["us-gaap:InvestmentCompanyAbstract"],
+        key_concepts = ["us-gaap:NetAssetValuePerShare", "us-gaap:InvestmentCompanyNetAssets",
+                        "us-gaap:InvestmentCompanyTotalReturn", "us-gaap:InvestmentCompanyExpenseRatio"]),
 )
