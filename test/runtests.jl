@@ -560,6 +560,27 @@ end
     @test (length(fails), length(corpus.cases)) == (0, length(corpus.cases))
 end
 
+@testset "statement resolver (R3 query-time fallback, offline)" begin
+    # select_statement aliases a requested face statement onto the section that subsumes it, gated on
+    # essential content. row = (statement, concept) is all the resolver reads.
+    row(stmt, concept) = (statement = stmt, concept = concept)
+    combined = [row("ComprehensiveIncome", "us-gaap:Revenues"),        # AZN-style combined P&L + OCI:
+                row("ComprehensiveIncome", "us-gaap:NetIncomeLoss"),   #   P&L lives in the CI section
+                row("ComprehensiveIncome", "us-gaap:OtherComprehensiveIncomeNetOfTax")]
+    pureoci = [row("ComprehensiveIncome", "us-gaap:OtherComprehensiveIncomeNetOfTax")]  # no P&L anchor
+    direct  = [row("IncomeStatement", "us-gaap:Revenues"), row("ComprehensiveIncome", "us-gaap:Foo")]
+    embedeq = [row("Equity", "us-gaap:StockholdersEquity"),            # old filing: CI embedded in equity
+               row("Equity", "us-gaap:ComprehensiveIncomeNetOfTax"),
+               row("Equity", "us-gaap:NetIncomeLoss")]                  # ...and P&L in turn embedded there
+
+    @test (EDGAR.select_statement(combined, "IncomeStatement") == combined,           # #608 alias to CI
+           EDGAR.select_statement(pureoci, "IncomeStatement"),                         # pure OCI: no alias
+           EDGAR.select_statement(direct, "IncomeStatement"),                          # direct wins, no alias
+           EDGAR.select_statement(embedeq, "ComprehensiveIncome") == embedeq,          # #706 CI -> Equity
+           EDGAR.select_statement(embedeq, "IncomeStatement") == embedeq) ==           # transitive IS -> CI -> Equity
+          (true, [], [direct[1]], true, true)
+end
+
 @testset "calculations (calc linkbase, W7, offline)" begin
     cal = """
     <link:linkbase>

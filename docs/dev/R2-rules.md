@@ -31,13 +31,13 @@
 | T3 | #503 | prefer a complete statement over a tiny **fragment** role of the same type | 🔜 no current evidence — the 2-concept "fragments" we saw were disclosures (fixed by T2). Needs a real same-type fragment filing to port responsibly. |
 | T4 | #506/#584 | refine pure-ComprehensiveIncome vs combined-operations scoring | 🅰/⏭ — combined ops+CI → IncomeStatement via registry order + priority; the pure-CI-serves-as-income case (AZN) is the R3 resolver item Q1. |
 
-## R3 — query-time resolver (deferred)
+## R3 — query-time resolver
 
 | Rule | edgartools | What it does | Status |
 |---|---|---|---|
-| Q1 | #518/#608 | IncomeStatement → ComprehensiveIncome fallback, validating the CI role holds real P&L data | ⏭ R3 |
-| Q2 | #706 | ComprehensiveIncome → StatementOfEquity fallback (older filings embed CI in equity) | ⏭ R3 |
-| Q3 | — | the 5-strategy `find_statement` cascade (per-request best-role selection) | ⏭ R3 |
+| Q1 | #518/#608 | IncomeStatement → ComprehensiveIncome fallback, validating the CI role holds real P&L data | ✅ **done** — `select_statement` in `classify_engine.jl` |
+| Q2 | #706 | ComprehensiveIncome → StatementOfEquity fallback (older filings embed CI in equity) | ✅ **done** — transitive fallback chain in `select_statement` |
+| Q3 | — | the 5-strategy `find_statement` cascade (per-request best-role selection) | 🔜 next |
 
 ## Log
 
@@ -51,3 +51,16 @@
   work is **R3** (the query-time resolver: AZN-style combined-statement aliasing #608, CI→Equity
   #706, and the find_statement cascade). Next: either broaden the corpus to hunt more failures, or
   start R3.
+- **Q1 (#608) + Q2 (#706) DONE** — `select_statement(rows, statement)` in `classify_engine.jl`
+  (exported). Query-time resolver: a requested face statement with no section of its own is aliased
+  onto the section that *subsumes* it, **gated on essential content** so a pure-OCI section is never
+  returned as the income statement. The fallback chains transitively — IncomeStatement →
+  ComprehensiveIncome (#608, the AZN combined "Statement of Profit or Loss and Other Comprehensive
+  Income") → Equity (#706, older filings embedding CI in the statement of changes in equity), each
+  hop validated against the requested type's `key_concepts`. Operates on any `facts(...)` row table
+  (reads only `.statement`/`.concept`). Offline testset "statement resolver (R3 …)" — direct-wins,
+  #608 alias, pure-OCI no-alias, #706 CI→Equity, transitive IS→CI→Equity. Full suite green.
+- **Remaining R3 = Q3** — the 5-strategy `find_statement` cascade (per-request best-role *selection*
+  when multiple candidate roles classify to the same statement: complete-over-fragment #503,
+  parenthetical penalty, recency/quality scoring). Distinct from Q1/Q2 (which alias *across* types);
+  Q3 ranks *within* a type. Needs a multi-candidate corpus to port responsibly.

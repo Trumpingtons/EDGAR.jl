@@ -106,3 +106,56 @@ function _classify_role(role::AbstractString, concepts = String[])
     end
     return bestscore >= 3 ? best : ""
 end
+
+# ── Query-time statement resolution (resolver) ───────────────────────────────
+# Adapted from edgartools' find_statement fallbacks. When a requested face statement is not present
+# as its own section, fall back to the section that *subsumes* it — but only when that section
+# actually holds the requested type's essential concepts (#608: never alias a pure-OCI statement to
+# the income statement). The fallbacks chain: a combined "Statement of Profit or Loss and Other
+# Comprehensive Income" carries the income statement (Q1 #608), and an older filing may in turn embed
+# that comprehensive-income statement inside the statement of changes in equity (Q2 #706). So the
+# income statement is sought in CI, then transitively in Equity, each step gated on essential content.
+const _STATEMENT_FALLBACK = ["IncomeStatement" => "ComprehensiveIncome",   # Q1 #608
+                             "ComprehensiveIncome" => "Equity"]            # Q2 #706
+
+# The ordered fallback sections to try for a requested `statement`, following the fallback chain
+# transitively (IncomeStatement -> ComprehensiveIncome -> Equity) without revisiting a section.
+function _fallback_chain(statement::AbstractString)
+    chain = String[]; cur = statement
+    while (i = findfirst(p -> first(p) == cur, _STATEMENT_FALLBACK)) !== nothing
+        cur = last(_STATEMENT_FALLBACK[i])
+        cur in chain && break
+        push!(chain, cur)
+    end
+    return chain
+end
+
+# The anchor concepts that prove a section really holds a given statement type's content.
+_essential_concepts(label::AbstractString) =
+    (i = findfirst(t -> t.label == label, STATEMENT_REGISTRY); i === nothing ? String[] : STATEMENT_REGISTRY[i].key_concepts)
+
+"""
+    select_statement(rows, statement) -> rows
+
+The fact rows belonging to a financial `statement`, applying the query-time resolver: if the
+requested statement has no section of its own but a section that **subsumes** it does — and that
+section actually contains the requested type's essential concepts — return those rows instead.
+
+The canonical case is an IFRS single-statement filing whose income statement is the top of a
+combined "Statement of Profit or Loss and Other Comprehensive Income": `select_statement(rows,
+"IncomeStatement")` then returns the comprehensive-income rows (which hold the P&L). The fallback
+chains transitively (income -> comprehensive income -> equity, for older filings that embed
+comprehensive income in the statement of changes in equity). A pure other-comprehensive-income
+section (no P&L) is **not** aliased to the income statement. Adapted from edgartools (#608/#706).
+"""
+function select_statement(rows, statement::AbstractString)
+    direct = [r for r in rows if r.statement == statement]
+    isempty(direct) || return direct
+    ess = Set(_essential_concepts(statement))
+    for alt in _fallback_chain(statement)
+        altrows = [r for r in rows if r.statement == alt]
+        isempty(altrows) && continue
+        any(r -> r.concept in ess, altrows) && return altrows   # #608/#706: alt must hold the requested anchors
+    end
+    return direct
+end
