@@ -171,6 +171,30 @@ end
     end
 end
 
+@testset "sections: form-aware item segmentation (offline)" begin
+    # The heading detector: a short "Item N." block -> its id; a cross-reference (long, or "of this"/
+    # "above") -> nothing, even when it starts with "Item".
+    @test (EDGAR._item_id("Item 1A. Risk Factors"), EDGAR._item_id("ITEM 7."),
+           EDGAR._item_id("See Item 1A of this report for a description of the risks"),
+           EDGAR._item_id("Item 1A above")) == ("1A", "7", nothing, nothing)
+
+    # End-to-end: a table of contents (short item links) + the body (headings + content) + a cross-
+    # reference inside Item 1. The body run wins over the TOC; the cross-reference stays inside Item 1's
+    # text rather than being mistaken for the heading; items come out in canonical order.
+    html = """<html><body>
+    <p>Item 1</p><p>Item 1A</p><p>Item 2</p>
+    <p>Item 1. Business</p><p>We design widgets. See Item 1A of this report for risks.</p>
+    <p>Item 1A. Risk Factors</p><p>Competition and supply-chain disruption are key risks.</p>
+    <p>Item 2. Properties</p><p>We own factories and offices worldwide.</p>
+    </body></html>"""
+    secs = EDGAR.sections(html; form = "10-K")
+    byid = Dict(s.item => s.text for s in secs)
+    @test ([s.item for s in secs], occursin("design widgets", byid["Item 1"]),
+           occursin("See Item 1A of this report", byid["Item 1"]),     # cross-ref kept inside Item 1
+           occursin("Competition", byid["Item 1A"])) ==
+          (["Item 1", "Item 1A", "Item 2"], true, true, true)
+end
+
 @testset "picker: select_section / select_sections (offline)" begin
     # Drive the picker server headlessly: a fake `opener` POSTs selections to the
     # local endpoint instead of launching a browser. No network involved.

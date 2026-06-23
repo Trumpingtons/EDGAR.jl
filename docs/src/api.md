@@ -23,6 +23,7 @@ save_filing
 open_filing
 download_assets
 extract_section
+sections
 ```
 
 ## Interactive extraction and export

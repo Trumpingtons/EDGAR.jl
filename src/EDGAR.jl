@@ -15,6 +15,7 @@ include("http.jl")               # 🟢 HTTP + on-disk cache (fetch_url, _get_js
 include("util.jl")               # 🟢 small cross-cutting helpers
 include("text.jl")               # 🟢 html_to_text, fuzzy match, extract_section
 include("types.jl")              # 🟢 Filing, Fact, Selection, FactRow
+include("sections.jl")           # 🟢 form-aware item segmentation (sections)
 include("sec_data.jl")           # 🔵 SEC data.sec.gov APIs + CIK/ticker lookup
 include("filing.jl")             # 🔵 fetch / open / save a filing (EDGAR Archives)
 include("selection.jl")          # 🟢 picker transport → Selection
@@ -28,7 +29,7 @@ include("extract_xbrl.jl")       # 🟢 standard-agnostic XBRL parsing + native 
 include("extract_xbrl_sec.jl")   # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("export.jl")             # 🟢 save_selection + DuckDB extension stubs
 
-export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section,
+export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,

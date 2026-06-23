@@ -7,6 +7,12 @@ versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **`sections(f; form)` — form-aware item extraction.** Segments a filing's text into its canonical
+  items (`"Item 1"`, `"Item 1A"`, …) in document order, robust to filings that style headings with
+  `<p>`/`<div>` text instead of `<h>` tags: heading candidates are resolved against the form's *known
+  item sequence* (so the table of contents and cross-references are filtered out), and an undetectable
+  layout returns empty rather than a mis-segmented result. Validated at character-level parity with
+  edgartools across a diverse set of 10-Ks. (Complements the generic, name-at-a-time `extract_section`.)
 - **Negated presentation labels.** `facts(f; classify=true)` now honours the XBRL
   `negatedLabel` / `negatedTerseLabel` / … preferred labels from a filing's presentation linkbase,
   flipping those facts' signs so a value matches the statement **as the company reports it** (treasury
