@@ -5,6 +5,7 @@ using JSON3
 using Base64
 using Dates
 using Sockets
+using Gumbo
 
 # Light module shell: shared dependencies, the include list, and the public exports.
 # Each concern lives in its own file (see docs/dev/refactor-plan.md). The markers below
@@ -15,7 +16,8 @@ include("http.jl")               # 🟢 HTTP + on-disk cache (fetch_url, _get_js
 include("util.jl")               # 🟢 small cross-cutting helpers
 include("text.jl")               # 🟢 html_to_text, fuzzy match, extract_section
 include("types.jl")              # 🟢 Filing, Fact, Selection, FactRow
-include("sections.jl")           # 🟢 form-aware item segmentation (sections)
+include("cross_reference.jl")    # 🟢 cross-reference-index item extraction (GE-class)
+include("sections.jl")           # 🟢 form-agnostic item segmentation (sections)
 include("sec_data.jl")           # 🔵 SEC data.sec.gov APIs + CIK/ticker lookup
 include("filing.jl")             # 🔵 fetch / open / save a filing (EDGAR Archives)
 include("selection.jl")          # 🟢 picker transport → Selection

@@ -1,72 +1,207 @@
-# Form-aware item segmentation — split a filing's text into its canonical items (10-K Item 1, 1A, …),
-# robustly across filings that mark headings with styled <p>/<div> text instead of <h> tags. The strong
-# prior is the *known item sequence* for the form: heading candidates are resolved against it in order, so
-# a cross-reference ("see Item 1A of this report") — which lives inside a long paragraph block, not a short
-# standalone one — is never mistaken for the heading. This is the structured counterpart to the generic,
-# name-at-a-time `extract_section`; it leans on form structure the way statement classification leans on the
-# taxonomy. Jurisdiction/agnostic core (`sections(html; form)`); the `Filing` method passes `f.content`.
+# Item segmentation — a faithful port of edgartools' `ChunkedDocument` (edgar/files/htmltools.py +
+# html_documents.py). The approach is *form-agnostic*: there is no per-form item catalogue. The document is
+# split into text blocks, blocks are grouped into chunks (a new chunk begins at each Item / Part / header
+# block; a table is its own chunk), each chunk's leading line decides its Item via a generic `^Item N`
+# regex, the table-of-contents chunk is detected by item density and cleared, the Item label is
+# forward-filled down the chunks, the signature block truncates the tail, and chunks are grouped by Item.
+# Header vs. regular-text is decided purely by word case (title/upper ratios) and word count — exactly as
+# edgartools does — so the same code serves 10-K, 10-Q, 20-F, 8-K and the rest. The only substitution from
+# the Python original is HTML→text-blocks, where we walk Gumbo's DOM instead of edgartools' tokenizer.
 
-# Canonical item sequences (the items, in document order, that a form defines).
-const _ITEMS_10K = ["1", "1A", "1B", "1C", "2", "3", "4", "5", "6", "7", "7A", "8", "9", "9A", "9B", "9C",
-                    "10", "11", "12", "13", "14", "15", "16"]
-const _ITEMS_20F = ["1", "2", "3", "4", "4A", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15",
-                    "16", "16A", "16B", "16C", "16D", "16E", "16F", "16G", "16H", "16I", "17", "18", "19"]
+# --- HTML -> text blocks (Gumbo DOM) -------------------------------------------------------------------
 
-_form_items(form::AbstractString) = occursin("20-F", uppercase(form)) ? _ITEMS_20F : _ITEMS_10K
+const _BLOCK_TAGS = Set([:p, :div, :li, :h1, :h2, :h3, :h4, :h5, :h6, :section, :article, :blockquote,
+                         :dt, :dd, :figure, :center, :caption])
+const _SKIP_TAGS = Set([:script, :style, :head, :title, :noscript])
 
-# Decode the numeric/named HTML entities filings sprinkle through headings (`Item&#160;1A.`).
-function _decode_entities(s::AbstractString)
-    s = replace(s, r"&#(\d+);" => m -> string(Char(parse(Int, m[3:end-1]))))
-    s = replace(s, r"&#[xX]([0-9A-Fa-f]+);" => m -> string(Char(parse(Int, m[4:end-1], base = 16))))
-    for (e, c) in ("&nbsp;" => " ", "&amp;" => "&", "&lt;" => "<", "&gt;" => ">",
-                   "&quot;" => "\"", "&apos;" => "'", "&#39;" => "'")
-        s = replace(s, e => c)
-    end
-    return s
+"""One block of filing text. `table` marks a block rendered from an HTML table (its own chunk)."""
+struct Block
+    text::String
+    table::Bool
 end
 
-# Split an HTML document's <body> into clean text blocks on block-level boundaries — so a styled heading
-# in its own <p>/<div>/<td> becomes a short standalone block, distinct from the paragraph that mentions it.
-function _blocks(html::AbstractString)
-    b = match(r"(?is)<body\b[^>]*>(.*)</body>", html)
-    body = b === nothing ? String(html) : String(b.captures[1])
-    out = String[]
-    for part in split(body, r"(?is)</(?:p|div|tr|td|th|li|h[1-6]|section|article)>|<br\b[^>]*/?>")
-        t = strip(replace(_decode_entities(html_to_text(part)), r"\s+" => " "))
-        isempty(t) || push!(out, t)
+_norm(s::AbstractString) = strip(replace(s, r"[\s ]+" => " "))   # fold whitespace + nbsp (Gumbo decodes entities)
+
+# All descendant text of a node, joined — used to render a <table> as one block.
+function _alltext(node, io)
+    if node isa HTMLText
+        print(io, node.text, " ")
+    elseif node isa HTMLElement && !(Gumbo.tag(node) in _SKIP_TAGS)
+        for c in node.children
+            _alltext(c, io)
+        end
+    end
+    return io
+end
+
+# Walk the DOM, pushing one `Block` per block-level element (a <table> becomes a single table block).
+# Returns this node's inline text contribution so an enclosing block can gather it.
+function _emit!(blocks::Vector{Block}, node)
+    node isa HTMLText && return node.text
+    node isa HTMLElement || return ""
+    tag = Gumbo.tag(node)
+    tag in _SKIP_TAGS && return ""
+    tag === :br && return " "
+    if tag === :table
+        t = _norm(String(take!(_alltext(node, IOBuffer()))))
+        isempty(t) || push!(blocks, Block(t, true))
+        return ""
+    end
+    buf = IOBuffer()
+    for ch in node.children
+        print(buf, _emit!(blocks, ch))
+    end
+    inline = String(take!(buf))
+    if tag in _BLOCK_TAGS
+        t = _norm(inline)
+        isempty(t) || push!(blocks, Block(t, false))
+        return ""
+    end
+    return inline
+end
+
+function _dom_blocks(html::AbstractString)
+    blocks = Block[]
+    _emit!(blocks, parsehtml(String(html)).root)
+    return blocks
+end
+
+# --- TextAnalysis (html_documents.py) — header / regular-text by word case, verbatim -------------------
+
+# Python str.isalpha / isupper / istitle for a single token.
+_py_isalpha(w) = !isempty(w) && all(isletter, w)
+_py_isupper(w) = any(isuppercase, w) && !any(islowercase, w)
+function _py_istitle(w)
+    seen = false; prev_cased = false
+    for c in w
+        if isuppercase(c)
+            prev_cased && return false
+            prev_cased = true; seen = true
+        elseif islowercase(c)
+            prev_cased || return false
+            prev_cased = true; seen = true
+        else
+            prev_cased = false
+        end
+    end
+    return seen
+end
+
+struct TextAnalysis
+    num_words::Int
+    num_upper::Int
+    num_title::Int
+end
+function TextAnalysis(text::AbstractString)
+    trimmed = replace(text, r"[^a-zA-Z0-9\s]+" => "")           # _get_alpha_words: strip punctuation, keep digits/space
+    words = filter(_py_isalpha, split(trimmed))                  # then keep purely-alphabetic tokens
+    TextAnalysis(length(words), count(_py_isupper, words), count(_py_istitle, words))
+end
+_is_header(a::TextAnalysis) = a.num_words > 0 &&
+    (a.num_title / a.num_words > 0.6 || a.num_upper / a.num_words > 0.6)
+_is_regular_text(a::TextAnalysis) = a.num_words > 25
+
+# --- Item / Part / TOC / signature detectors (htmltools.py + html_documents.py), verbatim --------------
+
+const _ITEM_HEADER_RE = r"^(?:ITEM|Item)\s+(?:[0-9]{1,2}[A-Z]?\.?|[0-9]{1,2}\.[0-9]{2})"   # chunker (re.match)
+const _INT_ITEM_RE = r"(?im)^(Item\s{1,3}[0-9]{1,2}[A-Z]?)\.?"                              # chunks2df extractor
+const _PART_RE = r"(?im)^\b(PART\s+[IVXLC]+)\b"
+
+_detect_toc(text) = count(_ -> true, eachmatch(r"item"i, text)) > 10        # text.lower().count('item') > 10
+_detect_signature(text) = match(r"(?im)^SIGNATURE", text) !== nothing ||
+                          occursin("to be signed on its behalf by the undersigned", text)
+
+# --- generate_chunks (html_documents.py 511-587), ported flag-for-flag ---------------------------------
+
+function _chunks(blocks::Vector{Block})
+    chunks = Vector{Block}[]
+    cur = Block[]
+    nonempty(c) = any(b -> !isempty(strip(b.text)), c)
+    flush!() = (nonempty(cur) && push!(chunks, copy(cur)); empty!(cur))
+    accumulating = false; header_detected = false; item_header = false
+    for b in blocks
+        if b.table
+            flush!()
+            push!(chunks, [b])
+            accumulating = false; header_detected = false; item_header = false
+            continue
+        end
+        a = TextAnalysis(b.text)
+        is_item = match(_ITEM_HEADER_RE, b.text) !== nothing
+        is_part = match(_PART_RE, b.text) !== nothing
+        if is_part
+            flush!()
+            push!(chunks, [b])
+            item_header = true; header_detected = true; accumulating = false
+        elseif is_item
+            flush!()
+            push!(cur, b)
+            item_header = true; header_detected = true; accumulating = false
+        elseif _is_header(a)
+            if !isempty(cur) && !accumulating && !item_header
+                flush!()
+            end
+            header_detected = true; accumulating = false
+            push!(cur, b); item_header = false
+        elseif _is_regular_text(a) && (header_detected || accumulating)
+            push!(cur, b); accumulating = true; item_header = false
+        else
+            if accumulating || item_header
+                flush!()
+                accumulating = false; header_detected = false; item_header = false
+            end
+            push!(cur, b)
+        end
+    end
+    nonempty(cur) && push!(chunks, copy(cur))
+    return chunks
+end
+
+# --- chunks2df + forward-fill (htmltools.py 268-330), ported ------------------------------------------
+
+_chunk_text(c::Vector{Block}) = join((b.text for b in c), "\n")
+
+# Forward-fill: `nothing` carries the previous label down; an explicit value (including "") sets it.
+function _ffill(detected::Vector{Union{Nothing,String}})
+    out = Vector{String}(undef, length(detected)); last = ""
+    for i in eachindex(detected)
+        detected[i] !== nothing && (last = detected[i])
+        out[i] = last
     end
     return out
 end
 
-# If a short block is an item heading, its item id ("1A"), else nothing. A heading *starts* with
-# "Item N[A-C]"; a cross-reference (…above/below/of this…) is rejected even if it starts that way.
-function _item_id(block::AbstractString)
-    length(block) > 200 && return nothing                       # a heading is short, a paragraph is not
-    m = match(r"^\s*items?\s+(\d{1,2})\s*([A-Ia-i])?\b"i, block)
-    m === nothing && return nothing
-    occursin(r"\b(above|below|of this|hereof|herein|thereto|thereof)\b"i, block) && return nothing
-    return m.captures[1] * (m.captures[2] === nothing ? "" : uppercase(m.captures[2]))
-end
-
-# The items appear in canonical order possibly more than once (the table of contents lists them, then the
-# body repeats them). Partition the heading candidates into maximal *canonical-order* runs (a run breaks
-# when the next item is not later in the sequence — e.g. back to Item 1 after the TOC's Item 16), and keep
-# the run that spans the most of the document: the body covers it, the TOC is compact, strays are tiny.
-function _main_run(heads, canon)
-    isempty(heads) && return heads
-    rank = Dict(id => i for (i, id) in enumerate(canon))
-    runs = Vector{eltype(heads)}[[heads[1]]]
-    for h in @view heads[2:end]
-        rank[h[2]] > rank[runs[end][end][2]] ? push!(runs[end], h) : push!(runs, [h])
+function _segment(chunks::Vector{Vector{Block}})
+    n = length(chunks)
+    texts = _chunk_text.(chunks)
+    detected = Union{Nothing,String}[nothing for _ in 1:n]
+    for i in 1:n
+        m = match(_INT_ITEM_RE, texts[i])
+        m !== nothing && (detected[i] = titlecase(replace(m.captures[1], r"\s+" => " ")))
     end
-    return runs[argmax([r[end][1] - r[1][1] for r in runs])]
+    # Table-of-contents chunks (item density) clear the item, within the first 100 chunks (df.Text.head(100)).
+    for i in 1:min(n, 100)
+        _detect_toc(texts[i]) && (detected[i] = "")
+    end
+    items = _ffill(detected)
+    # The signature block truncates everything after it.
+    sig = findfirst(_detect_signature, texts)
+    sig !== nothing && (for i in sig:n; items[i] = ""; end)
+    # Group chunks by item, in first-appearance order.
+    order = String[]; buckets = Dict{String,Vector{Int}}()
+    for i in 1:n
+        it = items[i]; isempty(it) && continue
+        haskey(buckets, it) || (push!(order, it); buckets[it] = Int[])
+        push!(buckets[it], i)
+    end
+    return [(item = it, text = join((texts[i] for i in buckets[it]), "\n\n")) for it in order]
 end
 
-# The human title on a heading block ("Risk Factors"), or the following block's text when the heading is
-# just "Item 1A." with the title split off (Apple-style).
-function _section_title(blocks, i)
-    t = strip(replace(blocks[i], r"^\s*items?\s+\d{1,2}\s*[A-Ia-i]?\s*[.\-—:]*\s*"i => ""))
-    isempty(t) && i < length(blocks) && (t = blocks[i + 1])
+# The human title: the heading line with its "Item N" prefix removed (or the line that follows).
+function _title(text)
+    lines = split(text, '\n')
+    t = strip(replace(lines[1], r"^\s*item\s+\d{1,2}[A-Z]?\s*[.\-—:]*\s*"i => ""))
+    isempty(t) && length(lines) > 1 && (t = strip(lines[2]))
     return String(first(t, 100))
 end
 
@@ -74,33 +209,19 @@ end
     sections(f::Filing; form="10-K") -> Vector{@NamedTuple{item::String, title::String, text::String}}
     sections(html; form="10-K") -> …
 
-Segment a filing's text into its canonical **items** (`"Item 1"`, `"Item 1A"`, …), in document order.
-Unlike the generic [`extract_section`](@ref) (which matches one section name at a time and can latch onto
-a cross-reference), this is *form-aware*: heading candidates — short blocks starting `Item N[A-C].` — are
-resolved against the form's known item sequence, so the result is robust even for filings that style their
-headings with `<p>`/`<div>` text instead of `<h>` tags, and the table of contents and cross-references are
-filtered out. `form` selects the item set (`"10-K"`, `"20-F"`); 10-Q uses `extract_section` for now.
+Segment a filing's text into its **items** (`"Item 1"`, `"Item 1A"`, …), in document order. This is a
+form-agnostic port of edgartools' `ChunkedDocument`: blocks are grouped into chunks, each chunk's leading
+`Item N` line sets its item, the table-of-contents chunk is dropped by item density, the item label is
+forward-filled, and the signature block truncates the tail — so the same logic serves 10-K, 10-Q, 20-F,
+8-K and other item-structured forms without a per-form catalogue. `form` is accepted for symmetry with
+[`extract_section`](@ref) but does not drive the algorithm.
 """
 function sections(html::AbstractString; form::AbstractString = "10-K")
-    canon = _form_items(form)
-    blocks = _blocks(html)
-    heads = Tuple{Int,String}[]
-    for (i, b) in enumerate(blocks)
-        id = _item_id(b)
-        (id !== nothing && id in canon) && push!(heads, (i, id))
-    end
-    run = _main_run(heads, canon)                              # body headings, in canonical order
-    out = @NamedTuple{item::String, title::String, text::String}[]
-    # The body begins near the top (after the cover/TOC). If the only headings we can detect start in the
-    # last stretch of the document — e.g. a filer whose body items aren't in detectable "Item N." form,
-    # leaving just an end-of-document index — refuse rather than emit garbage (caller can use extract_section).
-    (length(run) < 2 || run[1][1] > 0.6 * length(blocks)) && return out
-    for (k, (idx, id)) in enumerate(run)
-        stop = k < length(run) ? run[k + 1][1] - 1 : length(blocks)
-        push!(out, (item = "Item $id", title = _section_title(blocks, idx),
-                    text = join(@view(blocks[idx:stop]), "\n\n")))   # blank line between blocks, like the rendered statement
-    end
-    return out
+    # Some filings (GE, Henry Schein) have no in-body "Item N" headers — only a cross-reference index that
+    # maps items to page ranges. Prefer it when present, exactly as edgartools does.
+    _has_cross_ref_index(html) && return _sections_cross_ref(html)
+    segs = _segment(_chunks(_dom_blocks(html)))
+    return [(item = s.item, title = _title(s.text), text = s.text) for s in segs]
 end
 
 sections(f::Filing; form::AbstractString = "10-K") = sections(f.content; form)

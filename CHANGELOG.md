@@ -7,12 +7,16 @@ versions follow [SemVer](https://semver.org/).
 
 ### Added
 
-- **`sections(f; form)` — form-aware item extraction.** Segments a filing's text into its canonical
-  items (`"Item 1"`, `"Item 1A"`, …) in document order, robust to filings that style headings with
-  `<p>`/`<div>` text instead of `<h>` tags: heading candidates are resolved against the form's *known
-  item sequence* (so the table of contents and cross-references are filtered out), and an undetectable
-  layout returns empty rather than a mis-segmented result. Validated at character-level parity with
-  edgartools across a diverse set of 10-Ks. (Complements the generic, name-at-a-time `extract_section`.)
+- **`sections(f; form)` — form-agnostic item extraction.** Segments a filing's text into its items
+  (`"Item 1"`, `"Item 1A"`, …) in document order — a faithful port of edgartools' `ChunkedDocument`:
+  blocks are grouped into chunks (a new chunk at each `Item`/`Part`/heading; tables are their own chunk),
+  each chunk's leading `Item N` line sets its item, the table of contents is dropped by item density, the
+  item label is forward-filled, and the signature block truncates the tail. Header-vs-body is decided by
+  word case and length, so the *same* logic serves 10-K, 10-Q, 20-F, 8-K and other item-structured forms
+  with no per-form catalogue. Filings with no in-body `Item N` headers but a *FORM 10-K Cross-Reference
+  Index* (GE, Henry Schein) are handled by a second strategy that maps items to page ranges. Validated at
+  character-level parity with edgartools across a diverse set of 10-Ks. (Built on Gumbo for HTML parsing;
+  complements the generic, name-at-a-time `extract_section`.)
 - **Negated presentation labels.** `facts(f; classify=true)` now honours the XBRL
   `negatedLabel` / `negatedTerseLabel` / … preferred labels from a filing's presentation linkbase,
   flipping those facts' signs so a value matches the statement **as the company reports it** (treasury

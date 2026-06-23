@@ -171,28 +171,31 @@ end
     end
 end
 
-@testset "sections: form-aware item segmentation (offline)" begin
-    # The heading detector: a short "Item N." block -> its id; a cross-reference (long, or "of this"/
-    # "above") -> nothing, even when it starts with "Item".
-    @test (EDGAR._item_id("Item 1A. Risk Factors"), EDGAR._item_id("ITEM 7."),
-           EDGAR._item_id("See Item 1A of this report for a description of the risks"),
-           EDGAR._item_id("Item 1A above")) == ("1A", "7", nothing, nothing)
+@testset "sections: form-agnostic item segmentation (offline)" begin
+    # TextAnalysis (header vs regular text) — by word case and word count, like edgartools.
+    long = "We design and manufacture industrial widgets and we have done so for many years " *
+           "building a strong reputation across many regions and markets over a long period of time."
+    @test (EDGAR._is_header(EDGAR.TextAnalysis("RISK FACTORS")),       # mostly upper-case
+           EDGAR._is_header(EDGAR.TextAnalysis("Risk Factors")),       # mostly title-case
+           EDGAR._is_header(EDGAR.TextAnalysis(long)),                 # prose is not a header
+           EDGAR._is_regular_text(EDGAR.TextAnalysis(long))) == (true, true, false, true)
 
-    # End-to-end: a table of contents (short item links) + the body (headings + content) + a cross-
-    # reference inside Item 1. The body run wins over the TOC; the cross-reference stays inside Item 1's
-    # text rather than being mistaken for the heading; items come out in canonical order.
+    # PageRange parsing for the cross-reference-index strategy (skips "(a)" footnotes).
+    @test EDGAR._parse_pageranges("4-7, 9-11, (a), 25") ==
+          [EDGAR.PageRange(4, 7), EDGAR.PageRange(9, 11), EDGAR.PageRange(25, 25)]
+
+    # End-to-end: an item header runs into its paragraph; the next "Item N" starts a new section.
+    # Generic — no per-form item list is consulted.
     html = """<html><body>
-    <p>Item 1</p><p>Item 1A</p><p>Item 2</p>
-    <p>Item 1. Business</p><p>We design widgets. See Item 1A of this report for risks.</p>
-    <p>Item 1A. Risk Factors</p><p>Competition and supply-chain disruption are key risks.</p>
-    <p>Item 2. Properties</p><p>We own factories and offices worldwide.</p>
+    <p>Item 1. Business</p><p>$long</p>
+    <p>Item 1A. Risk Factors</p><p>Competition and supply-chain disruption and regulatory change are
+       among the principal risks that could affect our results of operations in any given fiscal year
+       and we monitor them across the whole enterprise on a continuous ongoing basis every quarter.</p>
     </body></html>"""
     secs = EDGAR.sections(html; form = "10-K")
     byid = Dict(s.item => s.text for s in secs)
-    @test ([s.item for s in secs], occursin("design widgets", byid["Item 1"]),
-           occursin("See Item 1A of this report", byid["Item 1"]),     # cross-ref kept inside Item 1
-           occursin("Competition", byid["Item 1A"])) ==
-          (["Item 1", "Item 1A", "Item 2"], true, true, true)
+    @test ([s.item for s in secs], occursin("design and manufacture", byid["Item 1"]),
+           occursin("Competition", byid["Item 1A"])) == (["Item 1", "Item 1A"], true, true)
 end
 
 @testset "picker: select_section / select_sections (offline)" begin

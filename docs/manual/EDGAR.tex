@@ -982,16 +982,19 @@ to its extracted text (the full section, up to where the next section begins).
 \textbf{\sig{sections(f::Filing; form = "10-K") -> Vector\{@NamedTuple\{item, title, text\}\}}}
 \end{center}
 
-\noindent Segment a filing into its canonical \emph{items} (\texttt{"Item 1"}, \texttt{"Item 1A"},
-\ldots), in document order. Where \texttt{extract\_section} matches one section name at a time and can
-latch onto a cross-reference (``see Item 1A of this report\ldots''), \texttt{sections} is
-\emph{form-aware}: it finds heading candidates --- short blocks beginning \texttt{Item N[A-C].} --- and
-resolves them against the form's \emph{known item sequence}, so it is robust even for filings that style
-their headings with \texttt{<p>}/\texttt{<div>} text instead of \texttt{<h>} tags, and the table of
-contents and cross-references are filtered out. \texttt{form} selects the item set (\texttt{"10-K"},
-\texttt{"20-F"}). For a layout whose body items carry no detectable \texttt{Item N.} headings it returns
-empty (use \texttt{extract\_section} as a fallback) rather than emit a mis-segmented result. Validated at
-character-level parity with edgartools across a diverse set of 10-Ks.
+\noindent Segment a filing into its \emph{items} (\texttt{"Item 1"}, \texttt{"Item 1A"}, \ldots), in
+document order. Where \texttt{extract\_section} matches one section name at a time and can latch onto a
+cross-reference (``see Item 1A of this report\ldots''), \texttt{sections} is a faithful, \emph{form-agnostic}
+port of edgartools' \texttt{ChunkedDocument}: the document is split into text blocks, blocks are grouped
+into chunks (a new chunk begins at each \texttt{Item}/\texttt{Part}/heading block, with tables as their own
+chunk), each chunk's leading \texttt{Item N} line sets its item, the table of contents is dropped by item
+density, the item label is forward-filled down the chunks, and the signature block truncates the tail.
+Header versus body text is decided purely by word case and length, so the \emph{same} logic serves 10-K,
+10-Q, 20-F, 8-K and other item-structured forms with no per-form catalogue (\texttt{form} is accepted only
+for symmetry). Filings that carry no in-body \texttt{Item N} headers but a \emph{FORM 10-K Cross-Reference
+Index} (e.g.\ GE, Henry Schein) are handled by a second strategy that maps items to page ranges and slices
+content between page breaks. Validated at character-level parity with edgartools across a diverse set of
+10-Ks.
 
 \subsubsection{\texttt{save\_filing}}
 
