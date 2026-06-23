@@ -17,7 +17,9 @@ include("util.jl")               # 🟢 small cross-cutting helpers
 include("text.jl")               # 🟢 html_to_text, fuzzy match, extract_section
 include("types.jl")              # 🟢 Filing, Fact, Selection, FactRow
 include("cross_reference.jl")    # 🟢 cross-reference-index item extraction (GE-class)
+include("forty_f.jl")            # 🔵 40-F AIF-exhibit discovery (aif_html)
 include("sections.jl")           # 🟢 form-agnostic item segmentation (sections)
+include("docparser.jl")          # 🟢 module DocParser — node-tree parser port (isolated, WIP)
 include("sec_data.jl")           # 🔵 SEC data.sec.gov APIs + CIK/ticker lookup
 include("filing.jl")             # 🔵 fetch / open / save a filing (EDGAR Archives)
 include("selection.jl")          # 🟢 picker transport → Selection
