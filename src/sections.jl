@@ -1,14 +1,10 @@
-# Item segmentation — a faithful port of edgartools' `ChunkedDocument` (edgar/files/htmltools.py +
-# html_documents.py). The approach is *form-agnostic*: there is no per-form item catalogue. The document is
-# split into text blocks, blocks are grouped into chunks (a new chunk begins at each Item / Part / header
-# block; a table is its own chunk), each chunk's leading line decides its Item via a generic `^Item N`
-# regex, the table-of-contents chunk is detected by item density and cleared, the Item label is
-# forward-filled down the chunks, the signature block truncates the tail, and chunks are grouped by Item.
-# Header vs. regular-text is decided purely by word case (title/upper ratios) and word count — exactly as
-# edgartools does — so the same code serves 10-K, 10-Q, 20-F, 8-K and the rest. The only substitution from
-# the Python original is HTML→text-blocks, where we walk Gumbo's DOM instead of edgartools' tokenizer.
+# Item segmentation. `sections(::AbstractString)` now delegates to the faithful EzXML `ChunkedDoc` module
+# (chunked_document.jl), which is the char-validated port of edgartools' `ChunkedDocument`. The legacy
+# in-file block/chunk/segment machinery below (TextAnalysis / _chunks / _segment) is superseded and unused;
+# the only piece still live is `_dom_blocks` (now on EzXML), used by cross_reference.jl's cross-ref-index
+# path. The cross-reference-index strategy (GE/Henry-Schein) is still preferred when present.
 
-# --- HTML -> text blocks (Gumbo DOM) -------------------------------------------------------------------
+# --- HTML -> text blocks (EzXML/libxml2 DOM) — used by cross_reference.jl's cross-ref-index path ------
 
 const _BLOCK_TAGS = Set([:p, :div, :li, :h1, :h2, :h3, :h4, :h5, :h6, :section, :article, :blockquote,
                          :dt, :dd, :figure, :center, :caption])
@@ -20,14 +16,16 @@ struct Block
     table::Bool
 end
 
-_norm(s::AbstractString) = strip(replace(s, r"[\s ]+" => " "))   # fold whitespace + nbsp (Gumbo decodes entities)
+_norm(s::AbstractString) = strip(replace(s, r"[\s ]+" => " "))   # fold whitespace + nbsp (libxml2 decodes entities)
+
+_tagsym(node) = Symbol(lowercase(EzXML.nodename(node)))   # EzXML/libxml2 element tag as a Symbol
 
 # All descendant text of a node, joined — used to render a <table> as one block.
 function _alltext(node, io)
-    if node isa HTMLText
-        print(io, node.text, " ")
-    elseif node isa HTMLElement && !(Gumbo.tag(node) in _SKIP_TAGS)
-        for c in node.children
+    if EzXML.istext(node)
+        print(io, EzXML.nodecontent(node), " ")
+    elseif EzXML.iselement(node) && !(_tagsym(node) in _SKIP_TAGS)
+        for c in EzXML.eachnode(node)
             _alltext(c, io)
         end
     end
@@ -37,9 +35,9 @@ end
 # Walk the DOM, pushing one `Block` per block-level element (a <table> becomes a single table block).
 # Returns this node's inline text contribution so an enclosing block can gather it.
 function _emit!(blocks::Vector{Block}, node)
-    node isa HTMLText && return node.text
-    node isa HTMLElement || return ""
-    tag = Gumbo.tag(node)
+    EzXML.istext(node) && return EzXML.nodecontent(node)
+    EzXML.iselement(node) || return ""
+    tag = _tagsym(node)
     tag in _SKIP_TAGS && return ""
     tag === :br && return " "
     if tag === :table
@@ -48,7 +46,7 @@ function _emit!(blocks::Vector{Block}, node)
         return ""
     end
     buf = IOBuffer()
-    for ch in node.children
+    for ch in EzXML.eachnode(node)
         print(buf, _emit!(blocks, ch))
     end
     inline = String(take!(buf))
@@ -61,8 +59,10 @@ function _emit!(blocks::Vector{Block}, node)
 end
 
 function _dom_blocks(html::AbstractString)
+    s = String(html)
+    startswith(s, "<?xml") && (s = replace(s, r"<\?xml[^>]*\?>" => ""; count = 1))
     blocks = Block[]
-    _emit!(blocks, parsehtml(String(html)).root)
+    _emit!(blocks, EzXML.root(EzXML.parsehtml(s)))
     return blocks
 end
 
@@ -220,8 +220,16 @@ function sections(html::AbstractString; form::AbstractString = "10-K")
     # Some filings (GE, Henry Schein) have no in-body "Item N" headers — only a cross-reference index that
     # maps items to page ranges. Prefer it when present, exactly as edgartools does.
     _has_cross_ref_index(html) && return _sections_cross_ref(html)
-    segs = _segment(_chunks(_dom_blocks(html)))
-    return [(item = s.item, title = _title(s.text), text = s.text) for s in segs]
+    # Otherwise delegate to the faithful EzXML ChunkedDocument port (char-identical to edgartools), instead
+    # of the older in-file Gumbo block/chunk/segment machinery.
+    cd = ChunkedDoc.ChunkedDocument(html; item_detector = ChunkedDoc.detect_int_item)
+    out = @NamedTuple{item::String, title::String, text::String}[]
+    for it in ChunkedDoc.list_items(cd)
+        t = ChunkedDoc.getindex_item(cd, it)
+        t === nothing && continue
+        push!(out, (item = it, title = _title(t), text = t))
+    end
+    return out
 end
 
 # Logical order for a detected Document section (part then item, e.g. Part I < Part II; Item 1 < Item 1A < Item 2).
