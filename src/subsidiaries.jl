@@ -96,51 +96,46 @@ function _sub_strip_empty_cols(rows::Vector{Vector{String}})
     return [[row[c] for c in keep] for row in padded]
 end
 
-# --- HTML table rows (Gumbo) — mirrors BeautifulSoup find_all('tr')/find_all(['td','th']).get_text() ---
+# --- HTML table rows (EzXML/libxml2) — mirrors BeautifulSoup find_all('tr')/find_all(['td','th']).get_text() ---
 
 # Top-level <table> elements (no <table> ancestor), in document order — BeautifulSoup's
 # `find_parent('table') is None` filter, to avoid double-counting nested layout tables.
 function _sub_toplevel_tables(html::AbstractString)
-    tables = HTMLElement[]
+    s = String(html)
+    startswith(s, "<?xml") && (s = replace(s, r"<\?xml[^>]*\?>" => ""; count = 1))
+    tables = EzXML.Node[]
     walk(node, in_table) = begin
-        node isa HTMLElement || return
         intbl = in_table
-        if Gumbo.tag(node) === :table
+        if lowercase(EzXML.nodename(node)) == "table"
             in_table || push!(tables, node)
             intbl = true
         end
-        for c in node.children
+        for c in EzXML.eachelement(node)
             walk(c, intbl)
         end
     end
-    walk(parsehtml(String(html)).root, false)
+    walk(EzXML.root(EzXML.parsehtml(s)), false)
     return tables
 end
 
 # All descendant elements with one of `tags`, document order.
 function _sub_descendants(node, tags)
-    out = HTMLElement[]
-    walk(n) = (n isa HTMLElement || return; Gumbo.tag(n) in tags && push!(out, n);
-               for c in n.children; walk(c); end)
-    for c in node.children
+    out = EzXML.Node[]
+    walk(n) = for c in EzXML.eachelement(n)
+        lowercase(EzXML.nodename(c)) in tags && push!(out, c)
         walk(c)
     end
+    walk(node)
     return out
 end
 
-# Concatenated descendant text — BeautifulSoup get_text() (default empty separator).
-function _sub_gettext(node)
-    io = IOBuffer()
-    walk(n) = (n isa HTMLText ? print(io, n.text) :
-               n isa HTMLElement && (for c in n.children; walk(c); end))
-    walk(node)
-    return String(take!(io))
-end
+# Concatenated descendant text — BeautifulSoup get_text() (default empty separator) == libxml2 nodecontent.
+_sub_gettext(node) = EzXML.nodecontent(node)
 
 function _sub_table_rows(table)
     rows = Vector{String}[]
-    for tr in _sub_descendants(table, (:tr,))
-        push!(rows, String[_sub_clean(_sub_gettext(c)) for c in _sub_descendants(tr, (:td, :th))])
+    for tr in _sub_descendants(table, ("tr",))
+        push!(rows, String[_sub_clean(_sub_gettext(c)) for c in _sub_descendants(tr, ("td", "th"))])
     end
     return rows
 end
