@@ -82,8 +82,8 @@ end
 _fetch_text(url) = (b = fetch_url(url); b === nothing ? nothing : String(b))
 
 # --- AIF section extraction — faithful port of forty_f.py's plain-text pipeline -------------------------
-# Gumbo renders the AIF HTML to text (`DocParser.build`/`nodetext`); the section detection below is a
-# verbatim translation of forty_f.py (`_find_section_positions` / `_extract_section_text` with the
+# EzXML (libxml2) renders the AIF HTML to text (`_aif_plain_text`, matching bs4 `get_text()`); the section
+# detection below is a verbatim translation of forty_f.py (`_find_section_positions` / `_extract_section_text` with the
 # `_is_toc_entry` / `_is_cross_reference` filters). Patterns are forty_f.py's `_SECTION_PATTERNS`.
 
 const _AIF_SECTION_PATTERNS = Regex[
@@ -175,22 +175,14 @@ function _aif_section_text(text, positions, idx)
     return strip(replace(_span(text, start, stop), r"\s+" => " "))
 end
 
-# Plain text the way forty_f.py's `aif_text` does it: BeautifulSoup `get_text()` — every text node
-# concatenated verbatim, preserving the source's whitespace/newlines (NOT the node-tree renderer, whose
-# whitespace-folding / block newlines / table " | " would break the position-based heuristics below).
+# Plain text the way forty_f.py's `aif_text` does it: `BeautifulSoup(html, 'html.parser').get_text()` — every
+# text node concatenated verbatim (default separator "", no whitespace folding, INCLUDING <script>/<style>
+# text), preserving the source's whitespace/newlines so the position-based heuristics below line up. EzXML
+# (libxml2) `nodecontent` is the faithful equivalent; Gumbo's walk skipped script/style and diverged.
 function _aif_plain_text(html::AbstractString)
-    io = IOBuffer()
-    _gettext!(io, parsehtml(String(html)).root)
-    return String(take!(io))
-end
-function _gettext!(io, node)
-    if node isa HTMLText
-        print(io, node.text)
-    elseif node isa HTMLElement && !(Gumbo.tag(node) in (:script, :style))
-        for c in node.children
-            _gettext!(io, c)
-        end
-    end
+    s = String(html)
+    startswith(s, "<?xml") && (s = replace(s, r"<\?xml[^>]*\?>" => ""; count = 1))
+    return EzXML.nodecontent(EzXML.root(EzXML.parsehtml(s)))
 end
 
 """

@@ -6,6 +6,7 @@ using Base64
 using Dates
 using Sockets
 using Gumbo
+import EzXML   # qualified-only (avoid clashing with Gumbo's exported `parsehtml`); used by forty_f.jl's AIF text
 
 # Light module shell: shared dependencies, the include list, and the public exports.
 # Each concern lives in its own file (see docs/dev/refactor-plan.md). The markers below
