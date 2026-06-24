@@ -201,11 +201,13 @@ function _find_actual_item_content(ex::SECSectionExtractor, html_content, item_n
     start_pos = m.offset
     search_start = start_pos + ncodeunits(m.match)
     nextm = match(r"ITEM[\s&#;0-9xnbsp]*\d+[A-Z]?\.?\s*[A-Z]"i, SubString(html_content, thisind(html_content, min(search_start, ncodeunits(html_content)))))
+    # Python uses html_content[start_pos:end_pos] (end-EXCLUSIVE); _byte_span is end-INCLUSIVE, so subtract
+    # one extra to stop just before the next-item match (otherwise the [A-Z] it matched leaks in as one char).
     if nextm !== nothing
-        end_pos = search_start + nextm.offset - 1
+        end_pos = search_start + nextm.offset - 2
     elseif boundary.end_element_id !== nothing
         idx = findfirst("id=\"$(boundary.end_element_id)\"", html_content)
-        end_pos = (idx !== nothing && first(idx) > start_pos) ? first(idx) : ncodeunits(html_content)
+        end_pos = (idx !== nothing && first(idx) > start_pos) ? first(idx) - 1 : ncodeunits(html_content)
     else
         end_pos = ncodeunits(html_content)
     end
