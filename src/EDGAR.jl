@@ -23,6 +23,7 @@ include("sections.jl")           # 🟢 form-agnostic item segmentation (section
 include("documents/Documents.jl") # 🟢 module Documents — faithful EzXML port of edgartools' edgar/documents parser + section detectors
 include("chunked_document.jl")    # 🟢 module ChunkedDoc — faithful EzXML port of edgartools' (deprecated) ChunkedDocument
 include("twenty_f.jl")           # 🔵 TwentyF (company_reports/twenty_f.py): 20-F items prefer ChunkedDocument, fall back to Documents.sections
+include("ten_k.jl")              # 🔵 TenK (company_reports/ten_k.py): 10-K items prefer Documents.sections, then cross-ref index, then ChunkedDocument
 include("sec_data.jl")           # 🔵 SEC data.sec.gov APIs + CIK/ticker lookup
 include("filing.jl")             # 🔵 fetch / open / save a filing (EDGAR Archives)
 include("selection.jl")          # 🟢 picker transport → Selection
@@ -51,6 +52,7 @@ export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_
        subsidiaries, Subsidiary, parse_subsidiaries, auditor, AuditorInfo,
        press_releases, PressRelease, press_release_html, press_release_text, exhibits, sixk_cover,
        extract_items_from_sections,
-       TwentyF, tf_items, tf_section
+       TwentyF, tf_items, tf_section,
+       TenK, tk_items, tk_section
 
 end # module
