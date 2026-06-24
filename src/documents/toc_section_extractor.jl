@@ -84,7 +84,10 @@ function get_section_text(ex::SECSectionExtractor, section_name::AbstractString;
     html_content === nothing && return nothing
     try
         section_text = _extract_section_content(ex, html_content, boundary, include_subsections, clean)
-        if section_text !== nothing && length(strip(section_text)) < 200
+        # edgartools guards this with `if section_text and len(...) < 200`: an EMPTY string is falsy in
+        # Python, so an empty extract skips _find_actual_item_content and falls through to subsection
+        # aggregation (and, with no subsections, leaves the section out so the chunked fallback wins).
+        if section_text !== nothing && !isempty(section_text) && length(strip(section_text)) < 200
             m = match(r"(?:part_[iv]+_)?item[_\s]*(\d+[a-z]?)"i, normalized_name)
             if m !== nothing
                 item_num = uppercase(m.captures[1])
