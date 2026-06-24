@@ -526,8 +526,10 @@ function _roman_to_int(a::TOCAnalyzer, roman::AbstractString)
 end
 
 function _build_section_mapping(a::TOCAnalyzer, toc_sections::Vector{TOCSection}; tree = nothing)
-    sort!(toc_sections; by = x -> x.order)
-    mapping = Dict{String,String}(); seen_names = Set{String}()
+    # Stable sort + OrderedDict so equal-`order` sections keep TOC discovery order — Python's dict is
+    # insertion-ordered and its sort is stable; a plain Julia Dict / unstable sort breaks the tie order.
+    sort!(toc_sections; by = x -> x.order, alg = Base.Sort.DEFAULT_STABLE)
+    mapping = OrderedDict{String,String}(); seen_names = Set{String}()
     for section in toc_sections
         if section.part !== nothing
             part_key = replace(lowercase(section.part), " " => "_")

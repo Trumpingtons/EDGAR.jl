@@ -4,6 +4,7 @@
 module Documents
 
 using EzXML
+using OrderedCollections   # OrderedDict: preserve TOC discovery order (Python dict is insertion-ordered)
 
 include("types.jl")            # NodeType / SemanticType / TableType / Style / HeaderInfo / XBRLFact / ParseContext
 include("nodes.jl")            # Node hierarchy + text()/html()

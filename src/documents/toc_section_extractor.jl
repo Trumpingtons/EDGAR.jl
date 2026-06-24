@@ -42,7 +42,7 @@ function _analyze_sections(ex::SECSectionExtractor)
     tree = _parse_html(ex, html_content)
     toc_mapping = analyze_toc_structure(ex.toc_analyzer, html_content; agent = ex.agent, tree = tree)
     isempty(toc_mapping) && return
-    sec_sections = Dict{String,Any}()
+    sec_sections = OrderedDict{String,Any}()   # preserve toc_mapping order for stable tie-breaking
     for (section_name, anchor_id) in toc_mapping
         target_elements = find_anchor_targets(tree, anchor_id)
         if !isempty(target_elements)
@@ -54,7 +54,7 @@ function _analyze_sections(ex::SECSectionExtractor)
         end
     end
     isempty(sec_sections) && return
-    sorted_sections = sort(collect(sec_sections); by = kv -> kv[2]["order"])
+    sorted_sections = sort(collect(sec_sections); by = kv -> kv[2]["order"], alg = Base.Sort.DEFAULT_STABLE)
     for (i, (section_name, section_data)) in enumerate(sorted_sections)
         start_anchor = section_data["anchor_id"]
         end_anchor = nothing
