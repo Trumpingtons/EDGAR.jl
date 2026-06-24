@@ -173,12 +173,13 @@ end
 
 @testset "sections: form-agnostic item segmentation (offline)" begin
     # TextAnalysis (header vs regular text) — by word case and word count, like edgartools.
+    # (Header detection lives in the ChunkedDoc module, which sections() now delegates to.)
     long = "We design and manufacture industrial widgets and we have done so for many years " *
            "building a strong reputation across many regions and markets over a long period of time."
-    @test (EDGAR._is_header(EDGAR.TextAnalysis("RISK FACTORS")),       # mostly upper-case
-           EDGAR._is_header(EDGAR.TextAnalysis("Risk Factors")),       # mostly title-case
-           EDGAR._is_header(EDGAR.TextAnalysis(long)),                 # prose is not a header
-           EDGAR._is_regular_text(EDGAR.TextAnalysis(long))) == (true, true, false, true)
+    @test (EDGAR.ChunkedDoc.ta_is_header(EDGAR.ChunkedDoc.TextAnalysis("RISK FACTORS")),       # mostly upper-case
+           EDGAR.ChunkedDoc.ta_is_header(EDGAR.ChunkedDoc.TextAnalysis("Risk Factors")),       # mostly title-case
+           EDGAR.ChunkedDoc.ta_is_header(EDGAR.ChunkedDoc.TextAnalysis(long)),                 # prose is not a header
+           EDGAR.ChunkedDoc.ta_is_regular_text(EDGAR.ChunkedDoc.TextAnalysis(long))) == (true, true, false, true)
 
     # PageRange parsing for the cross-reference-index strategy (skips "(a)" footnotes).
     @test EDGAR._parse_pageranges("4-7, 9-11, (a), 25") ==
