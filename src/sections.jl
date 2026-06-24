@@ -224,4 +224,63 @@ function sections(html::AbstractString; form::AbstractString = "10-K")
     return [(item = s.item, title = _title(s.text), text = s.text) for s in segs]
 end
 
-sections(f::Filing; form::AbstractString = "10-K") = sections(f.content; form)
+# Logical order for a detected Document section (part then item, e.g. Part I < Part II; Item 1 < Item 1A < Item 2).
+function _doc_section_order(s)
+    p = s.part === nothing ? 0 : something(findfirst(==(uppercase(s.part)), ("I", "II", "III", "IV", "V")), 9)
+    i = 9999
+    if s.item !== nothing
+        m = match(r"(\d+)([A-Za-z]?)", s.item)
+        m !== nothing && (i = parse(Int, m.captures[1]) * 100 + (isempty(m.captures[2]) ? 0 : Int(uppercase(m.captures[2])[1]) - Int('A') + 1))
+    end
+    return p * 100000 + i
+end
+
+"""
+    sections(f::Filing; form="10-K") -> Vector{@NamedTuple{item::String, title::String, text::String}}
+
+Segment a filing into its items/sections using the faithful [`Documents`](@ref) parser — a Julia port of
+edgartools' `edgar/documents` document parser + multi-strategy section detection (TOC → heading → pattern).
+Falls back to the form-agnostic [`sections(::AbstractString)`](@ref) ChunkedDocument segmentation if
+detection yields nothing.
+"""
+function sections(f::Filing; form::AbstractString = "10-K")
+    try
+        doc = Documents.parse_filing(Documents.HTMLParser(), f.content; form = form)
+        secs = Documents.sections(doc)
+        if !isempty(secs)
+            out = @NamedTuple{item::String, title::String, text::String}[]
+            for s in sort(collect(values(secs)); by = _doc_section_order)
+                item = s.item === nothing ? s.title :
+                       (s.part === nothing ? "Item $(s.item)" : "Part $(s.part), Item $(s.item)")
+                push!(out, (item = item, title = s.title, text = Documents.section_text(s)))
+            end
+            return out
+        end
+    catch
+    end
+    return sections(f.content; form)   # fallback: form-agnostic ChunkedDocument segmentation
+end
+
+"""
+    extract_items_from_sections(secs, pattern::Regex) -> Vector{String}
+
+Extract item identifiers from a [`sections`](@ref) result by matching `pattern` (which must contain a
+capture group) against each section's `title`. When the title does not start with the pattern, falls back
+to the text before `" - "`, else the whole title. A faithful port of edgartools' shared
+`extract_items_from_sections` (e.g. `r"(Item\\s+\\d+\\.\\s*\\d+)"` for 8-K, `r"(Item\\s+\\d+[A-Z]?)"` for 20-F).
+"""
+function extract_items_from_sections(secs, pattern::Regex)
+    items = String[]
+    for s in secs
+        title = s.title
+        m = match(pattern, title)
+        if m !== nothing && m.offset == 1
+            push!(items, String(m.captures[1]))
+        elseif occursin(" - ", title)
+            push!(items, String(strip(first(split(title, " - ")))))
+        else
+            push!(items, String(title))
+        end
+    end
+    return items
+end

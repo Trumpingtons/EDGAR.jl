@@ -618,7 +618,7 @@ register_form!("40-F", FormSpec(named_patterns = Tuple{Regex,String,String}[
 
 # --- Phase 1: pattern section extractor (extractors/pattern_section_extractor.py) ----------------------
 
-const _ITEM_AT_START = r"^\s*(?:Item|ITEM)\s+(\d{1,2}[A-Za-z]?|\d{1,2}\.\d{2})\b"
+const _ITEM_AT_START = r"^\s*(?:Item|ITEM)\s+(\d{1,2}\.\d{2}|\d{1,2}[A-Za-z]?)\b"   # 8-K decimal form first
 const _PART_AT_START = r"^\s*PART\s+([IVXLC]+)\b"i
 _is_main_header(t) = occursin(r"^\s*ITEM\s", t)                 # uppercase ITEM => main header, not a cross-ref
 
@@ -714,6 +714,6 @@ function extract_sections(doc::Node; form::AbstractString = "")
 end
 
 _section_title(text) = (line = first(split(text, '\n'));
-    String(first(strip(replace(line, r"^\s*item\s+\d{1,2}[A-Za-z]?\s*[.\-—:]*\s*"i => "")), 100)))
+    String(first(strip(replace(line, r"^\s*item\s+(?:\d{1,2}\.\d{2}|\d{1,2}[A-Za-z]?)\s*[.\-—:]*\s*"i => "")), 100)))
 
 end # module DocParser

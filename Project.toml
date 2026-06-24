@@ -6,6 +6,7 @@ authors = ["Antonio Saragga Seabra"]
 [deps]
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+EzXML = "8f5d6c58-4d21-5cfd-889c-e3ad7ee6a615"
 Gumbo = "708ec375-b3d6-5a57-a7ce-8257bf98657a"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
@@ -19,6 +20,7 @@ EDGARDuckDBExt = "DuckDB"
 
 [compat]
 DuckDB = "1.5"
+EzXML = "1.2.3"
 Gumbo = "0.8"
 HTTP = "1.10, 2"
 JSON3 = "1"

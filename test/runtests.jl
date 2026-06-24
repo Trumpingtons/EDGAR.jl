@@ -198,6 +198,53 @@ end
            occursin("Competition", byid["Item 1A"])) == (["Item 1", "Item 1A"], true, true)
 end
 
+@testset "company-report extractions: subsidiaries / auditor / 6-K / items (offline)" begin
+    # EX-21 parser: 3-col (name / ownership / jurisdiction) with a header row, a section-label row,
+    # an empty spacer column, footnote markers; plus a 2-column table.
+    ex21 = """<html><body>
+    <table>
+      <tr><th>Name of Subsidiary</th><th></th><th>Ownership %</th><th>Jurisdiction</th></tr>
+      <tr><td>U.S. Subsidiaries:</td><td></td><td></td><td></td></tr>
+      <tr><td>Acme Holdings, Inc. (1)</td><td></td><td>100</td><td>Delaware</td></tr>
+      <tr><td>Beta Corp.*</td><td></td><td>80%</td><td>Nevada</td></tr>
+    </table>
+    <table>
+      <tr><td>Gamma Ltd</td><td>England</td></tr>
+    </table>
+    </body></html>"""
+    subs = EDGAR.parse_subsidiaries(ex21)
+    @test [(s.name, s.jurisdiction, s.ownership) for s in subs] ==
+          [("Acme Holdings, Inc.", "Delaware", 100.0), ("Beta Corp.", "Nevada", 80.0),
+           ("Gamma Ltd", "England", nothing)]
+
+    # Auditor from a synthetic inline instance: entity-decoded name, and the ICFR flag taken from the
+    # value-fixed `fixed-true` transform (the rendered content is a "☒" glyph, not "true").
+    inst = """
+    <ix:nonNumeric name="dei:AuditorName">Ernst &amp; Young LLP</ix:nonNumeric>
+    <ix:nonNumeric name="dei:AuditorLocation">San Jose, California</ix:nonNumeric>
+    <ix:nonFraction name="dei:AuditorFirmId" contextRef="c" unitRef="u">42</ix:nonFraction>
+    <ix:nonNumeric name="dei:IcfrAuditorAttestationFlag" format="ixt:fixed-true">☒</ix:nonNumeric>
+    """
+    a = EDGAR._auditor_from(inst)
+    @test (a.name, a.location, a.firm_id, a.icfr_attestation) ==
+          ("Ernst & Young LLP", "San Jose, California", 42, true)
+
+    # 6-K cover-page metadata (the entity-decoded text the regexes straddle).
+    cover = "Commission File Number 001-14948  For the month of March 2026  " *
+            "Form 20-F  [ X ]  Form 40-F  Material Contained in this Report: Press release dated " *
+            "March 1, 2026. SIGNATURES"
+    c = EDGAR._parse_cover_page(cover)
+    @test (c.commission_file_number, c.report_month, c.annual_report_form, c.content_description) ==
+          ("001-14948", "March 2026", "20-F", "Press release dated March 1, 2026.")
+
+    # extract_items_from_sections: capture-group match at start, " - " fallback, whole-title fallback.
+    secs = [(item = "", title = "Item 2.02 - Results of Operations"),
+            (item = "", title = "Item 9.01 Financial Statements and Exhibits"),
+            (item = "", title = "Press Release")]
+    @test EDGAR.extract_items_from_sections(secs, r"(Item\s+\d+\.\s*\d+)"i) ==
+          ["Item 2.02", "Item 9.01", "Press Release"]
+end
+
 @testset "picker: select_section / select_sections (offline)" begin
     # Drive the picker server headlessly: a fake `opener` POSTs selections to the
     # local endpoint instead of launching a browser. No network involved.

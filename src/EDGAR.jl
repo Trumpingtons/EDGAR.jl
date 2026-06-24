@@ -19,13 +19,17 @@ include("types.jl")              # 🟢 Filing, Fact, Selection, FactRow
 include("cross_reference.jl")    # 🟢 cross-reference-index item extraction (GE-class)
 include("forty_f.jl")            # 🔵 40-F AIF-exhibit discovery (aif_html)
 include("sections.jl")           # 🟢 form-agnostic item segmentation (sections)
-include("docparser.jl")          # 🟢 module DocParser — node-tree parser port (isolated, WIP)
+include("documents/Documents.jl") # 🟢 module Documents — faithful EzXML port of edgartools' edgar/documents parser + section detectors
 include("sec_data.jl")           # 🔵 SEC data.sec.gov APIs + CIK/ticker lookup
 include("filing.jl")             # 🔵 fetch / open / save a filing (EDGAR Archives)
 include("selection.jl")          # 🟢 picker transport → Selection
 include("picker.jl")             # 🟢 browser picker overlay (PICKER_JS)
 include("present.jl")            # 🟢 markdown / facts_json exports
 include("facts.jl")              # 🟢 facts(::Selection) row table
+include("subsidiaries.jl")       # 🔵 EX-21 subsidiary-list extraction (subsidiaries)
+include("current_report.jl")     # 🔵 8-K / 6-K press-release + exhibit discovery
+include("auditor.jl")            # 🔵 auditor(::Filing) from DEI XBRL facts
+include("sixk.jl")               # 🟢 6-K cover-page metadata (sixk_cover)
 include("vocab_usgaap.jl")       # 🟢 us-gaap classification vocabulary
 include("vocab_ifrs.jl")         # 🟢 ifrs-full classification vocabulary (shared across IFRS regimes)
 include("classify_engine.jl")    # 🟢 statement-classification engine (adapted from edgartools, MIT)
@@ -40,6 +44,9 @@ export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_
        set_config, set_user_agent, get_user_agent, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik,
-       profile, cik
+       profile, cik,
+       subsidiaries, Subsidiary, parse_subsidiaries, auditor, AuditorInfo,
+       press_releases, PressRelease, press_release_html, press_release_text, exhibits, sixk_cover,
+       extract_items_from_sections
 
 end # module
