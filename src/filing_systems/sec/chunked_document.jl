@@ -32,8 +32,12 @@ mutable struct TextBlock <: Block
     text::String
     inline::Bool
     element::Union{Nothing,String}
+    # Inner constructor with defaults: `new` converts args to the field types (as the auto-generated
+    # constructor would) while *suppressing* the auto-generated 3-arg default constructor. Defining the
+    # defaults as a same-signature OUTER constructor instead overwrites that default constructor — a
+    # method overwrite Julia ≥1.12 rejects during precompilation. Behavior is unchanged.
+    TextBlock(text, inline = false, element = nothing) = new(text, inline, element)
 end
-TextBlock(text, inline = false, element = nothing) = TextBlock(text, inline, element)
 mutable struct TableBlock <: Block
     table_element::Any
     _cached::Union{Nothing,String}
