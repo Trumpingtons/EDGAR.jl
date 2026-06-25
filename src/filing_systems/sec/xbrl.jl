@@ -148,7 +148,10 @@ cannot be fetched. This is what `facts(f; labels=true)` uses to fill the `label`
 browser picker reads the label off the rendered row instead).
 """
 function label_map(f::Filing)
-    m = _concept_labels(_fetch_linkbase(f, "lab"))
+    # The filing's own (bundled/loose) labels override the standard-taxonomy labels, so an issuer's
+    # preferred/renamed label wins; the standard labels fill concepts the filing doesn't label itself
+    # (e.g. ESEF bundles only extension labels — the ifrs-full standard labels come from `_standard_labels`).
+    m = merge(_standard_labels(f), _concept_labels(_fetch_linkbase(f, "lab")))
     isempty(m) && @warn "No native labels for $(f.ref): the label linkbase was missing " *
         "(not loose and not in `<accession>-xbrl.zip`) — `label` will be empty."
     return m

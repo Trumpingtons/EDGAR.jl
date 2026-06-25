@@ -98,3 +98,30 @@ function _fetch_linkbase(::ESEF, f::Filing, suffix::AbstractString)
     end
     return _rp_linkbase(ZipReader(bytes), suffix)
 end
+
+# Polite client identifier for the PUBLIC, keyless IFRS taxonomy host (xbrl.ifrs.org), so the request
+# does not take fetch_url's default SEC-User-Agent path.
+const _ESEF_PUBLIC_HEADERS = ["User-Agent" => "EDGAR.jl (https://github.com/Trumpingtons/EDGAR.jl)"]
+
+# The published `ifrs-full` English label-linkbase URL, derived from the IFRS taxonomy namespace an
+# ESEF instance declares (`https://xbrl.ifrs.org/taxonomy/<date>/ifrs-full`), or `nothing`. The IFRS
+# Foundation publishes per-language label linkbases at a stable path beside the core schema.
+function _ifrs_full_label_url(content::AbstractString)
+    m = match(r"https?://xbrl\.ifrs\.org/taxonomy/(\d{4}-\d{2}-\d{2})/ifrs-full", content)
+    m === nothing && return nothing
+    d = m.captures[1]
+    return "https://xbrl.ifrs.org/taxonomy/$d/full_ifrs/labels/lab_full_ifrs-en_$d.xml"
+end
+
+# ESEF standard-taxonomy labels: an ESEF report package bundles only the issuer's EXTENSION labels, so
+# the `ifrs-full` standard labels are fetched from the published IFRS taxonomy (keyless) and merged
+# under the bundled labels by `label_map`. The `ifrs-full` element ids (`ifrs-full_Assets`) parse to
+# `ifrs-full:…` — the same prefix the facts use — so no re-keying is needed (unlike FRC's core→uk-core).
+# Empty on any failure (offline/unavailable), which `label_map` tolerates.
+function _standard_labels(::ESEF, f::Filing)
+    url = _ifrs_full_label_url(f.content)
+    url === nothing && return Dict{String,String}()
+    xml = fetch_url(url; headers = _ESEF_PUBLIC_HEADERS)
+    xml === nothing && return Dict{String,String}()
+    return _concept_labels(String(xml))
+end

@@ -986,7 +986,7 @@ end
     @test f.kind === :xbrl
     @test f.entity == EntityId(:lei, "506700GE1G29325QX363")   # identity is the LEI, read from the instance
 
-    rows = facts(f; classify = true, labels = true)
+    rows = facts(f; classify = true)   # labels are exercised offline via the bundled linkbase below
     @test length(rows) > 100                                    # the IFRS instance's numeric facts
 
     # IFRS concepts are classified into face statements via the bundled presentation linkbase + the
@@ -1008,9 +1008,11 @@ end
     @test statement_map(f)["ifrs-full:Assets"] == "BalanceSheet"
     @test !isempty(calculations(f))
     # Labels for the issuer's EXTENSION concepts are bundled (`_lab-en.xml`); ifrs-full standard
-    # labels are not shipped in the package, so only extension concepts carry a native label here.
-    lm = label_map(f)
+    # labels are NOT in the package (fetched from the published IFRS taxonomy — see the live test).
+    # Read the bundled linkbase directly so this stays offline (label_map now also fetches standard labels).
+    lm = EDGAR._concept_labels(EDGAR._fetch_linkbase(f, "lab"))
     @test any(k -> startswith(k, "gleif:"), keys(lm))
+    @test !any(k -> startswith(k, "ifrs-full:"), keys(lm))   # standard labels are not bundled
 end
 
 @testset "ESEF: discovery + handle fetch (B2)" begin
@@ -1307,6 +1309,19 @@ end
             @test all(r -> !isempty(r.label), facts(f; classify = true, labels = true))
         catch e
             @info "Skipping CH FRC label fetch (network): $e"; @test true
+        end
+    end
+
+    @testset "ESEF ifrs-full standard labels (live)" begin
+        # An ESEF package bundles only issuer-EXTENSION labels; label_map now also fetches the published
+        # ifrs-full standard labels from the IFRS taxonomy and merges them in.
+        try
+            f = fetch_filing(ESEF(), joinpath(@__DIR__, "data", "esef", "gleif-2024-min.zip"))
+            lm = label_map(f)
+            @test get(lm, "ifrs-full:Assets", "") == "Assets"          # standard label, fetched
+            @test any(k -> startswith(k, "gleif:"), keys(lm))          # bundled extension labels still present
+        catch e
+            @info "Skipping ESEF ifrs-full label fetch (network): $e"; @test true
         end
     end
 

@@ -288,6 +288,30 @@ labels for ESEF, which has the same gap — see [esef-expansion memory]).
    "Companies House FRC labels (live)" (fetches the real ~6 MB linkbase).
 6. 🚦 **GATE** — approval to run the suite; on green, approval to commit C3.
 
+### Post-C3 polish (status 2026-06-25)
+
+- ✅ **ESEF `ifrs-full` standard labels** (the C3 pattern reused). Generic `_standard_labels(f)` hook
+  (extract_xbrl.jl, default empty); `label_map` now `merge(_standard_labels(f), bundled)` so issuer
+  labels win and standard labels fill the rest. `_standard_labels(::ESEF, f)` derives the ifrs-full
+  English label URL from the IFRS namespace (`xbrl.ifrs.org/taxonomy/<date>/full_ifrs/labels/
+  lab_full_ifrs-en_<date>.xml`) and fetches it (keyless). No re-keying (ids `ifrs-full_Assets` →
+  `ifrs-full:`). Verified live: `ifrs-full:Assets` → "Assets"; ESEF B1 offline kept offline (reads
+  bundled labels directly) + network-gated live label tests for CH (FRC) and ESEF (ifrs-full).
+- ⏸ **Yahoo cross-check for CH — deferred until the API key.** Structurally thin: keyless-extractable
+  CH companies (the bulk feed) are overwhelmingly small/private (no Yahoo data), while listed
+  companies often file their CH accounts as **PDF** (their iXBRL goes to the FCA NSM, not CH). So a
+  Yahoo↔CH check only fits the narrow band of listed-companies-with-CH-iXBRL. CH extraction is
+  validated by the committed hand-checked fixtures instead. Revisit with the API key.
+- ⏸ **pre/cal linkbases — deferred.** Vocab already classifies; better future form = calculation
+  roll-up consistency (works for all CH filers, no market data) — *contingent on the FRC taxonomy
+  shipping a calculation linkbase (core schema only referenced definition/label/reference)*.
+
+**Key finding (durable): filings.xbrl.org ≠ Companies House.** filings.xbrl.org carries **UKSEF** =
+the **FCA National Storage Mechanism** (listed issuers), a different channel from the Companies House
+registrar. Two follow-on source ideas (post-polish): a keyless **public-register source**
+(find-and-update.company-information.service.gov.uk — rich company data + PDF) and a direct
+**UKSEF-via-FCA-NSM `FilingSource`** (reuses ESEF parsing; de-risks the filings.xbrl.org dependency).
+
 ---
 
 ## 4. Validation

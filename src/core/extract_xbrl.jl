@@ -244,6 +244,16 @@ _filing_selection(f::Filing, fcts) =
 # fallback for SEC inline-only filers).
 _fetch_linkbase(f::Filing, suffix::AbstractString) = _fetch_linkbase(f.system, f, suffix)
 
+# Standard-taxonomy labels for a filing's concepts, fetched from the PUBLISHED taxonomy (keyed by the
+# concept's namespace), for systems whose filings DON'T bundle the standard labels. `label_map` merges
+# these UNDER the filing's own bundled labels (issuer-extension labels win). A system supplies a method
+# only if it needs it; the default is none. ESEF uses it to add `ifrs-full` standard labels (its
+# package bundles only the issuer extension) — the same "delegate to the published standard taxonomy"
+# pattern Companies House uses for its FRC labels (CH gets them via `_fetch_linkbase(::CompaniesHouse,
+# …, "lab")` instead, since it has no bundled linkbase at all).
+_standard_labels(f::Filing) = _standard_labels(f.system, f)
+_standard_labels(::FilingSystem, f::Filing) = Dict{String,String}()
+
 # ── Statement classification from the presentation linkbase (W5) ─────────────
 # The authoritative grouping of concepts into financial statements is the filing's own
 # presentation linkbase (`*_pre.xml`): each extended-link role is a section. We classify each role
