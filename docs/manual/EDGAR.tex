@@ -782,6 +782,7 @@ julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
 \texttt{open\_filing(cik, accession; kind, assets)} & Combines \texttt{fetch\_filing} and \texttt{open\_filing} into a single call\\
 \texttt{open\_filing(path)} & Open a filing already saved on disk in the browser. \\
 \texttt{extract\_section(html, names)} & Pull named sections from filing HTML. \\
+\texttt{find\_paragraphs(f, query)} & Paragraphs of a filing containing a literal phrase, each with its index (SEC or ESEF). \\
 \texttt{save\_filing(f; destdir, assets)} & Write a fetched \texttt{Filing} to \texttt{destdir/document}, with its images. \\
 \midrule
 \texttt{download\_assets(f; destdir)} & Download a filing's referenced images and CSS/JS next to it. \\
@@ -999,6 +1000,45 @@ case-insensitive matching --- e.g.\ \texttt{"Item 7"} or
 \texttt{"Management's Discussion"}. Returns a \texttt{Dict} mapping each requested name
 to its extracted text (the full section, up to where the next section begins).
 
+\subsubsection{\texttt{find\_paragraphs}}
+
+\begin{center}
+\textbf{\sig{find\_paragraphs(f::Filing, query; ignorecase = true) -> Vector\{NamedTuple\{index, paragraph\}\}}}
+\end{center}
+
+\noindent Search \emph{within} one already-fetched filing for the paragraphs whose text contains
+\texttt{query} --- a \textbf{literal substring} match --- returning each hit paired with its
+\texttt{index} (the 1-based position among \emph{all} the document's paragraphs), or an empty vector if
+the phrase never occurs. This is distinct from \texttt{filings\_by\_text}, which searches \emph{across}
+SEC filings to decide \emph{which} to fetch: \texttt{find\_paragraphs} searches the prose of a
+\emph{single} document, and is \textbf{jurisdiction-agnostic} --- it works on a SEC iXBRL filing or an
+ESEF iXHTML report (\S\ref{sys:esef}) alike, because it operates on the filing already in memory.
+
+\noindent The markup is reduced to plain-text paragraphs (split at block-level HTML boundaries, inline
+tags stripped, whitespace collapsed), so the match ignores tags and runs of whitespace. The returned
+\texttt{index} locates each hit and lets you jump back to it (and its neighbours); the result is a
+Tables.jl row table, so it renders with \texttt{PrettyTables}, filters, and converts to a
+\texttt{DataFrame}. Pass \texttt{ignorecase = false} for an exact-case match.
+
+\begin{lstlisting}
+f = fetch_filing(320193, "0000320193-23-000106")
+hits = find_paragraphs(f, "climate-related risks")  # [(index=312, paragraph="..."), ...] or []
+EDGAR._paragraphs(f.content)[hits[1].index]         # jump back to the located paragraph
+\end{lstlisting}
+
+\paragraph{Jumping to a match.} The \texttt{index} is a \emph{stable locator} into the document's
+paragraph sequence, not just a row label. Today it lets you \textbf{jump} straight back to a hit ---
+re-split the filing with \texttt{EDGAR.\_paragraphs(f.content)} and index into it to re-read the
+paragraph, or take a window around \texttt{index} for surrounding context --- without re-scanning the
+text. Because the index is computed over \emph{all} the document's paragraphs (not just the matches),
+it also tells you roughly where in the filing the hit sits.
+
+\emph{Planned.} A convenience built on this locator will open the \emph{rendered} filing in the
+browser (as \texttt{open\_filing} does) and \textbf{scroll directly to the matched paragraph},
+highlighting it, so a search result can be read in its original visual context --- the same
+``pick / locate'' idea as the interactive picker, but driven by a text query. The \texttt{index}
+returned now is exactly the handle that feature will consume; it is not yet implemented.
+
 \subsubsection{\texttt{sections}}
 
 \begin{center}
@@ -1070,8 +1110,9 @@ walks the whole life-cycle on a real filing --- Walmart's latest Form 10-Q (chos
 over a tidier filer precisely because its Balance Sheet extracts a little roughly,
 exercising the heuristics) --- using nothing but the public API: it resolves the
 CIK, fetches the 10-Q, renders it, extracts the Balance Sheet, saves both the full
-filing and the Balance Sheet to disk, and finally reloads each from disk and shows
-it in the browser.
+filing and the Balance Sheet to disk, reloads each from disk and shows it in the
+browser, \emph{searches the filing's prose} for a phrase, and finally
+\emph{validates} its headline figures against Yahoo Finance (\S\ref{sec:validation}).
 
 \begin{lstlisting}
 julia> using EDGAR
@@ -1103,6 +1144,16 @@ julia> open_filing(path_10q)
 
 # 8. Load the saved Balance Sheet from disk and show it in the browser.
 julia> open_filing(path_bs)
+
+# 9. Search the filing's prose: paragraphs mentioning a phrase, each located by index.
+julia> hits = find_paragraphs(f, "supply chain")
+julia> EDGAR._paragraphs(f.content)[hits[1].index]      # jump back to the matched paragraph
+
+# 10. Validate the headline figures against Yahoo Finance (pulls the latest 10-K).
+julia> using YFinance
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+julia> using .YahooOracle
+julia> YahooOracle.validate(:sec, row.cik, "WMT")       # Assets/Equity/Revenue/NetIncome/OperCashFlow
 \end{lstlisting}
 
 \noindent Every step succeeds against the live filing; Table~\ref{tab:lifecycle}
@@ -1124,6 +1175,9 @@ records what each produces (the public API only, no internals).
 6. Save Balance Sheet  & \texttt{write(path\_bs, \ldots)}              & \texttt{balance\_sheet.html} \\
 7. Load 10-Q $\to$ browser   & \texttt{read} + open                    & 1{,}154{,}833 bytes round-trip \\
 8. Load Balance Sheet $\to$ browser & \texttt{read} + open           & renders the table \\
+\midrule
+9. Search prose          & \texttt{find\_paragraphs(f, "supply chain")} & matching paragraphs, each with its \texttt{index} \\
+10. Validate vs Yahoo    & \texttt{YahooOracle.validate(:sec, cik, "WMT")} & headline totals agree (BS / IS / CF) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1775,12 +1829,28 @@ calculations(f)                                # roll-ups from the bundled calcu
 The bundled presentation/calculation/label linkbases are resolved straight from the ZIP (the ESEF
 method of the per-system linkbase fetcher), so classification and roll-ups work with no network access.
 
+\paragraph{Discovery (finding packages).} There is no single EDGAR-style API for ESEF, so discovery
+is modelled as a separate \emph{source} axis (\S\ref{sec:architecture}): a \texttt{FilingSource}
+yields system-tagged \texttt{FilingHandle}s, and \texttt{fetch\_filing(handle)} downloads and reads
+the package. The first source is \texttt{FilingsXBRLOrg} ---
+\href{https://filings.xbrl.org}{filings.xbrl.org}, the XBRL-International aggregator (no API key),
+which indexes ESEF and related regimes. \texttt{discover} filters by LEI, country and/or year:
+
+\begin{lstlisting}
+hs = discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206", year = 2023)  # Citycon Oyj
+h  = first(filter(h -> endswith(h.url, "-en.zip"), hs))   # an entity often files several variants
+f  = fetch_filing(h)                                       # download + read the report package
+facts(f; classify = true, labels = true)
+\end{lstlisting}
+
+\noindent A handle is the portable currency between discovery and fetch: it carries the system, the
+filer's identity (LEI), the opaque filing reference and the package URL. Because the source axis is
+distinct from the system axis, one source can feed several systems (filings.xbrl.org also covers
+UKSEF), and per-country Officially Appointed Mechanisms (OAMs) can be added later as further
+\texttt{FilingSource}s without touching the parse path.
+
 \paragraph{Current limitations.}
 \begin{itemize}
-  \item \textbf{Discovery and HTTP fetch are not yet implemented.} Today a package must be supplied as
-    a local file; fetching by LEI from an aggregator (\href{https://filings.xbrl.org}{filings.xbrl.org})
-    or a national Officially Appointed Mechanism (OAM) is planned. There is no single EDGAR-style API
-    for ESEF; discovery will be modelled as a \texttt{FilingSource} yielding system-tagged handles.
   \item \textbf{Standard \texttt{ifrs-full} labels are not bundled.} A report package ships labels only
     for the issuer's \emph{extension} concepts; the canonical \texttt{ifrs-full} labels live in the
     published IFRS taxonomy, which the package references rather than embeds. So with
@@ -1789,6 +1859,69 @@ method of the per-system linkbase fetcher), so classification and roll-ups work 
     from the published standard taxonomy --- the same ``delegate to the standard taxonomy'' mechanism
     Companies House requires --- is planned.
 \end{itemize}
+
+\section{Worked example: ESEF end-to-end}
+\label{sec:esef-example}
+
+\noindent The ESEF pieces compose into a full workflow --- the analogue of the SEC filings life-cycle
+(\S\ref{sec:lifecycle-example}), but spanning discovery, extraction, \emph{prose search}, and
+\emph{validation}. The script below runs end-to-end on a real filer --- Signify N.V.\ (Dutch, IFRS) ---
+using only the public API, then (a) searches the report's text and (b) cross-checks the extracted
+numbers against two independent oracles (\S\ref{sec:validation}).
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> set_user_agent("Your Name you@example.com")
+
+# 1. Discover the issuer's ESEF report packages by LEI (via filings.xbrl.org).
+julia> hs = discover(FilingsXBRLOrg(); lei = "549300072P3J1X8NZO35")  # Signify N.V.
+julia> h  = first(filter(x -> endswith(x.url, "-en.zip"), hs))         # the English package
+
+# 2. Fetch the report package (downloads + reads the ZIP into a Filing).
+julia> f = fetch_filing(h)              # Filing(:ixbrl, ...); f.entity == EntityId(:lei, ...)
+
+# 3. Extract and classify the IFRS facts; pull a face statement.
+julia> rows = facts(f; classify = true, labels = true)
+julia> select_statement(rows, "BalanceSheet")     # ifrs-full:Assets, Liabilities, Equity, ...
+
+# 4. (a) Search the prose: locate paragraphs by phrase, then jump back via the index.
+julia> hits = find_paragraphs(f, "sustainability")
+julia> EDGAR._paragraphs(f.content)[hits[1].index]    # the located paragraph
+
+# 5. (b) Validate the numbers against independent oracles (see "Validating the Extraction").
+#     Parser oracle -- Arelle xBRL-JSON, per statement:
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
+julia> using .ArelleOracle
+julia> ArelleOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
+
+#     Data oracle -- Yahoo Finance totals (needs YFinance in the environment):
+julia> using YFinance
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+julia> using .YahooOracle
+julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
+\end{lstlisting}
+
+\noindent Every step succeeds against the live filing; Table~\ref{tab:esef-lifecycle} records what each
+produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and step 5 is the
+``trust-but-verify'' cross-check --- both oracles agree with the extraction across all three statements.
+
+\begin{table}[h]
+\centering
+\caption{The ESEF workflow, step by step (Signify N.V.).}
+\label{tab:esef-lifecycle}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Call} & \textbf{Result} \\
+\midrule
+1. Discover by LEI         & \texttt{discover(FilingsXBRLOrg(); lei)}        & report-package handles (per year / language) \\
+2. Fetch package           & \texttt{fetch\_filing(h)}                       & \texttt{Filing(:ixbrl)}, LEI identity \\
+3. Facts + classify        & \texttt{facts(f; classify=true)} $\to$ \texttt{select\_statement} & IFRS facts across BS / IS / CF \\
+4. Search prose            & \texttt{find\_paragraphs(f, "sustainability")} & matching paragraphs, each with its \texttt{index} \\
+5a. Validate (Arelle)      & \texttt{ArelleOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
+5b. Validate (Yahoo)       & \texttt{YahooOracle.validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \chapter{Companies House \textemdash{} United Kingdom}
 \label{sys:companieshouse}
@@ -1820,6 +1953,96 @@ adapter is implemented yet.
 corporate registration / stock code (\texttt{EntityId(:corp\_code,\ \ldots)}); access is via the
 OpenDART API (key required), which --- like the SEC --- additionally exposes a structured
 financial-statement API. No adapter is implemented yet.
+
+% ===========================================================================
+% ===  VALIDATION  ==========================================================
+% ===========================================================================
+\chapter{Validating the Extraction}
+\label{sec:validation}
+
+How do you know the numbers \texttt{EDGAR.jl} extracts are right? You can check them against
+independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships two \emph{do-it-yourself}
+validation oracles under \texttt{src/sources/}. They are deliberately \textbf{not part of the
+\texttt{EDGAR} module} (not \texttt{include}d by \texttt{src/EDGAR.jl}), so they add \textbf{no
+dependencies} to the package and never touch the working code; you load one on demand when you want
+reassurance. A stray \texttt{.jl} file under \texttt{src/} is ignored by the package loader.
+
+\begin{table}[h]
+\centering
+\caption{The two validation oracles.}
+\label{tab:oracles}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.20\textwidth}p{0.14\textwidth}p{0.10\textwidth}@{}}
+\toprule
+\textbf{File} & \textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
+\midrule
+\texttt{arelle\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
+\texttt{yahoo\_oracle.jl} & \textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The two answer different questions. The \textbf{Arelle} oracle confirms we \emph{read the
+filing right}: it compares every consolidated numeric fact \texttt{EDGAR.jl} extracts from a filing's
+inline XBRL against the \emph{same filing's} xBRL-JSON as published by
+\href{https://filings.xbrl.org}{filings.xbrl.org} --- an independent, standards-grade parse of the
+identical document (\S\ref{sys:esef}). The \textbf{Yahoo} oracle confirms the \emph{numbers match the
+outside world}: it compares the headline totals (Assets, Equity, Revenue, Net income) against Yahoo
+Finance, an entirely separate data pipeline, across jurisdictions --- covering all three statements
+(balance sheet, income statement, and cash flow via operating cash flow). A parser oracle cannot catch a
+filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle can, but only
+approximately, since Yahoo normalizes. The Arelle approach mirrors
+\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266),
+using just the HTTP+JSON it needs --- credit there.
+
+\medskip\noindent This is the same kind of check the package already applies on the SEC side: the
+extracted values are validated against the SEC's \texttt{companyfacts} API (the SEC's own parse of the
+same filing). Each filing system has an independent reference of this sort --- which is what lets us
+trust the one jurisdiction-agnostic parser across systems where no such API exists
+(\S\ref{sec:architecture}).
+
+\section{Running the oracles}
+
+\paragraph{Arelle (needs only \texttt{EDGAR} --- runs in the package's own environment).}
+
+\begin{lstlisting}
+# the built-in firm panel (exits non-zero below 95% fact parity):
+$ julia --project=. src/sources/arelle_oracle.jl
+\end{lstlisting}
+
+\begin{lstlisting}
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
+using .ArelleOracle
+rows = ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Citycon Oyj
+filter(r -> !r.match, rows)                                        # any discrepancies
+ArelleOracle.statements("549300P8N0P6KDGTJ206")                    # parity per BS / IS / CF
+\end{lstlisting}
+
+\noindent \texttt{ArelleOracle.statements(lei)} reports the parity \emph{per statement} --- one row
+\texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
+\texttt{CashFlow} --- so you can confirm each statement is extracted correctly, fact-by-fact, against
+the reference processor.
+
+\paragraph{Yahoo (needs \texttt{YFinance} in the active environment).}
+
+\begin{lstlisting}
+using YFinance
+include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+using .YahooOracle
+YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
+YahooOracle.report()                           # the built-in panel
+\end{lstlisting}
+
+\noindent Each oracle's \texttt{validate} returns a row table --- one row per fact (or per headline
+metric) with the \texttt{EDGAR} value, the reference value, the relative difference and a
+\texttt{match} flag --- so you can \texttt{filter} to mismatches or render it with \texttt{PrettyTables}.
+On the default panels the agreement is near-exact: \textbf{100\% fact parity} against Arelle and
+\textbf{no mismatches} against Yahoo on the totals it covers. A \texttt{User-Agent} must be set first
+(\S\ref{sec:caching}); the scripts fall back to the \texttt{EDGAR\_UA} environment variable.
+
+\paragraph{Why a \texttt{ticker} for Yahoo?} A \texttt{Filing} knows the filer's \texttt{EntityId}
+(CIK or LEI), not its exchange symbol, so the Yahoo oracle takes the ticker explicitly
+(\texttt{"AAPL"}, \texttt{"CTY1S.HE"}).
 
 % ===========================================================================
 % ===  REFERENCE  ===========================================================
