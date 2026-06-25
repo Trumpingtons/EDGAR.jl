@@ -57,7 +57,7 @@ function set_standardizer(s::Symbol)
                         "a `Dict`, or a function"))
 end
 
-# The vendored edgartools mapping (MIT — see src/data/edgartools_concept_mappings.NOTICE.md),
+# The vendored edgartools mapping (MIT — see src/core/taxonomy/data/edgartools_concept_mappings.NOTICE.md),
 # parsed and inverted once: `concept => standard_concept`. The source file is
 # `standard_concept => [company concepts]` with `us-gaap_X` keys, so we invert it and normalise
 # the prefix separator (`us-gaap_Revenues` -> `us-gaap:Revenues`). `_comment_*` keys are skipped.
@@ -68,14 +68,14 @@ const _EDGARTOOLS = Ref{Union{Nothing,Dict{String,String}}}(nothing)
 
 The community concept-standardization mapping vendored from
 [edgartools](https://github.com/dgunning/edgartools) (MIT-licensed; see
-`src/data/edgartools_concept_mappings.NOTICE.md`), as a `concept => standard_concept` dict —
+`src/core/taxonomy/data/edgartools_concept_mappings.NOTICE.md`), as a `concept => standard_concept` dict —
 e.g. `"us-gaap:Revenues" => "Revenue"`, `"us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax" => "Contract Revenue"`.
 Activate it with `set_standardizer(:edgartools)`; this accessor returns the dict itself (parsed
 once and cached) for inspection or extension.
 """
 function edgartools_mapping()
     _EDGARTOOLS[] === nothing || return _EDGARTOOLS[]
-    raw = JSON3.read(read(joinpath(@__DIR__, "data", "edgartools_concept_mappings.json"), String))
+    raw = JSON3.read(read(joinpath(@__DIR__, "taxonomy", "data", "edgartools_concept_mappings.json"), String))
     m = Dict{String,String}()
     for (standard, concepts) in pairs(raw)
         startswith(String(standard), "_") && continue          # skip _comment_* keys

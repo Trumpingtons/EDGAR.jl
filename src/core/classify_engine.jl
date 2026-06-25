@@ -4,7 +4,7 @@
 # taxonomy-specific concept anchors come from the vocabulary files (vocab_usgaap.jl, vocab_ifrs.jl),
 # which this merges into `STATEMENT_REGISTRY`. See the manual, § "Statement classification: two
 # orthogonal axes". The scorer + data are a translation/adaptation of edgartools' statement matcher
-# (MIT (c) Dwight Gunning; see src/data/edgartools_concept_mappings.NOTICE.md).
+# (MIT (c) Dwight Gunning; see src/core/taxonomy/data/edgartools_concept_mappings.NOTICE.md).
 
 # Normalise a role string to lowercase alphanumerics, so "Statement of Profit or Loss",
 # "StatementOfProfitOrLoss" and ".../role/StatementOfProfitOrLoss" all compare equal.

@@ -6,6 +6,8 @@ module Documents
 using EzXML
 using OrderedCollections   # OrderedDict: preserve TOC discovery order (Python dict is insertion-ordered)
 
+# ---- parser core: 🟢 jurisdiction-agnostic HTML -> Document tree / text / tables (reusable for any
+#      HTML/XHTML filing — ESEF, EDINET, etc.; nothing here knows about SEC Items/Parts) ----
 include("types.jl")            # NodeType / SemanticType / TableType / Style / HeaderInfo / XBRLFact / ParseContext
 include("nodes.jl")            # Node hierarchy + text()/html()
 include("style_parser.jl")     # CSS style="..." -> Style
@@ -24,7 +26,8 @@ include("toc_filter.jl")       # strip repetitive navigation links (Document.tex
 include("streaming.jl")        # streaming parser for >10MB filings (no preprocessing, coarse tree)
 include("parser.jl")           # HTMLParser entry point (preprocess -> parse -> build -> postprocess)
 
-# ---- section detection (Document + detectors) ----
+# ---- section detection: 🔵 SEC-specific (Item/Part patterns, US filing-agent TOC, cross-form structure;
+#      no ESEF/EDINET analog) — layered on the 🟢 parser core above ----
 include("document.jl")              # Section / Sections / Document / DocumentMetadata + sections dispatch
 include("anchor_targets.jl")        # anchor id/name resolution
 include("agents.jl")                # filing-agent detection

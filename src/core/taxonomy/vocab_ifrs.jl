@@ -3,7 +3,7 @@
 # UK Companies House (IFRS), DART (K-IFRS), MOPS (TW-IFRS), EDINET (IFRS filers) — so adding those
 # regimes reuses this file rather than re-deriving it. The engine (classify_engine.jl) merges it into
 # the scored registry. Concept lists adapted from edgartools (MIT; see
-# src/data/edgartools_concept_mappings.NOTICE.md).
+# src/core/taxonomy/data/edgartools_concept_mappings.NOTICE.md).
 const _VOCAB_IFRS = Dict(
     "BalanceSheet" => (
         primary = String[],

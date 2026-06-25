@@ -1,7 +1,7 @@
 # US-GAAP statement-classification vocabulary: the concept anchors for each face statement under the
 # `us-gaap` taxonomy (SEC filers). The engine (classify_engine.jl) merges this with the other
 # taxonomy vocabularies into the scored registry. Concept lists adapted from edgartools (MIT; see
-# src/data/edgartools_concept_mappings.NOTICE.md). Each entry: `primary`/`alternative` abstract roots
+# src/core/taxonomy/data/edgartools_concept_mappings.NOTICE.md). Each entry: `primary`/`alternative` abstract roots
 # and `key_concepts` anchors; concept-name patterns and role-name patterns are taxonomy-agnostic and
 # live in the engine.
 const _VOCAB_USGAAP = Dict(
