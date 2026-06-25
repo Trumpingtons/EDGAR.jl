@@ -41,3 +41,7 @@ filings_demo/
 
 # Companies House bulk/raw fixtures (not committed; derived fixtures are)
 /test/data/companies_house/raw/
+
+# Postman app git-integration scaffold (local API tooling; not part of the package)
+/.postman/
+/postman/

@@ -11,8 +11,13 @@
 # A filing with no structured (xhtml/xml) resource — paper/PDF accounts, common for small/dormant
 # companies — yields a typed, non-fatal `:pdf` filing (Companies House II territory), not an error.
 #
-# NOTE: the live shapes below (filing-history JSON, document-metadata `resources`, the 302) are the
-# documented/known forms; they are confirmed against the real API at the C2 step-3 gate.
+# Shapes below reconciled against the Companies House OpenAPI specs
+# (specs.developer.ch.gov.uk / developer-specs.company-information.service.gov.uk): filing-history
+# items carry `transaction_id`, `category`, `type`, `date` and `links.document_metadata`; the content
+# endpoint `{document_metadata}/content` selects format via the `Accept` header (unsupported ⇒ 406)
+# and returns a **302** to storage (whence HTTP.jl strips `Authorization` cross-host — see C0). A live
+# call is only the final runtime confirmation. `period_end` is best-effort (made-up date when present,
+# else the processed `date`), since the accounting-period field is free-form in the schema.
 
 """
     CompaniesHouseApi <: FilingSource
