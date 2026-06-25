@@ -1,9 +1,14 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[11pt,a4paper]{report}
 
 % ---------------------------------------------------------------------------
 % EDGAR.jl — User Manual
 % Compile with: pdflatex EDGAR.tex  (run twice for the table of contents /
 % cross-references). No --shell-escape required (uses `listings`, not minted).
+%
+% Structure: the manual is organised per FilingSystem — one \chapter each for
+% EDGAR (SEC), ESEF, Companies House, EDINET and DART (some still stubs) — framed
+% by getting-started chapters and a reference/architecture back-matter. EDGAR is
+% the fully-implemented system; the others carry what is implemented or planned.
 % ---------------------------------------------------------------------------
 
 \usepackage[utf8]{inputenc}
@@ -70,6 +75,10 @@
 % function signature block: a blank line of vertical space above and below
 \newcommand{\sig}[1]{\medskip\noindent\texttt{#1}\par\medskip}
 
+% Compact chapter heading (no full-page "Chapter N" banner): number + title, in the
+% same BlueViolet as sections, kept on the same page flow rather than forcing a break.
+\titleformat{\chapter}[hang]{\huge\bfseries\color{BlueViolet}}{\thechapter}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{0pt}{14pt}
 \titleformat{\section}{\Large\bfseries\color{BlueViolet}}{\thesection}{0.6em}{}
 \titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
 
@@ -100,7 +109,7 @@ system into Julia: a filer's \emph{submission history}, the \emph{XBRL financial
 \vspace{1em}
 
 % ===========================================================================
-\section{Introduction}
+\chapter{Introduction}
 \label{sec:intro}
 EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S. Securities and Exchange Commission's electronic filing system. All publicly listed companies in the United States submit their regulatory disclosures through EDGAR. Since 2009, financial statements within these filings have been tagged using XBRL (eXtensible Business Reporting Language), enabling structured, machine-readable access to financial data.
 
@@ -161,7 +170,7 @@ Analyse & Wide statement view --- stitched across filings, period-aware, standar
 \end{table}
 
 % ===========================================================================
-\section{Installation}
+\chapter{Installation}
 \label{sec:install}
 
 \subsection{Installing from GitHub}
@@ -208,7 +217,7 @@ julia> unpersist_user_agent()   # removes the persisted setting
 \end{lstlisting}
 
 % ===========================================================================
-\section{Quick Start}
+\chapter{Quick Start}
 \label{sec:quickstart}
 
 \subsection{Searching}
@@ -271,6 +280,20 @@ A trailing \texttt{I} on the frame period (\texttt{"CY2022Q4I"}) denotes an
 \emph{instant} (a balance-sheet point in time); drop it for a \emph{duration}
 (a flow such as revenue). See the Glossary (\S\ref{sec:glossary}).
 
+
+\chapter{EDGAR \textemdash{} U.S.\ SEC}
+\label{sys:edgar}
+
+EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S.\ Securities and
+Exchange Commission's filing system, and the \texttt{FilingSystem} that \texttt{EDGAR.jl} implements
+in full --- discovery, fetch and parse. Every capability described in this chapter (form-level
+section extraction, the search/lookup and XBRL structured-data APIs, the interactive picker, the
+fact warehouse) is available for SEC filings today. In the code the concrete system type is
+\texttt{SEC}\,\texttt{<:}\,\texttt{FilingSystem} (named \texttt{SEC} rather than \texttt{EDGAR} to
+avoid clashing with the \texttt{EDGAR} module); a filer's identity is a CIK
+(\texttt{EntityId(:cik,\ \ldots)}). The remaining chapters cover the other filing systems --- ESEF,
+Companies House, EDINET, DART --- which reuse the same jurisdiction-agnostic core
+(\S\ref{sec:architecture}) but are at earlier stages.
 
 \section{Form Types and Entities}
 
@@ -996,6 +1019,20 @@ Index} (e.g.\ GE, Henry Schein) are handled by a second strategy that maps items
 content between page breaks. Validated at character-level parity with edgartools across a diverse set of
 10-Ks.
 
+\paragraph{Supported forms.} Item-level section extraction is available only for the \emph{item-structured}
+report forms, and each has been validated at character-level parity against edgartools' \texttt{obj()[item]}:
+\textbf{10-K}, \textbf{10-K/A}, \textbf{10-Q}, \textbf{8-K}, \textbf{20-F}, and \textbf{40-F}. The two annual
+reports also have dedicated faithful accessors that mirror edgartools --- \texttt{TwentyF}/\texttt{tf\_section}
+(20-F) and \texttt{TenK}/\texttt{tk\_section} (10-K and 10-K/A); 40-F annual reports are segmented from their
+Annual Information Form exhibit. Other forms --- for example \texttt{S-1}, \texttt{S-4}, \texttt{N-CSR},
+\texttt{DEF 14A} and \texttt{6-K} --- are \emph{not} segmented into named items: \texttt{sections} returns an
+empty vector for them, exactly as edgartools does (its \texttt{Document.sections} is likewise empty for these
+forms). Such filings can still be fetched, converted to text (\texttt{markdown}), searched
+(\texttt{filings\_by\_text}), and mined for XBRL facts (\texttt{facts}); in edgartools they are served by
+\emph{form-specific structured-data} parsers (e.g.\ \texttt{ProxyStatement} for DEF 14A,
+\texttt{FundShareholderReport} for N-CSR, \texttt{RegistrationS1} for S-1), which \texttt{EDGAR.jl} does not
+currently replicate.
+
 \subsubsection{\texttt{save\_filing}}
 
 \begin{center}
@@ -1692,7 +1729,105 @@ for o in filter(o -> o.form == "10-K", concept.units.USD)
 end
 \end{lstlisting}
 
-\subsection{Credentials and Caching}\label{sec:caching}
+% ===========================================================================
+% ===  FILING SYSTEMS BEYOND EDGAR  =========================================
+% ===========================================================================
+\chapter{ESEF \textemdash{} European Union}
+\label{sys:esef}
+
+ESEF (the \emph{European Single Electronic Format}) is the EU's mandatory reporting format for the
+annual financial reports of issuers on EU-regulated markets. It is the second \texttt{FilingSystem}
+in \texttt{EDGAR.jl} after EDGAR, and the one that exercises the portability seam
+(\S\ref{sec:architecture}): the XBRL \emph{parsing} is the same jurisdiction-agnostic core used for
+SEC filings, while ESEF supplies only its own \emph{fetch}, identity and linkbase-location slice. In
+code the system type is \texttt{ESEF}\,\texttt{<:}\,\texttt{FilingSystem}.
+
+\paragraph{What is different from EDGAR.} Three things, all data rather than logic:
+\begin{itemize}
+  \item \textbf{Packaging.} An ESEF filing is a \emph{report package} --- a single ZIP
+    (\texttt{documentType https://xbrl.org/report-package/2023}) holding \texttt{META-INF/}
+    (the package manifest + an OASIS \texttt{catalog.xml}), a \texttt{reports/} directory with the
+    primary report (an inline-XBRL \texttt{.xhtml} or a classic \texttt{.xbrl} instance), and the
+    issuer's bundled extension taxonomy with its linkbases. Unlike EDGAR --- where the linkbases are
+    loose sibling files fetched over HTTP from the filing's Archives directory --- everything needed
+    to parse \emph{and} classify an ESEF filing lives inside this one ZIP.
+  \item \textbf{Identity.} An issuer is identified by its \textbf{LEI} (Legal Entity Identifier, ISO
+    17442), read from the instance's context entity identifier, not by a CIK:
+    \texttt{EntityId(:lei,\ "506700GE1G29325QX363")}.
+  \item \textbf{Taxonomy.} ESEF reports tag against \texttt{ifrs-full} plus an issuer extension, not
+    \texttt{us-gaap}. Statement classification reuses the shared IFRS vocabulary
+    (\S\ref{sec:two-axes}), so no SEC-specific machinery (e.g.\ \texttt{FilingSummary.xml}) is involved.
+\end{itemize}
+
+\paragraph{Reading a report package (offline).} \texttt{fetch\_filing(ESEF(), path)} reads a report
+package already on disk into the same \texttt{Filing} type used everywhere else, after which the whole
+system-agnostic pipeline --- \texttt{facts}, classification, labels, \texttt{calculations},
+\texttt{to\_duckdb}, \texttt{statement\_view} --- applies unchanged:
+
+\begin{lstlisting}
+f = fetch_filing(ESEF(), "gleif-2024.zip")   # a report-package ZIP on disk
+f.entity                                       # EntityId(:lei, "506700GE1G29325QX363")
+rows = facts(f; classify = true, labels = true)
+select_statement(rows, "BalanceSheet")         # ifrs-full:Assets, Liabilities, Equity, ...
+calculations(f)                                # roll-ups from the bundled calculation linkbase
+\end{lstlisting}
+
+The bundled presentation/calculation/label linkbases are resolved straight from the ZIP (the ESEF
+method of the per-system linkbase fetcher), so classification and roll-ups work with no network access.
+
+\paragraph{Current limitations.}
+\begin{itemize}
+  \item \textbf{Discovery and HTTP fetch are not yet implemented.} Today a package must be supplied as
+    a local file; fetching by LEI from an aggregator (\href{https://filings.xbrl.org}{filings.xbrl.org})
+    or a national Officially Appointed Mechanism (OAM) is planned. There is no single EDGAR-style API
+    for ESEF; discovery will be modelled as a \texttt{FilingSource} yielding system-tagged handles.
+  \item \textbf{Standard \texttt{ifrs-full} labels are not bundled.} A report package ships labels only
+    for the issuer's \emph{extension} concepts; the canonical \texttt{ifrs-full} labels live in the
+    published IFRS taxonomy, which the package references rather than embeds. So with
+    \texttt{labels=true} the extension concepts carry native labels but the standard \texttt{ifrs-full}
+    concepts do not (their meaning is fully carried by the concept name regardless). Resolving labels
+    from the published standard taxonomy --- the same ``delegate to the standard taxonomy'' mechanism
+    Companies House requires --- is planned.
+\end{itemize}
+
+\chapter{Companies House \textemdash{} United Kingdom}
+\label{sys:companieshouse}
+
+\emph{Planned.} Companies House is the UK registrar; companies file accounts as iXBRL, and the UKSEF
+profile applies for issuers on UK-regulated markets. It is a useful forcing case for the architecture
+because a Companies House filing carries \textbf{no extension taxonomy at all} --- so linkbase lookup
+must \emph{delegate} to the published \emph{standard} taxonomy (FRS~101/102 or IFRS) for a concept's
+prefix, rather than read a bundled or sibling linkbase. Identity is the company registration number
+(\texttt{EntityId(:companies\_house,\ \ldots)}); access is via the Companies House API (key required).
+No adapter is implemented yet; this chapter is a placeholder so the manual's structure is stable as
+systems are added.
+
+\chapter{EDINET \textemdash{} Japan}
+\label{sys:edinet}
+
+\emph{Planned.} EDINET is Japan's FSA disclosure system. Filers tag against the Japanese GAAP
+taxonomies (\texttt{jpcrp}/\texttt{jppfs}) or IFRS, with \textbf{multi-language, non-Latin labels}
+(Japanese/English), which is the forcing case for a language-aware label parser
+(\texttt{label\_map(f;\ lang)}). Identity is the EDINET code (\texttt{EntityId(:edinet,\ \ldots)});
+access is via the EDINET API (key required), which also offers a pre-parsed CSV fact fast-path. No
+adapter is implemented yet.
+
+\chapter{DART \textemdash{} South Korea}
+\label{sys:dart}
+
+\emph{Planned.} DART (and OpenDART) is South Korea's FSS disclosure system. Filers tag against K-IFRS
+(reusing the shared \texttt{ifrs-full} vocabulary) with Korean/English labels. Identity is the
+corporate registration / stock code (\texttt{EntityId(:corp\_code,\ \ldots)}); access is via the
+OpenDART API (key required), which --- like the SEC --- additionally exposes a structured
+financial-statement API. No adapter is implemented yet.
+
+% ===========================================================================
+% ===  REFERENCE  ===========================================================
+% ===========================================================================
+\chapter{Reference}
+\label{sec:reference}
+
+\section{Credentials and Caching}\label{sec:caching}
 
 \paragraph{Credentials (the User-Agent).}
 There is no API key; the only credential is the SEC \texttt{User-Agent}
@@ -1821,7 +1956,7 @@ m = cache_metrics()                                  # (; hits, misses, requests
 clean_cache()
 \end{lstlisting}
 
-\subsection{Low-Level Requests}
+\section{Low-Level Requests}
 \label{sec:api-lowlevel}
 
 \subsubsection{fetch\_url}
@@ -1841,7 +1976,7 @@ data = JSON3.read(body)
 
 
 % ===========================================================================
-\subsection{Glossary}
+\section{Glossary}
 \label{sec:glossary}
 
 SEC filings and their structured data come with their own vocabulary.
@@ -1907,11 +2042,12 @@ Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although m
 \end{description}
 
 
-\section{Architecture and Portability}
+\chapter{Architecture and Portability}
 \label{sec:architecture}
 
-EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic XBRL core} and a thin
-\textbf{jurisdiction layer}. The core --- the regex-based extractor that resolves contexts, units
+EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic core} and a thin
+\textbf{jurisdiction layer}. This applies to both subsystems --- XBRL extraction and HTML document
+parsing. The XBRL core --- the regex-based extractor that resolves contexts, units
 and facts from raw \texttt{<ix:nonFraction>} / \texttt{xbrli:context} / \texttt{xbrli:unit}, the
 \texttt{Fact}/\texttt{Selection} model, the four export layers, the DuckDB warehouse, the browser
 picker, and the linkbase \emph{parsers} --- depends on no SEC-specific assumption. It has been
@@ -1927,6 +2063,19 @@ the lines fall. SEC is the one jurisdiction implemented today; other jurisdictio
 packages, Canada's SEDAR+) would supply only their slice of the jurisdiction column. Concretely, the
 common parsing already lives in \texttt{extract\_xbrl.jl} and the SEC linkbase access in
 \texttt{extract\_xbrl\_sec.jl}.
+
+The same fault line runs through the \emph{text}-section layer (prose extraction). Here, however, the
+common substrate is \emph{small}: only the HTML document parser --- the \texttt{documents/} parser
+core (HTML$\rightarrow$node tree, text and table rendering) --- is jurisdiction-agnostic
+and could serve an ESEF or EDINET HTML filing unchanged. Everything layered above it is
+SEC-specific: the \emph{Item~N}/\emph{Part} section model has no ESEF/EDINET analog, so the section detectors
+(the \texttt{documents/} TOC/heading/pattern detectors and filing-agent logic), the
+\texttt{ChunkedDocument} port (\texttt{chunked\_document.jl}), \texttt{sections.jl}, the
+cross-reference-index strategy (\texttt{cross\_reference.jl}), and the per-form text accessors
+(\texttt{TenK}, \texttt{TwentyF}, and the 40-F AIF extractor) are all jurisdiction-specific. Unlike
+XBRL --- a universal standard, where the common/specific split is roughly even --- the text-section
+common part is only the HTML parser, because a filing's \emph{item} structure is a national
+regulatory construct rather than a shared technical standard.
 
 \begin{table}[h]
 \centering
@@ -1948,6 +2097,10 @@ Linkbase location & --- & SEC sibling files vs bundled-in-zip \\
 Identity & --- & CIK vs LEI vs SEDAR id \\
 Role vocabulary (\texttt{classify\_role}) & Yes (base) & small per-jurisdiction overrides \\
 Structured-data APIs (\texttt{company\_facts}, \texttt{xbrl\_frames}, \texttt{full\_text\_search}, \texttt{cik}) & --- & SEC-only --- no cross-jurisdiction analog \\
+\midrule
+HTML\,$\rightarrow$\,tree / text / tables parsing (\texttt{documents/} parser core) & Yes & --- \\
+Section/item detection (Item/Part, TOC, filing agents, cross-reference index) & --- & SEC-only --- \emph{Item~N}/\emph{Part} has no ESEF/EDINET analog \\
+Per-form text accessors (\texttt{TenK}, \texttt{TwentyF}, 40-F AIF, \texttt{sections}) & --- & SEC forms (10-K/10-K/A, 10-Q, 8-K, 20-F, 40-F) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1958,6 +2111,7 @@ of the package stays common --- which is what makes adding a second jurisdiction
 than a rewrite.
 
 \subsection{Statement classification: two orthogonal axes}
+\label{sec:two-axes}
 \label{sec:classification-layers}
 
 Deciding which financial statement a fact belongs to (\texttt{statement\_map}, \S\ref{sec:export-layers})
@@ -1998,7 +2152,7 @@ the concept prefixes a filing actually uses) handling classification. EDGAR.jl s
 classification \emph{registry} today; the full per-request scoring cascade is a planned, test-anchored
 port of the edgartools resolver. (This is a design direction and may change in detail.)
 
-\section{Related Work and Comparison}
+\chapter{Related Work and Comparison}
 \label{sec:related-work}
 
 EDGAR.jl enters a mature ecosystem of EDGAR/XBRL tooling, mostly in Python and R. It is
