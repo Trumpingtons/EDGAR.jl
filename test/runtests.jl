@@ -1116,6 +1116,25 @@ end
     end
 end
 
+@testset "Companies House: FRC standard-taxonomy labels (C3, offline)" begin
+    # CH carries no bundled linkbases; labels come from the PUBLISHED FRC `core` label linkbase, whose
+    # URL derives from the `core` namespace in the instance. The linkbase keys concepts by the schema
+    # element-id prefix `core_`; CH label fetching rewrites `#core_` → `#uk-core_` so the keys match
+    # the canonicalized facts. Offline: derivation + re-keying against a synthetic trimmed linkbase.
+    dir = joinpath(@__DIR__, "data", "companies_house")
+    @test EDGAR._frc_core_label_url("<x xmlns:ns5=\"http://xbrl.frc.org.uk/fr/2023-01-01/core\"/>") ==
+          "https://xbrl.frc.org.uk/fr/2023-01-01/core/frc-core-2023-01-01-label.xml"
+    @test EDGAR._frc_core_label_url("no frc namespace here") === nothing
+
+    labxml = read(joinpath(dir, "frc-core-label-min.xml"), String)
+    lm = EDGAR._concept_labels(replace(labxml, "#core_" => "#uk-core_"))
+    @test lm["uk-core:NetAssetsLiabilities"] == "Net assets (liabilities)"
+    @test lm["uk-core:Equity"] == "Equity"
+    @test lm["uk-core:TurnoverRevenue"] == "Turnover / revenue"
+    # Without the rewrite the keys would be `core:…`, NOT matching `uk-core:` facts.
+    @test !haskey(EDGAR._concept_labels(labxml), "uk-core:NetAssetsLiabilities")
+end
+
 # iXBRL decimal-comma parsing — focused, individually-runnable testsets (see the file):
 #   julia --project=. test/test_decimal_comma.jl
 include(joinpath(@__DIR__, "test_decimal_comma.jl"))
@@ -1276,6 +1295,18 @@ end
             @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))
         catch e
             @info "Skipping EU oracle validation (network): $e"; @test true
+        end
+    end
+
+    @testset "Companies House FRC labels (live)" begin
+        # Fetch the real published FRC core label linkbase and resolve labels on the committed fixture.
+        try
+            f = fetch_filing(CompaniesHouse(), joinpath(@__DIR__, "data", "companies_house", "small-frs102.html"))
+            lm = label_map(f)
+            @test get(lm, "uk-core:NetAssetsLiabilities", "") == "Net assets (liabilities)"
+            @test all(r -> !isempty(r.label), facts(f; classify = true, labels = true))
+        catch e
+            @info "Skipping CH FRC label fetch (network): $e"; @test true
         end
     end
 

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic minimal FRC `core` LABEL linkbase (NOT the real ~6 MB published file). It reproduces
+     the real structure — concepts referenced by the schema element-id prefix `core_` — to test CH
+     label resolution offline: `_fetch_linkbase(::CompaniesHouse, _, "lab")` rewrites `#core_` to the
+     canonical `#uk-core_` so `_concept_labels` keys match the (canonicalized) fact concepts. -->
+<linkbase xmlns="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <labelLink xlink:type="extended" xlink:role="http://www.xbrl.org/2003/role/link">
+    <loc xlink:href="frc-core-2023-01-01.xsd#core_NetAssetsLiabilities" xlink:label="core_NetAssetsLiabilities" xlink:type="locator"/>
+    <labelArc xlink:arcrole="http://www.xbrl.org/2003/arcrole/concept-label" xlink:from="core_NetAssetsLiabilities" xlink:to="lbl_NetAssetsLiabilities" xlink:type="arc"/>
+    <label xlink:label="lbl_NetAssetsLiabilities" xlink:role="http://www.xbrl.org/2003/role/label" xlink:type="resource" xml:lang="en">Net assets (liabilities)</label>
+
+    <loc xlink:href="frc-core-2023-01-01.xsd#core_Equity" xlink:label="core_Equity" xlink:type="locator"/>
+    <labelArc xlink:arcrole="http://www.xbrl.org/2003/arcrole/concept-label" xlink:from="core_Equity" xlink:to="lbl_Equity" xlink:type="arc"/>
+    <label xlink:label="lbl_Equity" xlink:role="http://www.xbrl.org/2003/role/label" xlink:type="resource" xml:lang="en">Equity</label>
+
+    <loc xlink:href="frc-core-2023-01-01.xsd#core_TurnoverRevenue" xlink:label="core_TurnoverRevenue" xlink:type="locator"/>
+    <labelArc xlink:arcrole="http://www.xbrl.org/2003/arcrole/concept-label" xlink:from="core_TurnoverRevenue" xlink:to="lbl_TurnoverRevenue" xlink:type="arc"/>
+    <label xlink:label="lbl_TurnoverRevenue" xlink:role="http://www.xbrl.org/2003/role/label" xlink:type="resource" xml:lang="en">Turnover / revenue</label>
+  </labelLink>
+</linkbase>

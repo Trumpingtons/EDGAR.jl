@@ -224,9 +224,13 @@ New dir `src/filing_systems/companies_house/`. No network.
    (exported; `system_headers(::CompaniesHouse)` = Basic-auth from `:api_key`/`COMPANIES_HOUSE_API_KEY`).
 2. ✅ `fetch_filing(::CompaniesHouse, ::FilingHandle)`: metadata → `{metadata}/content` with iXBRL
    `Accept`; `:ixbrl`/`:xbrl`/`:pdf` typing; cross-host `Authorization` strip relied on from C0.
-   *(Build-checked: compiles, routes, auth header round-trips; live shapes confirmed at the step-3 gate.)*
-3. 🚦 **GATE** — first live API call (needs your CH API key + network); confirm the JSON/redirect
-   shapes against the assumptions in §1 before building further.
+   *(Build-checked: compiles, routes, auth header round-trips.)*
+3. ✅ **Shapes reconciled against the CH OpenAPI specs** (specs.developer.ch.gov.uk /
+   developer-specs.company-information.service.gov.uk) — filing-history item fields
+   (`transaction_id`/`category`/`type`/`date`/`links.document_metadata`) and the document content
+   endpoint (`{metadata}/content`, `Accept`-selected, **302** to storage, 406 on unsupported type) all
+   match `discovery.jl`; no code change needed. A **live call** remains only as final runtime
+   confirmation (optional; needs a key the user couldn't mint — keyless bulk covers everything else).
 4. ◑ **Fixtures + moved C1 offline test — DONE keylessly via the bulk Accounts Data Product** (the API
    key turned out to be a dead end for the user; the bulk product needs none). Committed
    `test/data/companies_house/{small-frs102.html (real, 00021497), ns5-canon-min.html (synthetic), NOTICE.md}`
@@ -265,13 +269,23 @@ labels for ESEF, which has the same gap — see [esef-expansion memory]).
 
 **Steps**
 
-1. ☐ `<link:schemaRef href=…>` resolver → FRC standard-taxonomy entry-point URL.
-2. ☐ Registry map `FRC entry point → {pre,cal,lab} linkbase URLs` for common FRS-102/101/105 versions.
-3. ☐ `_fetch_linkbase(::CompaniesHouse, …)` via the registry; factor a shared `_standard_linkbase`
-   helper and reuse it for ESEF `ifrs-full` standard labels.
-4. 🚦 **GATE** — if the registry proves brittle across taxonomy years, decide on the DTS-walk fallback
-   before investing in it.
-5. ☐ Label/statement tests (trimmed FRC linkbase fixture, à la GLEIF).
+1. ✅ Resolver — **simpler than the registry**: the FRC `core` label-linkbase URL **derives directly
+   from the `core` namespace** the instance declares. Probed the live taxonomy (FRS-102 entry point →
+   imports `frc-core-<date>.xsd` → linkbaseRef `frc-core-<date>-label.xml`), and the concepts sit in
+   `http://xbrl.frc.org.uk/fr/<date>/core`, so `_frc_core_label_url` maps that namespace →
+   `https://xbrl.frc.org.uk/fr/<date>/core/frc-core-<date>-label.xml`. No schemaRef/DTS walk needed
+   for labels.
+2. ✅ (folded into 1 — derivation replaces the registry for the core label linkbase.)
+3. ✅ `_fetch_linkbase(::CompaniesHouse, _, "lab")` fetches that linkbase (keyless public GET,
+   `_CH_TAXONOMY_HEADERS`) and rewrites `#core_` → `#uk-core_` so `_concept_labels` keys match the
+   canonicalized facts. **Verified live**: `uk-core:NetAssetsLiabilities` → "Net assets (liabilities)",
+   all 12 facts on the real fixture labelled. (pre/cal still return ""; vocab classification suffices.
+   ESEF `ifrs-full` standard-label reuse: noted, deferred — the derivation pattern transfers.)
+4. ✅ **GATE resolved**: derivation is robust across years (date comes from the namespace), so the
+   DTS-walk fallback is **not needed** for core labels.
+5. ✅ Tests: offline "Companies House: FRC standard-taxonomy labels (C3, offline)" (6/6, derivation +
+   `#core_`→`#uk-core_` re-keying against synthetic `frc-core-label-min.xml`) + network-gated live
+   "Companies House FRC labels (live)" (fetches the real ~6 MB linkbase).
 6. 🚦 **GATE** — approval to run the suite; on green, approval to commit C3.
 
 ---

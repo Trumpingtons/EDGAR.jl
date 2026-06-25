@@ -25,9 +25,6 @@ companies); [`CompaniesHouseApi`](@ref) is the keyed, per-company alternative. S
 struct CompaniesHouseBulk <: FilingSource end
 
 const _CH_BULK_BASE = "https://download.companieshouse.gov.uk"
-# Polite client identifier for the (public, keyless) bulk host — supplied explicitly so the request
-# does not go down `fetch_url`'s default SEC-User-Agent path (which requires a SEC contact UA).
-const _CH_BULK_HEADERS = ["User-Agent" => "EDGAR.jl (https://github.com/Trumpingtons/EDGAR.jl)"]
 
 # Single-slot memo of the last bulk archive fetched, keyed by URL (the archives exceed the HTTP cache
 # size cap, so they are not disk-cached). Mirrors ESEF's `_ESEF_PKG_MEMO`.
@@ -37,7 +34,7 @@ const _CH_BULK_MEMO = Ref{Tuple{String,Vector{UInt8}}}(("", UInt8[]))
 function _ch_bulk_bytes(src::AbstractString)
     src == _CH_BULK_MEMO[][1] && return _CH_BULK_MEMO[][2]
     bytes = if startswith(src, "http://") || startswith(src, "https://")
-        b = fetch_url(src; headers = _CH_BULK_HEADERS)
+        b = fetch_url(src; headers = _CH_TAXONOMY_HEADERS)
         b === nothing && error("could not fetch Companies House bulk archive $(repr(src))")
         Vector{UInt8}(b)
     else

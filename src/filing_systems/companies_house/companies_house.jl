@@ -28,6 +28,12 @@ struct CompaniesHouse <: FilingSystem end
 # `system_headers(::CompaniesHouse)` and discovery are wired in C2.
 system_tag(::CompaniesHouse) = :companies_house
 
+# Polite client identifier for Companies House's PUBLIC, keyless endpoints — the bulk Accounts Data
+# Product (download.companieshouse.gov.uk) and the FRC standard taxonomy (xbrl.frc.org.uk). Supplied
+# explicitly so these requests don't take `fetch_url`'s default SEC-User-Agent path (which demands a
+# SEC contact UA). The authenticated REST/Document API uses `system_headers(::CompaniesHouse)` instead.
+const _CH_TAXONOMY_HEADERS = ["User-Agent" => "EDGAR.jl (https://github.com/Trumpingtons/EDGAR.jl)"]
+
 # The Companies House registration-number scheme carried by an accounts instance's context entity
 # identifier.
 const _CH_SCHEME = "http://www.companieshouse.gov.uk/"
@@ -130,9 +136,36 @@ function fetch_filing(::CompaniesHouse, src::AbstractString;
     return Filing(CompaniesHouse(), ent, r, basename(src), src, :ixbrl, content)
 end
 
-# Companies House method of the per-system linkbase fetcher (see core/extract_xbrl.jl). CH accounts
-# carry NO bundled linkbases and NO issuer extension — they reference the PUBLISHED FRC standard
-# taxonomy by URL. Resolving that to fetch real presentation/calculation/label linkbases is N4 (C3);
-# until then this returns "" (tolerated by classification, which falls back to the prefix-keyed
-# UK-GAAP vocabulary). Face-statement classification therefore works; standardised labels do not yet.
-_fetch_linkbase(::CompaniesHouse, f::Filing, suffix::AbstractString) = ""
+# ── Standard-taxonomy linkbase delegation (N4 / C3) ─────────────────────────────────────────────
+#
+# CH accounts carry NO bundled linkbases and NO issuer extension — they reference the PUBLISHED FRC
+# standard taxonomy by URL. The financial-statement concepts live in the FRC `core` namespace
+# (http://xbrl.frc.org.uk/fr/<date>/core); its **label** linkbase is published at a derivable URL
+# alongside the schema, so we fetch it to give real human-readable labels (classification already
+# works via vocab_ukgaap without it). The linkbase keys concepts by the schema's element-id prefix
+# `core_` (→ `core:…`); the instance's concepts are canonicalized to `uk-core:…` (see
+# `_ch_canonicalize`), so we rewrite `#core_` → `#uk-core_` in the linkbase before parsing so the keys
+# match. Presentation/calculation linkbases are not fetched yet (vocab classification suffices).
+
+# The FRC `core` label-linkbase URL derived from the core namespace declared in a CH instance, or
+# `nothing`. Namespace `http://xbrl.frc.org.uk/fr/<date>/core` ⇒ label
+# `https://xbrl.frc.org.uk/fr/<date>/core/frc-core-<date>-label.xml`.
+function _frc_core_label_url(content::AbstractString)
+    m = match(r"https?://xbrl\.frc\.org\.uk/fr/(\d{4}-\d{2}-\d{2})/core", content)
+    m === nothing && return nothing
+    date = m.captures[1]
+    return "https://xbrl.frc.org.uk/fr/$date/core/frc-core-$date-label.xml"
+end
+
+# Companies House method of the per-system linkbase fetcher (see core/extract_xbrl.jl). Only the FRC
+# `core` LABEL linkbase is resolved (the financial concepts' human labels); presentation/calculation
+# return "" (classification falls back to the prefix-keyed UK-GAAP vocabulary, which works). The fetch
+# is a public, keyless GET of the standard taxonomy; "" on any failure (tolerated downstream).
+function _fetch_linkbase(::CompaniesHouse, f::Filing, suffix::AbstractString)
+    suffix == "lab" || return ""
+    url = _frc_core_label_url(f.content)
+    url === nothing && return ""
+    xml = fetch_url(url; headers = _CH_TAXONOMY_HEADERS)
+    xml === nothing && return ""
+    return replace(String(xml), "#core_" => "#uk-core_")   # element-id prefix → canonical instance prefix
+end

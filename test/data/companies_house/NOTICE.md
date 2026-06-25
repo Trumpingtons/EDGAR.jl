@@ -18,3 +18,15 @@ test fixture for parsing the public iXBRL accounts format.
 A **synthetic** minimal inline-XBRL document (not a real filing) that binds the FRC `core` namespace
 to a generic `ns5` prefix, to test FRC prefix canonicalization (`_ch_canonicalize`). Contains no real
 company data.
+
+## `bulk-min.zip`
+
+A tiny **synthetic** bulk-archive slice (one entry, `ns5-canon-min.html` renamed to the bulk
+`Prod223_…_<number>_<date>.html` convention) to test the keyless `CompaniesHouseBulk` discover/fetch
+path offline. No real company data.
+
+## `frc-core-label-min.xml`
+
+A **synthetic** trimmed FRC `core` label linkbase (not the real ~6 MB published file) reproducing its
+structure for a few concepts, to test Companies House label resolution (`#core_` → `#uk-core_`
+re-keying) offline. The real linkbase is fetched live only under the network-gated tests.
