@@ -43,9 +43,11 @@ include("core/taxonomy/vocab_ifrs.jl")      # 🟢 ifrs-full classification voca
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations
+include("filing_systems/esef/report_package.jl") # 🔵 ESEF report-package ZIP reader (offline; ZipArchives)
+include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path) + bundled-linkbase fetch
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
-export FilingSystem, SEC, EntityId,
+export FilingSystem, SEC, ESEF, EntityId,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,

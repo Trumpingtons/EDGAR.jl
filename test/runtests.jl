@@ -1003,3 +1003,42 @@ end
         isfile(path) && rm(path)
     end
 end
+
+@testset "ESEF: offline report-package extraction (B1)" begin
+    # A real (size-reduced) ESEF report package: GLEIF's 2024 annual report as a classic XBRL
+    # instance bundled with its presentation/calculation/label linkbases (see the NOTICE beside it).
+    # Exercises the FilingSystem seam end-to-end with NO network: a non-SEC system (ESEF), LEI
+    # identity (not CIK), the ifrs-full taxonomy (not us-gaap), and linkbases bundled in the ZIP
+    # (not loose Archives files) — all through the same `fetch_filing`/`facts` API as SEC.
+    pkg = joinpath(@__DIR__, "data", "esef", "gleif-2024-min.zip")
+    f = fetch_filing(ESEF(), pkg)
+    @test f.system isa ESEF
+    @test f.kind === :xbrl
+    @test f.entity == EntityId(:lei, "506700GE1G29325QX363")   # identity is the LEI, read from the instance
+
+    rows = facts(f; classify = true, labels = true)
+    @test length(rows) > 100                                    # the IFRS instance's numeric facts
+
+    # IFRS concepts are classified into face statements via the bundled presentation linkbase + the
+    # shared ifrs-full vocabulary (vocab_ifrs.jl) — no SEC FilingSummary involved.
+    assets = filter(r -> r.concept == "ifrs-full:Assets", rows)
+    @test !isempty(assets)
+    @test all(r -> r.statement == "BalanceSheet", assets)
+    @test any(r -> r.period_end == Date(2024, 12, 31) && r.value ≈ 1.8814882e7 && r.unit == "USD", assets)
+
+    pl = filter(r -> r.concept == "ifrs-full:ProfitLoss" && r.period_end == Date(2024, 12, 31), rows)
+    @test !isempty(pl)
+    @test all(r -> r.statement == "IncomeStatement", pl)
+
+    @test any(r -> r.statement == "BalanceSheet", rows)
+    @test any(r -> r.statement == "IncomeStatement", rows)
+    @test any(r -> r.statement == "CashFlow", rows)
+
+    # The linkbase-driven enrichment API resolves against the ZIP-bundled linkbases.
+    @test statement_map(f)["ifrs-full:Assets"] == "BalanceSheet"
+    @test !isempty(calculations(f))
+    # Labels for the issuer's EXTENSION concepts are bundled (`_lab-en.xml`); ifrs-full standard
+    # labels are not shipped in the package, so only extension concepts carry a native label here.
+    lm = label_map(f)
+    @test any(k -> startswith(k, "gleif:"), keys(lm))
+end

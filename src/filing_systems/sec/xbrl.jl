@@ -12,8 +12,10 @@
 # Fetch a filing's XBRL linkbase by suffix (`"pre"` presentation, `"cal"` calculation,
 # `"lab"` label) as a loose `_<suffix>.xml` file in the filing's Archives directory; "" if absent.
 # Note: inline-only filers often ship no loose linkbases at all — classification then falls back
-# to FilingSummary.xml + the R-files (see `_filing_summary_statements`).
-function _fetch_linkbase(f::Filing, suffix::AbstractString)
+# to FilingSummary.xml + the R-files (see `_filing_summary_statements`). The SEC method of the
+# per-system linkbase fetcher (generic dispatch declared in core/filing_system.jl); other systems
+# (e.g. ESEF, which bundles linkbases in the report-package zip) supply their own `::ESEF` method.
+function _fetch_linkbase(::SEC, f::Filing, suffix::AbstractString)
     base = _filing_dir(f)
     names = try
         [String(it.name) for it in _get_json("$base/index.json").directory.item]

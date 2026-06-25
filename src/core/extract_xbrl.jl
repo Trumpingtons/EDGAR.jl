@@ -225,6 +225,16 @@ _filing_selection(f::Filing, fcts) =
     Selection(; cik = f.entity.value, accession = f.ref, url = f.url, selector = "",
               kind = :filing, facts = fcts)
 
+# Per-system linkbase fetcher (N4/D5). Locating a filing's presentation/calculation/label linkbase
+# is `fetch`-side and system-specific: SEC linkbases are loose sibling files in the Archives dir
+# (`_fetch_linkbase(::SEC, …)` in filing_systems/sec/xbrl.jl); ESEF bundles them in the
+# report-package zip (`_fetch_linkbase(::ESEF, …)`). The generic, system-agnostic enrichment API
+# (`statement_map`, `label_map`, `calculations`, `facts(f; classify, labels)`) dispatches through
+# this one seam, so a new system supplies only its linkbase slice. Returns the linkbase XML text, or
+# "" when the filing carries no such linkbase (which classification tolerates — see the FilingSummary
+# fallback for SEC inline-only filers).
+_fetch_linkbase(f::Filing, suffix::AbstractString) = _fetch_linkbase(f.system, f, suffix)
+
 # ── Statement classification from the presentation linkbase (W5) ─────────────
 # The authoritative grouping of concepts into financial statements is the filing's own
 # presentation linkbase (`*_pre.xml`): each extended-link role is a section. We classify each role

@@ -20,6 +20,10 @@ texput.log
 # On-disk HTTP response cache (created at runtime by fetch_url)
 /.edgar_cache/
 
+# Raw ESEF report packages — multi-MB downloads kept locally for debugging/regeneration.
+# The committed offline fixture is a small derived package in test/data/esef/ (not under raw/).
+/test/data/esef/raw/
+
 # Claude Code local agent dir (settings, transcripts) — not part of the package
 /.claude/
 
