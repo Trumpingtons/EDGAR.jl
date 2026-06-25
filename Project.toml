@@ -30,7 +30,9 @@ julia = "1.12"
 
 [extras]
 DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+YFinance = "e4b3b0a2-f9a3-42f3-aabb-32142cceaf77"
 
 [targets]
-test = ["Test", "DuckDB"]
+test = ["Test", "DuckDB", "YFinance", "Printf"]

@@ -1,77 +1,16 @@
 using Test
 using EDGAR
 using Dates
+using HTTP: URIs   # for asserting the discovery filter querystring (B2)
 import DuckDB                 # loads the EDGARDuckDBExt package extension (qualified, no name clash)
 using DuckDB: DBInterface
 
 # The SEC requires a User-Agent; set one so the network smoke tests can run.
 set_user_agent("EDGAR.jl test suite noreply@example.com")
 
-@testset "EDGAR basic" begin
-    # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
-    try
-        res = EDGAR.filings_by_cik("0000320193"; forms = "8-K")
-        @test res isa Vector && (isempty(res) || haskey(res[1], :form))
-        # fetch the most recent filing into memory and save it
-        f = EDGAR.fetch_filing("0000320193", res[1].accession)
-        ok = f isa EDGAR.Filing && f.kind in (:ixbrl, :xbrl, :html) && !isempty(f.content)
-        saved = mktempdir() do d
-            isfile(EDGAR.save_filing(f; destdir = d))
-        end
-        @test ok && saved
-    catch e
-        @info "Skipping network smoke test: $e"
-        @test true
-    end
-end
-
-@testset "EDGAR XBRL / search / ticker" begin
-    # Smoke tests for the XBRL, full-text-search and ticker endpoints. Each
-    # function returns parsed JSON on success and throws on failure, so the
-    # whole block is wrapped to stay green offline or when the SEC rate-limits.
-    try
-        # Call on plain lines so a network/403 error propagates to the catch
-        # below (a throw inside `@test` would be recorded as an error instead).
-        facts = EDGAR.company_facts("0000320193")
-        concept = EDGAR.company_concept("0000320193", "us-gaap", "NetIncomeLoss")
-        frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
-        search = EDGAR.full_text_search("climate risk"; forms = "10-K")
-        byfiler = EDGAR.filings_by_cik(320193; forms = "8-K")
-        prof = EDGAR.profile(320193)
-        tk = EDGAR.cik("AAPL"; by = :ticker)
-        @test all(x -> x !== nothing, (facts, concept, frames))
-        # both searches return plain row tables; text rows carry score, filer rows isXBRL
-        @test search isa Vector && haskey(search[1], :score)
-        @test byfiler isa Vector && haskey(byfiler[1], :isXBRL)
-        @test prof.entityType in ("operating", "investment") && !isempty(prof.name)
-        @test isempty(tk) || length(only(tk).cik) == 10
-    catch e
-        @info "Skipping XBRL/search network smoke test: $e"
-        @test true
-    end
-end
-
-@testset "cik table" begin
-    # cik() returns a Tables.jl row table (Vector of NamedTuples with String
-    # fields); cik(q; by) filters it by name (substring), ticker (exact) or :any
-    # (either), always returning the same type. :any tests each row once, so a row
-    # matching both columns is not duplicated. Network-wrapped for CI/offline.
-    try
-        rows = EDGAR.cik()
-        byname = EDGAR.cik("nvidia"; by = :name)
-        byticker = EDGAR.cik("nvda"; by = :ticker)
-        anyrows = EDGAR.cik("MA")   # default :any; "ma" in many names AND ticker MA -> no dup
-        shape = (rows isa Vector, eltype(rows), !isempty(rows),
-            all(r -> occursin("nvidia", lowercase(r.entity)), byname),
-            length(byticker) <= 1 && eltype(byticker) === eltype(rows),
-            allunique(anyrows))
-        @test shape == (true, @NamedTuple{entity::String, ticker::String, cik::String}, true, true, true, true)
-    catch e
-        @info "Skipping cik network smoke test: $e"
-        @test true
-    end
-end
-
+# Network-dependent tests are grouped (below) and gated by RUN_NETWORK so the suite can run
+# offline only:  EDGAR_NETWORK_TESTS=false julia --project=. -e 'using Pkg; Pkg.test()'
+const RUN_NETWORK = get(ENV, "EDGAR_NETWORK_TESTS", "true") != "false"
 @testset "_normalize_cik (offline)" begin
     # Integers and strings, padded or not, normalize to the 10-digit form;
     # empty, non-numeric and over-long inputs throw ArgumentError.
@@ -1042,3 +981,194 @@ end
     lm = label_map(f)
     @test any(k -> startswith(k, "gleif:"), keys(lm))
 end
+
+@testset "ESEF: discovery + handle fetch (B2)" begin
+    # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
+    # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →
+    # `fetch_filing(::ESEF, h::FilingHandle)` → `fetch_filing(::ESEF, src; entity, ref)` with no
+    # network: identity + ref come from the handle (as discovery would supply them), not re-parsed.
+    pkg = joinpath(@__DIR__, "data", "esef", "gleif-2024-min.zip")
+    h = FilingHandle(; system = ESEF(), entity = EntityId(:lei, "506700GE1G29325QX363"),
+                     ref = "gleif-2024", url = pkg, period_end = Date(2024, 12, 31), country = "CH")
+    @test h.system isa ESEF
+    f = fetch_filing(h)
+    @test f.system isa ESEF
+    @test f.entity == EntityId(:lei, "506700GE1G29325QX363")   # taken from the handle
+    @test f.ref == "gleif-2024"                                 # taken from the handle
+    @test any(r -> r.concept == "ifrs-full:Assets" && r.statement == "BalanceSheet",
+              facts(f; classify = true))
+
+    # The filings.xbrl.org filter querystring is built correctly (pure; no network).
+    @test EDGAR._fxbrl_filter(Pair{String,String}[]) == ""
+    fs = EDGAR._fxbrl_filter(["entity.identifier" => "549300P8N0P6KDGTJ206"])
+    @test startswith(fs, "&filter=")
+    @test occursin("entity.identifier", URIs.unescapeuri(fs))
+    @test occursin("549300P8N0P6KDGTJ206", URIs.unescapeuri(fs))
+
+end
+
+# iXBRL decimal-comma parsing — focused, individually-runnable testsets (see the file):
+#   julia --project=. test/test_decimal_comma.jl
+include(joinpath(@__DIR__, "test_decimal_comma.jl"))
+
+@testset "find_paragraphs (intra-filing text search, offline)" begin
+    # Search WITHIN one fetched filing for paragraphs containing a literal phrase (jurisdiction-
+    # agnostic; SEC iXBRL and ESEF iXHTML alike). Each hit carries its 1-based paragraph index, and
+    # matching ignores inline markup + collapsed whitespace.
+    html = """<html><body>
+    <p>The Company faces <b>climate-related</b> risks across its operations.</p>
+    <div>We operate many <span>shopping</span> centres in the Nordics.</div>
+    <p>This paragraph mentions nothing relevant.</p>
+    </body></html>"""
+    hits = find_paragraphs(html, "climate-related risks")
+    @test hits isa Vector{@NamedTuple{index::Int, paragraph::String}}
+    @test length(hits) == 1                                   # phrase spans an inline <b> tag
+    @test hits[1].index == 1                                  # first paragraph of the document
+    @test occursin("climate-related risks", lowercase(hits[1].paragraph))
+    # the index locates the paragraph among ALL paragraphs
+    @test EDGAR._paragraphs(html)[hits[1].index] == hits[1].paragraph
+    @test only(find_paragraphs(html, "shopping centres")).index == 2   # phrase spans an inline <span>
+    # case sensitivity
+    @test length(find_paragraphs(html, "CLIMATE-RELATED RISKS")) == 1               # ignorecase default
+    @test isempty(find_paragraphs(html, "Climate-Related Risks"; ignorecase = false))
+    @test isempty(find_paragraphs(html, "absent zzz phrase"))          # "or no paragraph"
+    # the Filing convenience method returns the same row table
+    f = EDGAR.Filing(ESEF(), EntityId(:lei, "L"), "r", "d.xhtml", "https://x/d.xhtml", :ixbrl, html)
+    @test only(find_paragraphs(f, "shopping centres")).index == 2
+end
+
+
+# ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
+if RUN_NETWORK
+# do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
+include(joinpath(@__DIR__, "..", "src", "sources", "arelle_oracle.jl"))   # -> ArelleOracle (needs only EDGAR)
+include(joinpath(@__DIR__, "..", "src", "sources", "yahoo_oracle.jl"))    # -> YahooOracle (uses YFinance)
+@testset "network (live)" begin
+@testset "EDGAR basic" begin
+    # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
+    try
+        res = EDGAR.filings_by_cik("0000320193"; forms = "8-K")
+        @test res isa Vector && (isempty(res) || haskey(res[1], :form))
+        # fetch the most recent filing into memory and save it
+        f = EDGAR.fetch_filing("0000320193", res[1].accession)
+        ok = f isa EDGAR.Filing && f.kind in (:ixbrl, :xbrl, :html) && !isempty(f.content)
+        saved = mktempdir() do d
+            isfile(EDGAR.save_filing(f; destdir = d))
+        end
+        @test ok && saved
+    catch e
+        @info "Skipping network smoke test: $e"
+        @test true
+    end
+end
+
+@testset "EDGAR XBRL / search / ticker" begin
+    # Smoke tests for the XBRL, full-text-search and ticker endpoints. Each
+    # function returns parsed JSON on success and throws on failure, so the
+    # whole block is wrapped to stay green offline or when the SEC rate-limits.
+    try
+        # Call on plain lines so a network/403 error propagates to the catch
+        # below (a throw inside `@test` would be recorded as an error instead).
+        facts = EDGAR.company_facts("0000320193")
+        concept = EDGAR.company_concept("0000320193", "us-gaap", "NetIncomeLoss")
+        frames = EDGAR.xbrl_frames("us-gaap", "Assets", "USD", "CY2022Q4I")
+        search = EDGAR.full_text_search("climate risk"; forms = "10-K")
+        byfiler = EDGAR.filings_by_cik(320193; forms = "8-K")
+        prof = EDGAR.profile(320193)
+        tk = EDGAR.cik("AAPL"; by = :ticker)
+        @test all(x -> x !== nothing, (facts, concept, frames))
+        # both searches return plain row tables; text rows carry score, filer rows isXBRL
+        @test search isa Vector && haskey(search[1], :score)
+        @test byfiler isa Vector && haskey(byfiler[1], :isXBRL)
+        @test prof.entityType in ("operating", "investment") && !isempty(prof.name)
+        @test isempty(tk) || length(only(tk).cik) == 10
+    catch e
+        @info "Skipping XBRL/search network smoke test: $e"
+        @test true
+    end
+end
+
+@testset "cik table" begin
+    # cik() returns a Tables.jl row table (Vector of NamedTuples with String
+    # fields); cik(q; by) filters it by name (substring), ticker (exact) or :any
+    # (either), always returning the same type. :any tests each row once, so a row
+    # matching both columns is not duplicated. Network-wrapped for CI/offline.
+    try
+        rows = EDGAR.cik()
+        byname = EDGAR.cik("nvidia"; by = :name)
+        byticker = EDGAR.cik("nvda"; by = :ticker)
+        anyrows = EDGAR.cik("MA")   # default :any; "ma" in many names AND ticker MA -> no dup
+        shape = (rows isa Vector, eltype(rows), !isempty(rows),
+            all(r -> occursin("nvidia", lowercase(r.entity)), byname),
+            length(byticker) <= 1 && eltype(byticker) === eltype(rows),
+            allunique(anyrows))
+        @test shape == (true, @NamedTuple{entity::String, ticker::String, cik::String}, true, true, true, true)
+    catch e
+        @info "Skipping cik network smoke test: $e"
+        @test true
+    end
+end
+
+@testset "ESEF: live discovery + fetch (B2)" begin
+    # ── Network: live discover + fetch from filings.xbrl.org (wrapped so CI/offline stays green) ──
+    try
+        hs = discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206", year = 2023)  # Citycon Oyj
+        @test !isempty(hs)
+        @test all(x -> x.system isa ESEF && x.entity.scheme === :lei, hs)
+        @test all(x -> startswith(x.url, "https://filings.xbrl.org/"), hs)
+        en = first(filter(x -> endswith(x.url, "-en.zip"), hs))
+        ff = fetch_filing(en)
+        @test ff.kind === :ixbrl                                  # ESEF primary report is inline XBRL
+        rows = facts(ff; classify = true)
+        @test length(rows) > 100
+        @test any(r -> r.concept == "ifrs-full:Assets" && r.statement == "BalanceSheet", rows)
+    catch e
+        @info "Skipping ESEF network discovery test: $e"
+        @test true
+    end
+end
+    # ── Oracle validation: BS / IS / CF for fresh filers, via validate() (see src/sources/) ──
+    @testset "oracle validation: US 10-K Coca-Cola (Yahoo)" begin
+        try
+            y = YahooOracle.validate(:sec, "21344", "KO")
+            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            @test !isempty(present)
+            @test all(r -> r.match, present)                                  # every covered total agrees
+            @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))  # BS/IS/CF covered
+        catch e
+            @info "Skipping US oracle validation (network): $e"; @test true
+        end
+    end
+
+    @testset "oracle validation: UK Jupiter Fund Mgmt (Arelle + Yahoo)" begin
+        try
+            a = ArelleOracle.statements("5493003DJ1G01IMQ7S28")
+            @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
+            @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
+            y = YahooOracle.validate(:esef, "5493003DJ1G01IMQ7S28", "JUP.L")
+            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            @test !isempty(present)
+            @test all(r -> r.match, present)
+            @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))
+        catch e
+            @info "Skipping UK oracle validation (network): $e"; @test true
+        end
+    end
+
+    @testset "oracle validation: EU Signify (Arelle + Yahoo)" begin
+        try
+            a = ArelleOracle.statements("549300072P3J1X8NZO35")
+            @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
+            @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
+            y = YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
+            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            @test !isempty(present)
+            @test all(r -> r.match, present)
+            @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))
+        catch e
+            @info "Skipping EU oracle validation (network): $e"; @test true
+        end
+    end
+
+end  # @testset "network (live)"
+end  # if RUN_NETWORK
