@@ -33,6 +33,11 @@ Filing(cik::AbstractString, accession::AbstractString, document, url, kind, cont
 Base.show(io::IO, f::Filing) =
     print(io, "Filing(", repr(f.kind), ", ", repr(f.document), ", ", length(f.content), " bytes)")
 
+# Search within a fetched filing for paragraphs containing a phrase (see `find_paragraphs` in
+# text.jl for the html method + docs). Defined here because `Filing` is unknown when text.jl loads.
+find_paragraphs(f::Filing, query::AbstractString; ignorecase::Bool=true) =
+    find_paragraphs(f.content, query; ignorecase)
+
 # ── Interactive selection ──────────────────────────────────────────────────
 #
 # The picker (see `select_section`) lets a user click a region in a rendered

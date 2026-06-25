@@ -63,6 +63,65 @@ function clean_text(fragment::AbstractString)
     return strip(txt)
 end
 
+# Block-level tags whose boundaries separate one paragraph from the next. Inline tags (span, b, a,
+# ix:nonFraction, …) are NOT here, so a sentence broken up by inline markup stays one paragraph.
+const _BLOCK_TAG = r"(?is)</?(?:p|div|h[1-6]|li|ul|ol|tr|table|thead|tbody|section|article|header|footer|figure|figcaption|blockquote|pre|br|hr|dd|dt|caption)\b[^>]*>"
+
+# Internal: split a filing's HTML into plain-text paragraphs (block by block). Reduce to <body>, drop
+# script/style, break at block-level tags, then `clean_text` each block (strip inline tags, decode
+# entities, collapse whitespace). Empty blocks are dropped. Jurisdiction-agnostic.
+function _paragraphs(html::AbstractString)
+    bopen = match(r"(?is)<body\b[^>]*>", html)
+    body = if bopen === nothing
+        String(html)
+    else
+        bclose = findlast("</body>", html)
+        String(html[bopen.offset:(bclose === nothing ? lastindex(html) : last(bclose))])
+    end
+    body = replace(body, r"(?is)<script.*?</script>" => " ")
+    body = replace(body, r"(?is)<style.*?</style>" => " ")
+    paras = String[]
+    for chunk in split(replace(body, _BLOCK_TAG => "\n"), '\n')
+        t = clean_text(chunk)
+        isempty(t) || push!(paras, t)
+    end
+    return paras
+end
+
+"""
+    find_paragraphs(f::Filing, query; ignorecase=true) -> Vector{@NamedTuple{index::Int, paragraph::String}}
+    find_paragraphs(html::AbstractString, query; ignorecase=true) -> Vector{…}
+
+Return the paragraphs of a filing whose text contains `query` — a **literal substring** match — each
+paired with its `index` (1-based position among **all** the document's paragraphs), or an empty vector
+if the phrase does not occur. This searches *within* one already-fetched filing (it is jurisdiction-
+agnostic: it works on a SEC iXBRL document or an ESEF iXHTML report alike), unlike
+[`filings_by_text`](@ref), which searches *across* SEC filings to find which ones to fetch.
+
+The `index` locates the hit: it tells you where in the document the paragraph sits and lets you jump
+back to it (and its neighbours) with `EDGAR._paragraphs(f.content)[index]`. The result is a
+[Tables.jl](https://github.com/JuliaData/Tables.jl) row table, so it renders with `PrettyTables`,
+filters, and converts to a `DataFrame` directly.
+
+The markup is reduced to plain-text paragraphs (split at block-level HTML boundaries, inline markup
+stripped, whitespace collapsed), so the match ignores tags and runs of whitespace. `ignorecase=true`
+(the default) matches regardless of case; pass `false` for an exact-case match.
+
+```julia
+f = fetch_filing(320193, "0000320193-23-000106")
+hits = find_paragraphs(f, "climate-related risks")   # [(index=312, paragraph="…"), …]  or  []
+EDGAR._paragraphs(f.content)[hits[1].index]          # jump back to the located paragraph
+```
+"""
+function find_paragraphs(html::AbstractString, query::AbstractString; ignorecase::Bool=true)
+    q = ignorecase ? lowercase(query) : query
+    out = @NamedTuple{index::Int, paragraph::String}[]
+    for (i, p) in enumerate(_paragraphs(html))
+        occursin(q, ignorecase ? lowercase(p) : p) && push!(out, (index = i, paragraph = p))
+    end
+    return out
+end
+
 """
     extract_section(html, names; base_path=nothing) -> Dict{String,String}
 
