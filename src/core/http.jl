@@ -132,8 +132,15 @@ when it expires — is configured through [`set_config`](@ref).
 timeout in seconds (a stalled connection is abandoned after this long with no data,
 so it does not cut off slow-but-steady large downloads), and `file://` URLs are only
 read when `allow_file=true` (for tests).
+
+`headers` overrides the request headers. When `nothing` (the default), the configured SEC
+`User-Agent` is sent — the behaviour every SEC/ESEF call relies on. A non-SEC [`FilingSystem`](@ref)
+passes `headers = system_headers(sys)` instead (e.g. an API-key authorization header), which also
+skips the SEC User-Agent requirement. Sensitive headers such as `Authorization` are stripped by
+HTTP.jl on a cross-host redirect (so a redirect to signed object storage does not leak the key).
 """
-function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false)
+function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false,
+                   headers::Union{Nothing,AbstractVector}=nothing)
     # Support file: for tests only when allow_file=true
     if startswith(url, "file://")
         if !allow_file
@@ -170,11 +177,14 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         end
     end
 
-    ua = get_user_agent()   # throws a clear error if unset, before any network call
+    # Default (headers===nothing): the configured SEC User-Agent — get_user_agent throws a clear
+    # error if unset, before any network call. An explicit `headers` (e.g. system_headers for a keyed
+    # FilingSystem) replaces it and bypasses the SEC User-Agent requirement.
+    req_headers = headers === nothing ? ["User-Agent" => get_user_agent()] : headers
     CACHE_METRICS[:requests] += 1
     r = nothing
     try
-        r = http_get(url, headers=["User-Agent"=>ua], read_idle_timeout=timeout)
+        r = http_get(url, headers=req_headers, read_idle_timeout=timeout)
     catch e
         @info "fetch_url error: $e"
     end
@@ -211,8 +221,9 @@ end
 # Internal: fetch `url` through the cached, User-Agent-aware `fetch_url` and
 # parse the body as JSON. Throws if the request fails (bad User-Agent, network
 # error, or the resource does not exist).
-function _get_json(url::AbstractString; use_cache::Bool=true)
-    body = fetch_url(url; use_cache = use_cache)
+function _get_json(url::AbstractString; use_cache::Bool=true,
+                   headers::Union{Nothing,AbstractVector}=nothing)
+    body = fetch_url(url; use_cache = use_cache, headers = headers)
     body === nothing && error("EDGAR request failed: $url (network error, SEC rate limit, or the resource does not exist)")
     return JSON3.read(body)
 end

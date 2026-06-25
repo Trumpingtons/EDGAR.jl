@@ -15,6 +15,16 @@ end
 # cache_mode defaults to :temporary — ephemeral, wiped when the process exits.
 const CONFIG = EDGARConfig(nothing, nothing, nothing, nothing, String[], false, nothing, :temporary)
 
+# Per-FilingSystem credentials registry (N3). Keyed by a system tag `Symbol` (`:sec`,
+# `:companies_house`, …); each entry maps a credential key (`:api_key`, …) to its value. Different
+# systems authenticate differently — SEC needs only a descriptive User-Agent, while the Companies
+# House and EDINET APIs require an API key — so credentials are stored per system rather than as flat
+# config fields. Populated via `set_credentials(::FilingSystem; …)` and read via `system_headers`
+# (both in core/filing_system.jl, where the `FilingSystem` types are defined). The SEC User-Agent
+# keeps its own dedicated `CONFIG.user_agent` slot for backward compatibility; `set_user_agent` is its
+# sugar.
+const CREDENTIALS = Dict{Symbol,Dict{Symbol,String}}()
+
 # Lazily-created per-process temp cache directory. mktempdir registers an atexit
 # hook that deletes it when the Julia process exits, so the :temporary cache is
 # discarded automatically (process-scoped, like an in-memory DB but on disk).

@@ -129,14 +129,22 @@ The only change that touches **shared** code (`config.jl` + `http.jl`), so do it
 
 **Steps**
 
-1. ☐ Add `CREDENTIALS` store + `set_credentials(::FilingSystem; …)` + `system_headers(::FilingSystem)`
-   in `config.jl`; SEC methods (`system_headers(::SEC)` → UA header).
-2. ☐ Re-base `set_user_agent`/`get_user_agent` as SEC sugar over the store; keep public API, the
-   `SEC_USER_AGENT` env path, and the "throws when unset" behaviour byte-for-byte.
-3. ☐ Generalize `fetch_url` to accept `headers=nothing` (default ⇒ today's SEC-UA path unchanged);
-   route callers that need a system through `system_headers`.
-4. ☐ Cross-host redirect: ensure `Authorization` is **not** forwarded to a redirect target (the S3 case).
-5. ☐ Write unit tests (no network) for the above.
+1. ✅ Add `CREDENTIALS` store + `set_credentials(::FilingSystem; …)` + `system_headers(::FilingSystem)`;
+   SEC methods (`system_headers(::SEC)` → UA header). *(store in config.jl; dispatched methods in
+   filing_system.jl — config.jl is included before the `FilingSystem` types exist. `set_credentials`
+   exported.)*
+2. ✅ Unify under `set_credentials`. *Tests forced a change of plan:* `runtests.jl` sets
+   `CONFIG.user_agent=nothing` and expects `get_user_agent()` to throw, and `set_config(user_agent=…)`
+   writes that slot — so `CONFIG.user_agent` **must stay** SEC's canonical store. `set_user_agent`/
+   `get_user_agent` left byte-for-byte; added `set_credentials(::SEC; user_agent)` that **routes to
+   `set_user_agent`** (prevents the footgun of the generic method writing the wrong place).
+3. ✅ `fetch_url(...; headers=nothing)` — default reproduces the SEC-UA path exactly; explicit
+   `headers` replaces it and bypasses the SEC UA requirement. `_get_json` passes `headers` through too.
+4. ✅ Cross-host redirect — **no code change needed**: HTTP.jl strips `SENSITIVE_HEADERS`
+   (incl. `Authorization`) on a non-same-domain redirect (RedirectRequest.jl). Documented in the
+   `fetch_url` docstring; confirm live against the S3 hop at C2.
+5. ✅ Offline tests added (`"per-system credentials (N3, offline)"` in runtests.jl) — store/read/merge,
+   unknown-key ⇒ nothing, SEC routing + validation, `system_headers(::SEC)`. *(not yet run — gate)*
 6. 🚦 **GATE** — request approval to run the full suite once; on green, request approval to commit C0.
 
 ### C1 — offline parse  *(mirrors ESEF B1)*

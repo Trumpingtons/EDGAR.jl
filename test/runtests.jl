@@ -79,6 +79,37 @@ end
     @test_throws ArgumentError EDGAR.get_user_agent()
 end
 
+# A throwaway keyed FilingSystem to exercise the generic credentials registry before a real keyed
+# system (Companies House) exists. Defined at top level so it is available when the testset runs.
+struct _CredTestSys <: FilingSystem end
+EDGAR.system_tag(::_CredTestSys) = :_credtest
+
+@testset "per-system credentials (N3, offline)" begin
+    saved_ua = EDGAR.CONFIG.user_agent
+
+    # Generic keyed system: store, read back, merge (not replace), unknown key ⇒ nothing.
+    set_credentials(_CredTestSys(); api_key = "abc123", secret = "s3cr3t")
+    @test EDGAR.get_credential(_CredTestSys(), :api_key) == "abc123"
+    @test EDGAR.get_credential(_CredTestSys(), :secret) == "s3cr3t"
+    @test EDGAR.get_credential(_CredTestSys(), :missing) === nothing
+    set_credentials(_CredTestSys(); api_key = "xyz")            # merge
+    @test EDGAR.get_credential(_CredTestSys(), :api_key) == "xyz"
+    @test EDGAR.get_credential(_CredTestSys(), :secret) == "s3cr3t"
+    # A system with nothing stored ⇒ nothing, no error.
+    @test EDGAR.get_credential(SEC(), :api_key) === nothing
+
+    # SEC routing: set_credentials(SEC(); user_agent) delegates to set_user_agent (validated + stored
+    # in the dedicated slot), and system_headers(::SEC) reflects it.
+    @test set_credentials(SEC(); user_agent = "Jane Doe jane@example.com") == "Jane Doe jane@example.com"
+    @test EDGAR.get_user_agent() == "Jane Doe jane@example.com"
+    @test EDGAR.system_headers(SEC()) == ["User-Agent" => "Jane Doe jane@example.com"]
+    @test_throws ArgumentError set_credentials(SEC(); user_agent = "no-email")   # validated like set_user_agent
+    @test_throws ArgumentError set_credentials(SEC())                            # user_agent required
+
+    delete!(EDGAR.CREDENTIALS, :_credtest)
+    EDGAR.CONFIG.user_agent = saved_ua
+end
+
 @testset "persist/unpersist user-agent (offline)" begin
     depot = mktempdir()   # never touch the real startup.jl
     path = persist_user_agent("Jane Doe jane@example.com"; depot = depot)
