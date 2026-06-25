@@ -174,15 +174,22 @@ New dir `src/filing_systems/companies_house/`. No network.
 
 **Steps**
 
-1. ☐ New dir `companies_house/`; `struct CompaniesHouse <: FilingSystem`; export it; wire include.
-2. ☐ `_CH_SCHEME` + `_ch_number(content)` identity parse.
-3. ☐ `fetch_filing(::CompaniesHouse, path)` for a local iXBRL file, with `:ixbrl`/`:pdf` format typing.
-4. ☐ `_fetch_linkbase(::CompaniesHouse, …) = ""` stub (real linkbases = C3).
-5. ☐ `vocab_ukgaap.jl` (FRC prefixes) + include after `vocab_ifrs.jl`.
-6. 🚦 **GATE** — choose & obtain a small real CH iXBRL fixture (source/licence decision); commit it
-   + NOTICE on approval.
-7. ☐ Offline testset against the fixture.
-8. 🚦 **GATE** — approval to run the full suite; on green, approval to commit C1.
+1. ✅ New dir `companies_house/`; `struct CompaniesHouse <: FilingSystem`; exported; include wired
+   (after esef/discovery.jl). `system_tag(::CompaniesHouse) = :companies_house`.
+2. ✅ `_CH_SCHEME` + `_ch_number(content)` identity parse (regex mirrors `_esef_lei`).
+3. ✅ `fetch_filing(::CompaniesHouse, src)` for a local path or URL; `%PDF` magic-byte → `:pdf` typed
+   (empty content, url kept), else `:ixbrl` with parsed company-number identity.
+4. ✅ `_fetch_linkbase(::CompaniesHouse, …) = ""` stub (real FRC linkbases = C3).
+5. ✅ `vocab_ukgaap.jl` (FRC `core` prefix, first-cut concept set) + include after `vocab_ifrs.jl`;
+   registered in `_TAXONOMY_VOCABULARIES`. *(Not yet load/run-verified — that's the step 8 gate.)*
+6. ⏸ **DEFERRED to C2** (decided 2026-06-25) — fixture acquisition + offline test. Cleanly obtaining
+   real CH iXBRL fixtures needs the Document API key, which is built in C2; rather than commit
+   hand-scraped files now, we acquire the fixture set via the API mid-C2 (see C2 step 4). C1 **code**
+   is committed now, **unverified by a fixture test until C2** (acknowledged trade-off). The
+   `vocab_ukgaap` concept set is a first cut, tuned against the real tags at that point.
+   (Was: C1 steps 6–8.)
+7. → see **C2 step 4**.
+8. → see **C2 step 4** (test) / **C2 step 7** (commit).
 
 ### C2 — discovery + fetch  *(mirrors ESEF B2; needs C0)*
 
@@ -218,9 +225,19 @@ New dir `src/filing_systems/companies_house/`. No network.
    typing; redirect/auth safety relied on from C0.
 3. 🚦 **GATE** — first live API call (needs your CH API key + network); confirm the JSON/redirect
    shapes against the assumptions in §1 before building further.
-4. ☐ `CompaniesHouseBulk <: FilingSource` over the Accounts Data Product; commit a tiny offline slice.
-5. ☐ Network-gated tests (API) + offline bulk-slice test.
-6. 🚦 **GATE** — approval to run the suite; on green, approval to commit C2.
+4. ☐ **Acquire the deferred C1 fixture set via the API** + run the moved C1 offline test (parse,
+   `:companies_house` identity, BS/IS classification via `vocab_ukgaap`) + **tune `vocab_ukgaap`** to
+   the real tags. Commit fixtures under `test/data/companies_house/` + a NOTICE. The set:
+   - **UKSEF / IFRS (cross-check pair):** Jupiter Fund Management plc **and** Kainos Group plc — both
+     already in our validated set, so each must agree CH ↔ FilingsXBRLOrg.
+   - **non-UKSEF / UK-GAAP:** one **small** FRS-102 private filer **and** at least one **large**
+     non-UKSEF/IFRS filer (a big private company / large group-subsidiary on FRS 101/102) to stress a
+     large, complex accounts document. Not on filings.xbrl.org (no Arelle/Yahoo cross-check) → verified
+     by internal consistency + hand-checked fixture facts.
+   (This is the moved C1 steps 6–8.)
+5. ☐ `CompaniesHouseBulk <: FilingSource` over the Accounts Data Product; commit a tiny offline slice.
+6. ☐ Network-gated tests (API) + offline bulk-slice test + the CH↔FilingsXBRLOrg parity test.
+7. 🚦 **GATE** — approval to run the suite; on green, approval to commit C2.
 
 ### C3 — N4: standard-taxonomy linkbase delegation  *(heaviest; can defer; benefits ESEF too)*
 

@@ -72,7 +72,7 @@ const _DISQUALIFY = 100
 # The taxonomy vocabularies merged into the effective registry. Loading every taxonomy is the
 # behaviour-preserving default; selecting only the taxonomies a filing actually uses (by concept
 # prefix) is a later refinement.
-const _TAXONOMY_VOCABULARIES = [_VOCAB_USGAAP, _VOCAB_IFRS]
+const _TAXONOMY_VOCABULARIES = [_VOCAB_USGAAP, _VOCAB_IFRS, _VOCAB_UKGAAP]
 
 # Merge the engine's statement roles with all taxonomy vocabularies into the scored registry.
 function _build_statement_registry()

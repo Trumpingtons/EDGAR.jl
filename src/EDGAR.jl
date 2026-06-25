@@ -41,15 +41,17 @@ include("filing_systems/sec/auditor.jl")    # 🔵 auditor(::Filing) from DEI XB
 include("filing_systems/sec/sixk.jl")       # 🔵 SEC Form 6-K cover-page metadata (sixk_cover) — per-form SEC accessor
 include("core/taxonomy/vocab_usgaap.jl")    # 🟢 us-gaap classification vocabulary
 include("core/taxonomy/vocab_ifrs.jl")      # 🟢 ifrs-full classification vocabulary (shared across IFRS regimes)
+include("core/taxonomy/vocab_ukgaap.jl")    # 🟢 UK GAAP / FRC classification vocabulary (Companies House FRS 101/102/105)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("filing_systems/esef/report_package.jl") # 🔵 ESEF report-package ZIP reader (offline; ZipArchives)
 include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path/url) + bundled-linkbase fetch
 include("filing_systems/esef/discovery.jl") # 🔵 ESEF discovery: FilingsXBRLOrg source (filings.xbrl.org) → handles
+include("filing_systems/companies_house/companies_house.jl") # 🔵 Companies House FilingSystem: offline iXBRL accounts parse (C1)
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
-export FilingSystem, SEC, ESEF, EntityId,
+export FilingSystem, SEC, ESEF, CompaniesHouse, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, discover,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
