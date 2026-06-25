@@ -20,6 +20,9 @@ texput.log
 # On-disk HTTP response cache (created at runtime by fetch_url)
 /.edgar_cache/
 
+# Claude Code local agent dir (settings, transcripts) — not part of the package
+/.claude/
+
 # Julia
 *.jl.cov
 *.jl.*.cov
