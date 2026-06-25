@@ -27,38 +27,74 @@ function _esef_lei(content::AbstractString)
     return m === nothing ? "" : String(m.captures[1])
 end
 
-"""
-    fetch_filing(::ESEF, path::AbstractString) -> Filing
+# Single-slot memo of the last report-package ZIP fetched, keyed by source. A `Filing`'s linkbase
+# reads (`statement_map`/`label_map`/`calculations` ⇒ pre/cal/lab) each need the whole package, and
+# the HTTP layer does NOT disk-cache bodies over its size limit (ESEF packages frequently exceed it),
+# so without this every linkbase read would re-download the multi-MB ZIP. One slot bounds memory to a
+# single package and covers the common "work on one filing at a time" flow.
+const _ESEF_PKG_MEMO = Ref{Tuple{String,Vector{UInt8}}}(("", UInt8[]))
 
-Read an ESEF **report-package ZIP** already on disk at `path` into a [`Filing`](@ref) (offline; no
-network). The package's primary report — inline `.xhtml` preferred, else a classic `.xbrl` instance
-under `reports/` — becomes the filing `content`; the filer's `entity` is its LEI
-(`EntityId(:lei, …)`, read from the instance), `kind` is `:ixbrl` or `:xbrl` accordingly, and `url`
-is the local ZIP path so the bundled linkbases stay resolvable (see `_fetch_linkbase(::ESEF, …)`).
+# The report-package ZIP bytes for a source — a local path or an `http(s)://` URL. Remote fetches go
+# through the cached, User-Agent-aware `fetch_url` and are memoised (see `_ESEF_PKG_MEMO`). Throws if
+# a remote package cannot be fetched.
+function _esef_zip_bytes(src::AbstractString)
+    src == _ESEF_PKG_MEMO[][1] && return _ESEF_PKG_MEMO[][2]
+    bytes = if startswith(src, "http://") || startswith(src, "https://")
+        b = fetch_url(src)
+        b === nothing && error("could not fetch ESEF report package $(repr(src))")
+        Vector{UInt8}(b)
+    else
+        read(src)
+    end
+    _ESEF_PKG_MEMO[] = (src, bytes)
+    return bytes
+end
+
+"""
+    fetch_filing(::ESEF, src::AbstractString; entity=nothing, ref="") -> Filing
+
+Read an ESEF **report-package ZIP** into a [`Filing`](@ref). `src` is either a **local path** to a
+package on disk (offline) or an `http(s)://` **URL** to one (e.g. the `package_url` from a
+[`FilingHandle`](@ref) discovered via [`discover`](@ref); fetched through the cached, User-Agent-aware
+[`fetch_url`](@ref)). The package's primary report — inline `.xhtml` preferred, else a classic
+`.xbrl` instance under `reports/` — becomes the filing `content`; `kind` is `:ixbrl` or `:xbrl`
+accordingly, and `url` is `src` so the bundled linkbases stay resolvable (see
+`_fetch_linkbase(::ESEF, …)`). The filer's `entity` is taken from `entity` when given (discovery
+already knows the LEI), else read from the instance; `ref` is the opaque filing reference (the
+discovered filing id), defaulting to the package basename.
 
 The resulting `Filing` flows through the same system-agnostic API as an SEC filing:
 `facts(f; classify=true, labels=true)` extracts and classifies its IFRS facts using the linkbases
 bundled in the package.
 
 ```julia
-f = fetch_filing(ESEF(), "test/data/esef/gleif-2024-min.zip")
+f = fetch_filing(ESEF(), "test/data/esef/gleif-2024-min.zip")   # local, offline
+h = first(discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206"))
+f = fetch_filing(h)                                             # remote, via the handle
 facts(f; classify = true, labels = true)
 ```
 """
-function fetch_filing(::ESEF, path::AbstractString)
-    z = ZipReader(read(path))
+function fetch_filing(::ESEF, src::AbstractString;
+                      entity::Union{EntityId,Nothing}=nothing, ref::AbstractString="")
+    z = ZipReader(_esef_zip_bytes(src))
     rep = _rp_primary_report(z)
-    rep === nothing && error("no report instance (reports/*.xhtml|*.xbrl) in ESEF report package $(repr(path))")
+    rep === nothing && error("no report instance (reports/*.xhtml|*.xbrl) in ESEF report package $(repr(src))")
     name, kind = rep
     content = _rp_read(z, name)
-    return Filing(ESEF(), EntityId(:lei, _esef_lei(content)), basename(path), basename(name), path, kind, content)
+    ent = entity === nothing ? EntityId(:lei, _esef_lei(content)) : entity
+    return Filing(ESEF(), ent, isempty(ref) ? basename(src) : String(ref), basename(name), src, kind, content)
 end
 
 # ESEF method of the per-system linkbase fetcher (see core/extract_xbrl.jl): the presentation /
-# calculation / label linkbases are bundled in the report-package ZIP, so re-open it from the local
-# path stored in `f.url` and read the entry by suffix. Returns "" if the path is gone or the linkbase
-# is absent (which the classification path tolerates).
+# calculation / label linkbases are bundled in the report-package ZIP, so re-read it from the source
+# stored in `f.url` (local path or remote URL, both via the memoised `_esef_zip_bytes`) and read the
+# entry by suffix. Returns "" if the package can't be read or the linkbase is absent (which the
+# classification path tolerates).
 function _fetch_linkbase(::ESEF, f::Filing, suffix::AbstractString)
-    isfile(f.url) || return ""
-    return _rp_linkbase(ZipReader(read(f.url)), suffix)
+    bytes = try
+        _esef_zip_bytes(f.url)
+    catch
+        return ""
+    end
+    return _rp_linkbase(ZipReader(bytes), suffix)
 end

@@ -21,6 +21,7 @@ include("core/util.jl")                     # 🟢 small cross-cutting helpers
 include("core/text.jl")                     # 🟢 html_to_text, fuzzy match, extract_section
 include("core/filing_system.jl")            # 🟢 FilingSystem seam: abstract type + SEC + EntityId
 include("core/types.jl")                    # 🟢 Filing, Fact, Selection, FactRow
+include("core/discovery.jl")                # 🟢 discovery seam: FilingSource + FilingHandle + fetch_filing(handle)
 include("filing_systems/sec/cross_reference.jl") # 🔵 SEC FORM 10-K cross-reference-index item extraction (GE-class)
 include("filing_systems/sec/forty_f.jl")    # 🔵 40-F AIF-exhibit discovery (aif_html)
 include("filing_systems/sec/sections.jl")   # 🔵 SEC Item/Part segmentation (sections); reuses Documents/ChunkedDoc parsing
@@ -44,11 +45,13 @@ include("core/classify_engine.jl")          # 🟢 statement-classification engi
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("filing_systems/esef/report_package.jl") # 🔵 ESEF report-package ZIP reader (offline; ZipArchives)
-include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path) + bundled-linkbase fetch
+include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path/url) + bundled-linkbase fetch
+include("filing_systems/esef/discovery.jl") # 🔵 ESEF discovery: FilingsXBRLOrg source (filings.xbrl.org) → handles
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
 export FilingSystem, SEC, ESEF, EntityId,
-       Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, sections,
+       FilingSource, FilingHandle, FilingsXBRLOrg, discover,
+       Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
