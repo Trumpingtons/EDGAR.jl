@@ -38,3 +38,6 @@ texput.log
 
 # Output of scripts/filings_lifecycle.jl demo
 filings_demo/
+
+# Companies House bulk/raw fixtures (not committed; derived fixtures are)
+/test/data/companies_house/raw/

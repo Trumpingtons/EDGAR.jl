@@ -1038,6 +1038,42 @@ end
 
 end
 
+@testset "Companies House: offline iXBRL parse + FRC canonicalization (C1)" begin
+    # Companies House is the third FilingSystem: a single inline-XBRL accounts document (no report
+    # package), company-number identity, the FRC taxonomy with NO bundled linkbase. Two fixtures (see
+    # the NOTICE beside them): a real small FRS-102 filing, and a synthetic doc that binds the FRC core
+    # namespace to a generic `ns5` prefix to test canonicalization. No network.
+    dir = joinpath(@__DIR__, "data", "companies_house")
+
+    # 1) Real small filing: company-number identity, inline-XBRL, balance-sheet classification via the
+    #    uk-core vocabulary (these are filleted accounts — balance sheet only, no P&L).
+    f = fetch_filing(CompaniesHouse(), joinpath(dir, "small-frs102.html"))
+    @test f.system isa CompaniesHouse
+    @test f.kind === :ixbrl
+    @test f.entity == EntityId(:companies_house, "00021497")
+    rows = facts(f; classify = true)
+    @test !isempty(rows)
+    @test any(r -> r.concept == "uk-core:NetAssetsLiabilities" && r.statement == "BalanceSheet", rows)
+
+    # 2) FRC prefix canonicalization: the synthetic filing tags concepts as `ns5:` (a generic prefix
+    #    bound to the FRC core namespace). After fetch they must be canonical `uk-core:`, so the
+    #    same vocabulary classifies them — proving classification is by namespace, not the filer's prefix.
+    g = fetch_filing(CompaniesHouse(), joinpath(dir, "ns5-canon-min.html"))
+    @test g.entity == EntityId(:companies_house, "99999999")
+    @test !occursin("name=\"ns5:", g.content)          # prefixes rewritten
+    @test occursin("name=\"uk-core:", g.content)
+    grows = facts(g; classify = true)
+    @test any(r -> r.concept == "uk-core:NetAssetsLiabilities" && r.statement == "BalanceSheet", grows)
+    @test any(r -> r.concept == "uk-core:TurnoverRevenue" && r.statement == "IncomeStatement", grows)
+
+    # A PDF (paper/dormant accounts) is a typed, non-fatal `:pdf` filing, not an error.
+    pdf = joinpath(tempdir(), "ch-fake.pdf"); write(pdf, "%PDF-1.7\nnot real")
+    p = fetch_filing(CompaniesHouse(), pdf)
+    @test p.kind === :pdf
+    @test isempty(p.content)
+    rm(pdf; force = true)
+end
+
 # iXBRL decimal-comma parsing — focused, individually-runnable testsets (see the file):
 #   julia --project=. test/test_decimal_comma.jl
 include(joinpath(@__DIR__, "test_decimal_comma.jl"))

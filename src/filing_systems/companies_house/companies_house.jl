@@ -39,6 +39,52 @@ function _ch_number(content::AbstractString)
     return m === nothing ? "" : String(m.captures[1])
 end
 
+# ── FRC namespace canonicalization (prefix instability) ─────────────────────────────────────────
+#
+# Companies House filers bind the SAME FRC taxonomy namespace to DIFFERENT prefixes: one filing tags
+# `uk-core:TurnoverRevenue`, another `ns5:TurnoverRevenue` — both are
+# http://xbrl.frc.org.uk/fr/<date>/core. The XBRL extractor keeps the concept verbatim with the
+# document's prefix (fine for SEC us-gaap / ESEF ifrs-full, whose prefixes are conventionally fixed),
+# so a prefix-keyed vocabulary would classify the `uk-core` filers and silently miss the `ns5` ones.
+# We therefore canonicalize CH content at fetch time: resolve each declared prefix to its namespace
+# URI and rewrite every FRC-namespace concept's prefix to a canonical one (`uk-core`, `uk-bus`, …), so
+# classification (vocab_ukgaap) is by namespace, not prefix. CH-only — the SEC/ESEF parse path is
+# untouched. Only `name="…"` attribute prefixes change (invisible in rendering, semantically identical).
+
+# Canonical FRC prefix by the trailing segment of an FRC namespace URI (…/<date>/<segment>).
+const _FRC_CANONICAL = Dict(
+    "core" => "uk-core", "business" => "uk-bus", "direp" => "uk-direp", "aurep" => "uk-aurep",
+    "countries" => "uk-countries", "currencies" => "uk-curr", "languages" => "uk-lang",
+)
+
+# The canonical FRC prefix for a namespace URI, or `nothing` if it is not an FRC namespace.
+function _frc_canonical_prefix(ns::AbstractString)
+    occursin("xbrl.frc.org.uk", ns) || return nothing
+    return get(_FRC_CANONICAL, String(last(split(ns, '/'))), nothing)
+end
+
+# Map each `xmlns:<prefix>="<uri>"` in the instance to a canonical FRC prefix (only FRC namespaces).
+function _ch_prefix_map(content::AbstractString)
+    pm = Dict{String,String}()
+    for m in eachmatch(r"xmlns:([A-Za-z0-9._-]+)\s*=\s*\"([^\"]*)\"", content)
+        canon = _frc_canonical_prefix(m.captures[2])
+        canon === nothing || (pm[m.captures[1]] = canon)
+    end
+    return pm
+end
+
+# Rewrite FRC-namespace concept prefixes in `name="…"` attributes to their canonical form. No-op when
+# the instance declares no FRC namespaces or already uses canonical prefixes.
+function _ch_canonicalize(content::AbstractString)
+    pm = _ch_prefix_map(content)
+    isempty(pm) && return content
+    return replace(content, r"(?i)(\bname\s*=\s*[\"'])([A-Za-z0-9._-]+):" => function (s)
+        m = match(r"(?i)(\bname\s*=\s*[\"'])([A-Za-z0-9._-]+):", s)
+        canon = get(pm, m.captures[2], nothing)
+        canon === nothing ? s : string(m.captures[1], canon, ":")
+    end)
+end
+
 # A PDF document begins with the "%PDF" magic bytes (0x25 0x50 0x44 0x46). Companies House serves many
 # small/dormant accounts as PDF rather than iXBRL; we tag those `:pdf` (CH II territory) rather than
 # trying to parse them as XBRL.
@@ -79,7 +125,7 @@ function fetch_filing(::CompaniesHouse, src::AbstractString;
         ent = entity === nothing ? EntityId(:companies_house, "") : entity
         return Filing(CompaniesHouse(), ent, r, basename(src), src, :pdf, "")
     end
-    content = String(raw)
+    content = _ch_canonicalize(String(raw))
     ent = entity === nothing ? EntityId(:companies_house, _ch_number(content)) : entity
     return Filing(CompaniesHouse(), ent, r, basename(src), src, :ixbrl, content)
 end

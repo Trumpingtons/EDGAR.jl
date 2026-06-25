@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic minimal Companies House inline-XBRL fixture. NOT a real filing. It binds the FRC
+     financial-reporting ("core") namespace to a GENERIC prefix `ns5` (as some CH filers do) to test
+     `_ch_canonicalize`: after fetch, every ns5: concept must be rewritten to the canonical uk-core:,
+     so classification (vocab_ukgaap) works regardless of the filer's chosen prefix. -->
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+      xmlns:ns5="http://xbrl.frc.org.uk/fr/2025-01-01/core">
+<head><title>Synthetic CH iXBRL fixture (ns5 prefix)</title></head>
+<body>
+<ix:header><ix:resources>
+  <xbrli:context id="i2025">
+    <xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">99999999</xbrli:identifier></xbrli:entity>
+    <xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+  </xbrli:context>
+  <xbrli:context id="d2025">
+    <xbrli:entity><xbrli:identifier scheme="http://www.companieshouse.gov.uk/">99999999</xbrli:identifier></xbrli:entity>
+    <xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period>
+  </xbrli:context>
+  <xbrli:unit id="gbp"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>
+</ix:resources></ix:header>
+
+<p>Net assets: <ix:nonFraction name="ns5:NetAssetsLiabilities" contextRef="i2025" unitRef="gbp" decimals="0">1000</ix:nonFraction></p>
+<p>Equity: <ix:nonFraction name="ns5:Equity" contextRef="i2025" unitRef="gbp" decimals="0">1000</ix:nonFraction></p>
+<p>Turnover: <ix:nonFraction name="ns5:TurnoverRevenue" contextRef="d2025" unitRef="gbp" decimals="0">5000</ix:nonFraction></p>
+<p>Profit: <ix:nonFraction name="ns5:ProfitLoss" contextRef="d2025" unitRef="gbp" decimals="0">500</ix:nonFraction></p>
+</body>
+</html>

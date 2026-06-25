@@ -44,9 +44,17 @@ This is what `facts(f; classify=true)` uses to fill the `statement` column.
 # often multi-homed (StockholdersEquity ∈ BalanceSheet + Equity). Linkbase first, FilingSummary fallback.
 function statement_map_multi(f::Filing)
     m = _concept_statements(_fetch_linkbase(f, "pre"))     # authoritative: presentation linkbase
-    isempty(m) && (m = _filing_summary_statements(f))      # universal fallback: FilingSummary + R-files
+    # SEC-only fallback: the FilingSummary.xml + R-files live in the SEC Archives dir (a SEC fetch), so
+    # gate it on SEC — a non-SEC filing with no bundled linkbase (e.g. Companies House, whose accounts
+    # carry no linkbases) must not be sent down the SEC path.
+    isempty(m) && f.system isa SEC && (m = _filing_summary_statements(f))
+    # Last resort (any system): classify the well-known key-anchor concepts directly from the merged
+    # taxonomy vocabulary. This is what lets a filing with NO presentation linkbase and no FilingSummary
+    # — every Companies House accounts filing — still classify its headline concepts (uk-core:Equity →
+    # BalanceSheet, uk-core:TurnoverRevenue → IncomeStatement, …) via vocab_ukgaap / vocab_ifrs / vocab_usgaap.
+    isempty(m) && (m = deepcopy(_INTRINSIC_STATEMENTS))
     isempty(m) && @warn "No statement classification for $(f.ref): no presentation " *
-        "linkbase and no usable FilingSummary.xml — facts will be left unclassified (`statement` empty)."
+        "linkbase, no usable FilingSummary.xml, and no taxonomy key-anchor concepts."
     return m
 end
 

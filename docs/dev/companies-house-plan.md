@@ -220,21 +220,22 @@ New dir `src/filing_systems/companies_house/`. No network.
 
 **Steps**
 
-1. ☐ `CompaniesHouseApi <: FilingSource` + `discover(...)` over the filing-history endpoint → handles.
-2. ☐ `fetch_filing(::CompaniesHouse, ::FilingHandle)`: metadata → content endpoint; `:ixbrl`/`:pdf`
-   typing; redirect/auth safety relied on from C0.
+1. ✅ `CompaniesHouseApi <: FilingSource` + `discover(...)` over the filing-history endpoint → handles
+   (exported; `system_headers(::CompaniesHouse)` = Basic-auth from `:api_key`/`COMPANIES_HOUSE_API_KEY`).
+2. ✅ `fetch_filing(::CompaniesHouse, ::FilingHandle)`: metadata → `{metadata}/content` with iXBRL
+   `Accept`; `:ixbrl`/`:xbrl`/`:pdf` typing; cross-host `Authorization` strip relied on from C0.
+   *(Build-checked: compiles, routes, auth header round-trips; live shapes confirmed at the step-3 gate.)*
 3. 🚦 **GATE** — first live API call (needs your CH API key + network); confirm the JSON/redirect
    shapes against the assumptions in §1 before building further.
-4. ☐ **Acquire the deferred C1 fixture set via the API** + run the moved C1 offline test (parse,
-   `:companies_house` identity, BS/IS classification via `vocab_ukgaap`) + **tune `vocab_ukgaap`** to
-   the real tags. Commit fixtures under `test/data/companies_house/` + a NOTICE. The set:
-   - **UKSEF / IFRS (cross-check pair):** Jupiter Fund Management plc **and** Kainos Group plc — both
-     already in our validated set, so each must agree CH ↔ FilingsXBRLOrg.
-   - **non-UKSEF / UK-GAAP:** one **small** FRS-102 private filer **and** at least one **large**
-     non-UKSEF/IFRS filer (a big private company / large group-subsidiary on FRS 101/102) to stress a
-     large, complex accounts document. Not on filings.xbrl.org (no Arelle/Yahoo cross-check) → verified
-     by internal consistency + hand-checked fixture facts.
-   (This is the moved C1 steps 6–8.)
+4. ◑ **Fixtures + moved C1 offline test — DONE keylessly via the bulk Accounts Data Product** (the API
+   key turned out to be a dead end for the user; the bulk product needs none). Committed
+   `test/data/companies_house/{small-frs102.html (real, 00021497), ns5-canon-min.html (synthetic), NOTICE.md}`
+   + testset "Companies House: offline iXBRL parse + FRC canonicalization (C1)" (12/12). Surfaced &
+   fixed **FRC prefix instability** (`ns5` vs `uk-core` for the same namespace → `_ch_canonicalize`,
+   CH-only) and a **`statement_map_multi` SEC-coupling bug** (SEC FilingSummary fallback now gated to
+   SEC; generic vocab key-anchor fallback added). `vocab_ukgaap` corrected to real `uk-core:` names.
+   STILL OPTIONAL (needs the live API or named-company bulk extraction): the **UKSEF cross-check pair**
+   Jupiter + Kainos and a **large** non-UKSEF filer — defer to the live-API probe or a bulk name lookup.
 5. ☐ `CompaniesHouseBulk <: FilingSource` over the Accounts Data Product; commit a tiny offline slice.
 6. ☐ Network-gated tests (API) + offline bulk-slice test + the CH↔FilingsXBRLOrg parity test.
 7. 🚦 **GATE** — approval to run the suite; on green, approval to commit C2.

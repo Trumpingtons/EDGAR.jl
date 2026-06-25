@@ -49,10 +49,11 @@ include("filing_systems/esef/report_package.jl") # 🔵 ESEF report-package ZIP 
 include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path/url) + bundled-linkbase fetch
 include("filing_systems/esef/discovery.jl") # 🔵 ESEF discovery: FilingsXBRLOrg source (filings.xbrl.org) → handles
 include("filing_systems/companies_house/companies_house.jl") # 🔵 Companies House FilingSystem: offline iXBRL accounts parse (C1)
+include("filing_systems/companies_house/discovery.jl")       # 🔵 Companies House discovery: CompaniesHouseApi source + authenticated fetch (C2)
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EntityId,
-       FilingSource, FilingHandle, FilingsXBRLOrg, discover,
+       FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, discover,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
