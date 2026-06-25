@@ -1074,6 +1074,48 @@ end
     rm(pdf; force = true)
 end
 
+@testset "Companies House: bulk Accounts Data Product (C2, offline)" begin
+    # The keyless bulk source. `bulk-min.zip` is a tiny synthetic archive (one bulk-named entry) so the
+    # whole discover→handle→fetch→classify path runs offline. The entry-name parser handles plain and
+    # jurisdiction-prefixed (SC/NI) numbers.
+    @test EDGAR._ch_bulk_entry_meta("Prod223_4245_07709636_20241231.html") ==
+          (number = "07709636", period_end = Date(2024, 12, 31))
+    @test EDGAR._ch_bulk_entry_meta("Prod223_4245_SC012345_20251231.html").number == "SC012345"
+    @test EDGAR._ch_bulk_entry_meta("not-a-bulk-file.html").number == ""
+    @test EDGAR._ch_bulk_url(Date(2026, 6, 19)) ==
+          "https://download.companieshouse.gov.uk/Accounts_Bulk_Data-2026-06-19.zip"
+
+    dir = joinpath(@__DIR__, "data", "companies_house")
+    # Seed the single-slot archive memo with the fixture so `discover` (which builds the archive URL
+    # from the date) reads it offline instead of downloading.
+    d = Date(2025, 12, 31)
+    url = EDGAR._ch_bulk_url(d)
+    EDGAR._CH_BULK_MEMO[] = (url, read(joinpath(dir, "bulk-min.zip")))
+    try
+        hs = discover(CompaniesHouseBulk(); date = d)
+        @test length(hs) == 1
+        h = only(hs)
+        @test h.system isa CompaniesHouse
+        @test h.entity == EntityId(:companies_house, "99999999")
+        @test h.ref == "Prod223_4245_99999999_20251231.html"
+        @test h.period_end == d
+        @test endswith(h.url, ".zip")
+
+        # company_number filter
+        @test isempty(discover(CompaniesHouseBulk(); date = d, company_number = "00000000"))
+        @test length(discover(CompaniesHouseBulk(); date = d, company_number = "99999999")) == 1
+
+        # fetch the handle → reads the entry from the (memoised) archive, canonicalizes, classifies
+        f = fetch_filing(h)
+        @test f.system isa CompaniesHouse
+        @test f.kind === :ixbrl
+        @test any(r -> r.concept == "uk-core:NetAssetsLiabilities" && r.statement == "BalanceSheet",
+                  facts(f; classify = true))
+    finally
+        EDGAR._CH_BULK_MEMO[] = ("", UInt8[])   # don't leak the seeded memo into other tests
+    end
+end
+
 # iXBRL decimal-comma parsing — focused, individually-runnable testsets (see the file):
 #   julia --project=. test/test_decimal_comma.jl
 include(joinpath(@__DIR__, "test_decimal_comma.jl"))

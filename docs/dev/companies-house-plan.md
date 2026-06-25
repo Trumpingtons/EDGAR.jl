@@ -236,7 +236,12 @@ New dir `src/filing_systems/companies_house/`. No network.
    SEC; generic vocab key-anchor fallback added). `vocab_ukgaap` corrected to real `uk-core:` names.
    STILL OPTIONAL (needs the live API or named-company bulk extraction): the **UKSEF cross-check pair**
    Jupiter + Kainos and a **large** non-UKSEF filer — defer to the live-API probe or a bulk name lookup.
-5. ☐ `CompaniesHouseBulk <: FilingSource` over the Accounts Data Product; commit a tiny offline slice.
+5. ✅ `CompaniesHouseBulk <: FilingSource` over the **keyless** Accounts Data Product (daily
+   `Accounts_Bulk_Data-YYYY-MM-DD.zip`): `discover(; date, company_number, limit)` lists a day's
+   archive into handles; `fetch_filing` reads an entry (single-slot archive memo, à la ESEF).
+   `fetch_filing(::CompaniesHouse, h)` now dispatches API-vs-bulk on a `.zip` url. Committed offline
+   slice `bulk-min.zip` + testset "Companies House: bulk Accounts Data Product (C2, offline)" (13/13,
+   full path via a seeded memo). Verified on the real 34 MB archive: 253 facts → IS/BS/CF, ns5→uk-core.
 6. ☐ Network-gated tests (API) + offline bulk-slice test + the CH↔FilingsXBRLOrg parity test.
 7. 🚦 **GATE** — approval to run the suite; on green, approval to commit C2.
 

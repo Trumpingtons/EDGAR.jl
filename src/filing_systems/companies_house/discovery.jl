@@ -96,12 +96,19 @@ function discover(::CompaniesHouseApi; company_number::AbstractString,
     return handles
 end
 
-# Companies House fetch from a discovered handle: read the document metadata, then download the
-# document content with the iXBRL `Accept` header. Prefers inline XBRL (`application/xhtml+xml`), then
-# a classic XBRL instance (`application/xml`); a filing offering neither (paper/PDF) becomes a typed
-# `:pdf` filing (empty content, content URL kept) for the PDF phase to handle. The company identity
-# comes from the handle (discovery knew the number); only re-parsed from the instance if absent.
-function fetch_filing(::CompaniesHouse, h::FilingHandle)
+# Companies House fetch from a discovered handle. Two sources produce CH handles, distinguished by the
+# handle's `url`: a `CompaniesHouseBulk` handle's `url` is a bulk-archive `.zip` (its `ref` is the
+# entry name) → read the entry from the archive (keyless, see bulk.jl); any other `url` is a
+# `CompaniesHouseApi` document-metadata URL → the authenticated Document-API path below.
+fetch_filing(::CompaniesHouse, h::FilingHandle) =
+    endswith(lowercase(h.url), ".zip") ? _ch_fetch_from_bulk(h) : _ch_fetch_from_api(h)
+
+# The authenticated Document-API path: read the document metadata, then download the document content
+# with the iXBRL `Accept` header. Prefers inline XBRL (`application/xhtml+xml`), then a classic XBRL
+# instance (`application/xml`); a filing offering neither (paper/PDF) becomes a typed `:pdf` filing
+# (empty content, content URL kept) for the PDF phase to handle. The company identity comes from the
+# handle (discovery knew the number); only re-parsed from the instance if absent.
+function _ch_fetch_from_api(h::FilingHandle)
     hdrs = system_headers(CompaniesHouse())
     meta = _get_json(h.url; headers = hdrs)
     resources = get(meta, :resources, nothing)
