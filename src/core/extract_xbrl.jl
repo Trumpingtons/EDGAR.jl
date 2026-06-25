@@ -146,6 +146,15 @@ function _ix_valtext(fmt::AbstractString, raw::AbstractString)
     f = lowercase(fmt)
     occursin("zero", f) && return "0"
     occursin("numwords", f) && return something(_numwordsen(_xbrl_text(raw)), "")
+    # Decimal-COMMA transforms (`ixt:num-comma-decimal`, …), used by most European filers: the comma is
+    # the decimal separator and dot/space/nbsp are thousands grouping — the opposite of the dot-decimal
+    # default. Normalise to a dot-decimal string here, because the later digit cleanup in `_xbrl_number`
+    # keeps only `[0-9.]` and would otherwise drop the decimal comma, scaling the value by 10ⁿ (e.g. an
+    # EPS of `0,12` would parse as `12`). Dot-decimal/other formats fall through unchanged.
+    if occursin("comma-decimal", f) || occursin("commadecimal", f)
+        t = replace(_xbrl_text(raw), r"[. \s]" => "")   # strip dot/space/nbsp thousands separators
+        return replace(t, "," => ".")                        # decimal comma -> dot
+    end
     return raw
 end
 
