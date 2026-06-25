@@ -35,6 +35,8 @@ function _filing_documents(cik, accession)
     end
     return docs
 end
+# A SEC `Filing`'s identity is a CIK (`entity.value`) + accession (`ref`).
+_filing_documents(f::Filing) = _filing_documents(f.entity.value, f.ref)
 
 # Does a document contain NI 51-102 AIF section headings? (Scan the first 80 KB.)
 function _has_aif_content(url)
@@ -52,8 +54,8 @@ report), following edgartools' priority chain: EX-1 → AIF in description → E
 content-sniffed EX-99.x (>100 KB with NI 51-102 headings) → inline 40-F. Returns `nothing` if not found.
 """
 function aif_html(f::Filing)
-    docs = _filing_documents(f.cik, f.accession)
-    base = _filing_dir(f.cik, f.accession)
+    docs = _filing_documents(f)
+    base = _filing_dir(f)
     htm(d) = endswith(lowercase(d.filename), ".htm") || endswith(lowercase(d.filename), ".html") ||
              endswith(lowercase(d.filename), ".xhtml")
     html = filter(htm, docs)

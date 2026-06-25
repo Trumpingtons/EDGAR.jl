@@ -200,7 +200,7 @@ end
 
 function _extract_facts(f::Filing; statements::AbstractDict=Dict{String,String}(),
                         negations::AbstractSet=Set{String}(), labels::AbstractDict=Dict{String,String}())
-    inline = _facts_of(f.content, f.kind, f.cik, f.accession, statements, negations, labels)
+    inline = _facts_of(f.content, f.kind, f.entity.value, f.ref, statements, negations, labels)
     # Prefer the SEC's complete *extracted* instance (`<doc>_htm.xml`) when it yields strictly more
     # facts — for a foreign/40-F/20-F or multi-part filing the primary inline document is only a
     # cover/wrapper, so the extracted instance is far richer. Guarded three ways so it never regresses
@@ -209,10 +209,10 @@ function _extract_facts(f::Filing; statements::AbstractDict=Dict{String,String}(
     # fetch/parse failure falls back to the inline result.
     (f.kind === :xbrl || !startswith(f.url, "https://www.sec.gov/Archives/")) && return inline
     try
-        base = _filing_dir(f.cik, f.accession)
+        base = _filing_dir(f)
         body = fetch_url(base * "/" * _xbrl_instance(base))
         body === nothing && return inline
-        instance = _facts_of(String(body), :xbrl, f.cik, f.accession, statements, negations, labels)
+        instance = _facts_of(String(body), :xbrl, f.entity.value, f.ref, statements, negations, labels)
         return length(instance) > length(inline) ? instance : inline
     catch
         return inline
@@ -222,7 +222,7 @@ end
 # Internal: a whole filing as a Selection (kind `:filing`, no DOM selector) — the unit the
 # export layers already understand, so `facts`/`facts_json`/`to_duckdb` work unchanged.
 _filing_selection(f::Filing, fcts) =
-    Selection(; cik = f.cik, accession = f.accession, url = f.url, selector = "",
+    Selection(; cik = f.entity.value, accession = f.ref, url = f.url, selector = "",
               kind = :filing, facts = fcts)
 
 # ── Statement classification from the presentation linkbase (W5) ─────────────

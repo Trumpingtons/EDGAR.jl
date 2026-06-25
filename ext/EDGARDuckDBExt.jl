@@ -137,7 +137,7 @@ function _store_document!(con, f::EDGAR.Filing)
     DBInterface.execute(con, _DOCS_DDL)
     before = _count(con, "documents")
     DBInterface.execute(con, "INSERT INTO documents VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-        (f.cik, f.accession, f.document, f.url, String(f.kind), Dates.now(), f.content))
+        (f.entity.value, f.ref, f.document, f.url, String(f.kind), Dates.now(), f.content))
     return Int(_count(con, "documents") - before)
 end
 

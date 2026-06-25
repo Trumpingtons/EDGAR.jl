@@ -445,7 +445,7 @@ const PICKER_JS = raw"""
 # the picker script injected before </body> with the /select and /done endpoints, the
 # multi-select mode flag, and the filing's provenance substituted in.
 function _build_picker_page(f::Filing, origin::AbstractString, multi::Bool)
-    prov = JSON3.write((; cik = f.cik, accession = f.accession, url = f.url))
+    prov = JSON3.write((; cik = f.entity.value, accession = f.ref, url = f.url))
     script = "<script>\n" *
              replace(PICKER_JS,
                      "{{ENDPOINT}}" => "$origin/select",

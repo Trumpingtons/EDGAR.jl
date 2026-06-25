@@ -3,20 +3,32 @@
 """
     Filing
 
-A single filing document fetched into memory by [`fetch_filing`](@ref): its
-`content` (a `String`) plus `cik` (10-digit), `accession`, `document` (the
-filename), source `url`, and `kind` — `:ixbrl` (inline-XBRL HTML), `:xbrl` (a
-classic XBRL instance), or `:html` (a filing with no XBRL). Persist it with
-[`save_filing`](@ref).
+A single filing document fetched into memory by [`fetch_filing`](@ref): its `content` (a `String`)
+plus provenance — `system` (the [`FilingSystem`](@ref) it came from, e.g. `SEC()`), `entity` (the
+filer's [`EntityId`](@ref), e.g. `EntityId(:cik, "0000320193")`), `ref` (the system's filing
+reference — an SEC accession, an EDINET docID, …), `document` (the filename), source `url`, and `kind`
+— `:ixbrl` (inline-XBRL HTML), `:xbrl` (a classic XBRL instance), or `:html` (a filing with no XBRL).
+Persist it with [`save_filing`](@ref).
+
+For an SEC/EDGAR filing the pre-FilingSystem positional constructor still works and tags it
+accordingly: `Filing(cik, accession, document, url, kind, content)` ≡
+`Filing(SEC(), EntityId(:cik, cik), accession, document, url, kind, content)`.
 """
 struct Filing
-    cik::String
-    accession::String
+    system::FilingSystem
+    entity::EntityId
+    ref::String
     document::String
     url::String
     kind::Symbol
     content::String
 end
+
+# Backward-compatible SEC/EDGAR convenience constructor: the pre-FilingSystem positional form
+# `Filing(cik, accession, …)`. Tags the filing as `SEC()` with a `:cik` identity, so every existing
+# call site (fetch_filing, tests) and the SEC fetch path keep working unchanged.
+Filing(cik::AbstractString, accession::AbstractString, document, url, kind, content) =
+    Filing(SEC(), EntityId(:cik, cik), accession, document, url, kind, content)
 
 Base.show(io::IO, f::Filing) =
     print(io, "Filing(", repr(f.kind), ", ", repr(f.document), ", ", length(f.content), " bytes)")

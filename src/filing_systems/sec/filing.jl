@@ -1,8 +1,10 @@
 # Fetch, open and save a filing from the SEC EDGAR Archives. SEC-specific.
 
-# Internal: the base Archives URL for a filing's directory.
+# Internal: the base Archives URL for a filing's directory. A SEC `Filing`'s identity is a CIK
+# (`entity.value`) + accession (`ref`); the `::Filing` overload reads them off the filing.
 _filing_dir(cik, accession) =
     "https://www.sec.gov/Archives/edgar/data/$(parse(Int, _normalize_cik(cik)))/$(replace(accession, "-" => ""))"
+_filing_dir(f::Filing) = _filing_dir(f.entity.value, f.ref)
 
 # Internal: locate the XBRL *instance* document in a filing's directory (via its
 # `index.json` file list), skipping the schema (`.xsd`) and the linkbases

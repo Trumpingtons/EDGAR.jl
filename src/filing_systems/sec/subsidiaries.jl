@@ -219,8 +219,8 @@ list (possibly empty) when the filing carries an EX-21 exhibit, or `nothing` whe
 port of edgartools' `TenK.subsidiaries`, which locates the first `EX-21*` attachment and parses it.
 """
 function subsidiaries(f::Filing)
-    base = _filing_dir(f.cik, f.accession)
-    for d in _filing_documents(f.cik, f.accession)
+    base = _filing_dir(f)
+    for d in _filing_documents(f)
         startswith(d.type, "EX-21") || continue
         body = fetch_url("$base/$(d.filename)")
         body === nothing && continue

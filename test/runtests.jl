@@ -253,7 +253,7 @@ end
         "https://www.sec.gov/Archives/edgar/data/104169/000010416926000102/wmt.htm",
         :ixbrl, "<html><head></head><body><table><tr><td>x</td></tr></table></body></html>")
     payload(sel) = EDGAR.JSON3.write((version = 1,
-        provenance = (cik = f.cik, accession = f.accession, url = f.url),
+        provenance = (cik = f.entity.value, accession = f.ref, url = f.url),
         selector = sel, kind = "table", text = "Net sales 175684",
         html = "<table><tr><td>x</td></tr></table>"))
     post(url, path, body) = EDGAR.HTTP.post(url * path, ["Content-Type" => "application/json"], body)

@@ -14,7 +14,7 @@
 # Note: inline-only filers often ship no loose linkbases at all — classification then falls back
 # to FilingSummary.xml + the R-files (see `_filing_summary_statements`).
 function _fetch_linkbase(f::Filing, suffix::AbstractString)
-    base = _filing_dir(f.cik, f.accession)
+    base = _filing_dir(f)
     names = try
         [String(it.name) for it in _get_json("$base/index.json").directory.item]
     catch
@@ -43,7 +43,7 @@ This is what `facts(f; classify=true)` uses to fill the `statement` column.
 function statement_map_multi(f::Filing)
     m = _concept_statements(_fetch_linkbase(f, "pre"))     # authoritative: presentation linkbase
     isempty(m) && (m = _filing_summary_statements(f))      # universal fallback: FilingSummary + R-files
-    isempty(m) && @warn "No statement classification for $(f.accession): no presentation " *
+    isempty(m) && @warn "No statement classification for $(f.ref): no presentation " *
         "linkbase and no usable FilingSummary.xml — facts will be left unclassified (`statement` empty)."
     return m
 end
@@ -112,7 +112,7 @@ end
 # Build concept => Vector{statement} (every section it appears in, priority-sorted) from
 # FilingSummary.xml + the R-files it points to.
 function _filing_summary_statements(f::Filing)
-    base = _filing_dir(f.cik, f.accession)
+    base = _filing_dir(f)
     fs = fetch_url("$base/FilingSummary.xml")
     fs === nothing && return Dict{String,Vector{String}}()
     cmap = Dict{String,Vector{String}}()
@@ -139,7 +139,7 @@ browser picker reads the label off the rendered row instead).
 """
 function label_map(f::Filing)
     m = _concept_labels(_fetch_linkbase(f, "lab"))
-    isempty(m) && @warn "No native labels for $(f.accession): the label linkbase was missing " *
+    isempty(m) && @warn "No native labels for $(f.ref): the label linkbase was missing " *
         "(not loose and not in `<accession>-xbrl.zip`) — `label` will be empty."
     return m
 end

@@ -19,6 +19,7 @@ include("core/config.jl")                   # 🟢 runtime configuration + SEC U
 include("core/http.jl")                     # 🟢 HTTP + on-disk cache (fetch_url, _get_json)
 include("core/util.jl")                     # 🟢 small cross-cutting helpers
 include("core/text.jl")                     # 🟢 html_to_text, fuzzy match, extract_section
+include("core/filing_system.jl")            # 🟢 FilingSystem seam: abstract type + SEC + EntityId
 include("core/types.jl")                    # 🟢 Filing, Fact, Selection, FactRow
 include("filing_systems/sec/cross_reference.jl") # 🔵 SEC FORM 10-K cross-reference-index item extraction (GE-class)
 include("filing_systems/sec/forty_f.jl")    # 🔵 40-F AIF-exhibit discovery (aif_html)
@@ -44,7 +45,8 @@ include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsin
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
-export Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, sections,
+export FilingSystem, SEC, EntityId,
+       Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,

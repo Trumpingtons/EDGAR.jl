@@ -84,7 +84,7 @@ function auditor(f::Filing)
     a !== nothing && return a
     (f.kind === :xbrl || !startswith(f.url, "https://www.sec.gov/Archives/")) && return nothing
     try
-        base = _filing_dir(f.cik, f.accession)
+        base = _filing_dir(f)
         body = fetch_url(base * "/" * _xbrl_instance(base))
         return body === nothing ? nothing : _auditor_from(String(body))
     catch

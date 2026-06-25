@@ -30,13 +30,13 @@ document whose description mentions a release, or whose exhibit type is `EX-99.1
 Returns an empty vector when there are none.
 """
 function press_releases(f::Filing)
-    base = _filing_dir(f.cik, f.accession)
+    base = _filing_dir(f)
     out = PressRelease[]
-    for d in _filing_documents(f.cik, f.accession)
+    for d in _filing_documents(f)
         endswith(d.filename, ".htm") || continue
         is_release = occursin("RELEASE", d.description) || d.type in ("EX-99.1", "EX-99", "EX-99.01")
         is_release || continue
-        push!(out, PressRelease(f.cik, f.accession, d.filename, d.description, d.type, "$base/$(d.filename)"))
+        push!(out, PressRelease(f.entity.value, f.ref, d.filename, d.description, d.type, "$base/$(d.filename)"))
     end
     return out
 end
@@ -63,10 +63,10 @@ A faithful port of edgartools' `SixK.exhibits` (used for 6-K, but form-agnostic)
 press releases, financial statements and other exhibits that carry a current report's substance.
 """
 function exhibits(f::Filing)
-    base = _filing_dir(f.cik, f.accession)
+    base = _filing_dir(f)
     T = @NamedTuple{type::String, filename::String, description::String, size::Int, url::String}
     out = T[]
-    for d in _filing_documents(f.cik, f.accession)
+    for d in _filing_documents(f)
         (isempty(d.type) || d.type == "GRAPHIC" || d.filename == f.document) && continue
         push!(out, (type = d.type, filename = d.filename, description = d.description,
                     size = d.size, url = "$base/$(d.filename)"))
