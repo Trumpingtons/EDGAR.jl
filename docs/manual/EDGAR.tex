@@ -173,7 +173,7 @@ Analyse & Wide statement view --- stitched across filings, period-aware, standar
 \chapter{Installation}
 \label{sec:install}
 
-\subsection{Installing from GitHub}
+\section{Installing from GitHub}
 \texttt{EDGAR.jl} requires \textbf{Julia 1.12 or later}. It is not yet registered, so install it straight from GitHub,
 
 \begin{lstlisting}
@@ -181,7 +181,7 @@ julia> using Pkg
 julia> Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 \end{lstlisting}
 
-\subsection{Setting an User-Agent}\label{sec:ua}
+\section{Setting an User-Agent}\label{sec:ua}
 
 The SEC's fair-access policy requires each request to include a \texttt{User-Agent} header identifying the requester with a name and a contact email address. Requests that do not include this header are rejected with an HTTP 403 error. There is no API key or registration process, users are simply expected to identify themselves honestly when accessing the data.
 
@@ -193,7 +193,7 @@ julia> set_user_agent("Your Name name@example.com")
 
 \noindent If the \texttt{User-Agent} header is not set, \texttt{EDGAR.jl} will raise an error locally and stop execution before making any request to the SEC, ensuring compliance with the SEC's access policy.
 
-\subsection{Persisting an User-Agent}
+\section{Persisting an User-Agent}
 The function \texttt{set\_user\_agent()} sets the User-Agent only for the \emph{current} Julia process. As a result, a new REPL session, script execution, or notebook kernel will start without this configuration. The resolution order used by \texttt{EDGAR.jl} is:
 \begin{enumerate}[nosep]
   \item an explicit value set via \texttt{set\_user\_agent()}; otherwise

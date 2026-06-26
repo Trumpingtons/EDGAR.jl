@@ -10,6 +10,7 @@
 /docs/manual/*.toc
 /docs/manual/*.fls
 /docs/manual/*.fdb_latexmk
+/docs/manual/*.synctex.gz
 texput.log
 
 # Secrets — NEVER commit (SSH deploy keys, tokens). Not needed for the
