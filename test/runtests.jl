@@ -670,6 +670,31 @@ end
     @test fwith[1].label == "Net sales"
 end
 
+@testset "language-aware labels (E4.1, offline)" begin
+    # A multilingual (EDINET-style) label linkbase carries both Japanese and English labels per
+    # concept via `xml:lang` — `_concept_labels`/`label_map` select one with `lang`.
+    lab = """
+    <link:linkbase>
+    <link:loc xlink:href="x.xsd#jppfs-cor_Assets" xlink:label="loc_A"/>
+    <link:labelArc xlink:from="loc_A" xlink:to="lab_A"/>
+    <link:label xlink:label="lab_A" xml:lang="ja" xlink:role="http://www.xbrl.org/2003/role/label">資産</link:label>
+    <link:label xlink:label="lab_A" xml:lang="en-US" xlink:role="http://www.xbrl.org/2003/role/label">Assets</link:label>
+    </link:linkbase>"""
+    # lang="en" picks the English label even though the Japanese one is listed first (prefix-matches
+    # "en-US"); lang="ja" picks Japanese; lang=nothing keeps the first-seen (current behaviour); a
+    # monolingual SEC linkbase (no xml:lang) is unaffected by any lang.
+    sec = """<link:linkbase>
+    <link:loc xlink:href="x.xsd#us-gaap_Revenues" xlink:label="loc_R"/>
+    <link:labelArc xlink:from="loc_R" xlink:to="lab_R"/>
+    <link:label xlink:label="lab_R" xlink:role="http://www.xbrl.org/2003/role/label">Net sales</link:label>
+    </link:linkbase>"""
+    @test (EDGAR._concept_labels(lab; lang = "en")["jppfs-cor:Assets"],
+           EDGAR._concept_labels(lab; lang = "ja")["jppfs-cor:Assets"],
+           EDGAR._concept_labels(lab)["jppfs-cor:Assets"],
+           EDGAR._concept_labels(sec; lang = "ja")["us-gaap:Revenues"]) ==
+          ("Assets", "資産", "資産", "Net sales")
+end
+
 @testset "FilingSummary fallback classification (offline)" begin
     # defref token -> namespaced concept
     @test (EDGAR._defref_concept("defref_us-gaap_Assets"),

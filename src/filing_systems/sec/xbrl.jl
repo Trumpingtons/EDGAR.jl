@@ -138,7 +138,7 @@ function _filing_summary_statements(f::Filing)
 end
 
 """
-    label_map(f::Filing) -> Dict{String,String}
+    label_map(f::Filing; lang=nothing) -> Dict{String,String}
 
 The filing's concept => human-readable label map, from its **label linkbase** (`*_lab.xml`) — the
 authoritative source for how each XBRL concept is presented (e.g.
@@ -146,12 +146,17 @@ authoritative source for how each XBRL concept is presented (e.g.
 standard label, falling back to the terse then verbose label; returns an empty map if the linkbase
 cannot be fetched. This is what `facts(f; labels=true)` uses to fill the `label` column (the
 browser picker reads the label off the rendered row instead).
+
+`lang` selects a language for **multilingual** label linkbases (EDINET, DART), whose linkbase
+carries both Japanese and English labels per concept (`label_map(f; lang="en")` /
+`lang="ja"`); it matches by language prefix (`"en"` matches `"en-US"`). The default `nothing` keeps
+every label regardless of language, so monolingual SEC/ESEF filings are unaffected.
 """
-function label_map(f::Filing)
+function label_map(f::Filing; lang::Union{AbstractString,Nothing}=nothing)
     # The filing's own (bundled/loose) labels override the standard-taxonomy labels, so an issuer's
     # preferred/renamed label wins; the standard labels fill concepts the filing doesn't label itself
     # (e.g. ESEF bundles only extension labels — the ifrs-full standard labels come from `_standard_labels`).
-    m = merge(_standard_labels(f), _concept_labels(_fetch_linkbase(f, "lab")))
+    m = merge(_standard_labels(f), _concept_labels(_fetch_linkbase(f, "lab"); lang))
     isempty(m) && @warn "No native labels for $(f.ref): the label linkbase was missing " *
         "(not loose and not in `<accession>-xbrl.zip`) — `label` will be empty."
     return m

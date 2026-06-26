@@ -99,8 +99,12 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
 > E2.3 live discovery/fetch (needs the free key).
 
 ### E4 — N5 language-aware labels + validation
-- ☐ E4.1 `label_map(f; lang="en"|"ja")` + a `lang`-aware `_concept_labels` (EDINET label linkbase carries
-  both via `xml:lang`). Touch the core text/label parser carefully; keep existing callers default to `en`.
+- ✅ E4.1 `label_map(f; lang="en"|"ja")` + a `lang`-aware `_concept_labels` (EDINET label linkbase carries
+  both via `xml:lang`). DONE (offline): added `_lang_ok` (prefix match — `"en"` matches `"en-US"`; a label
+  with no `xml:lang` always qualifies, so monolingual SEC/ESEF linkbases are unaffected), threaded `lang`
+  through `label_map`/`facts`/`facts_json`. Default `lang=nothing` = no filter = **exact prior behaviour**
+  (not defaulted to `en`, to avoid changing SEC/ESEF output). Testset "language-aware labels (E4.1, offline)"
+  1/1; full suite (incl. live 31/31) green. Live ja/en selection on a real EDINET filing awaits the key.
 - ☐ E4.2 **CSV oracle** (`type=5`): `facts(f)` == the EDINET CSV's values (the JP parser oracle).
 - ☐ E4.3 Yahoo cross-check (`nnnn.T`); manual chapter (the EDINET placeholder already exists).
 - ☐ E4.4 🚦 **GATE (run tests + commit):** report parity vs the CSV oracle; commit.
