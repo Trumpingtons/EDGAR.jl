@@ -53,13 +53,14 @@ include("filing_systems/companies_house/discovery.jl")       # 🔵 Companies Ho
 include("filing_systems/companies_house/bulk.jl")            # 🔵 Companies House bulk: CompaniesHouseBulk source over the keyless Accounts Data Product (C2)
 include("filing_systems/nsm/nsm_categories.jl")              # 🔵 NSM (FCA) category vocabulary: type_code → description
 include("filing_systems/nsm/nsm.jl")                         # 🔵 NSM discovery: FCA National Storage Mechanism source (UKSEF AFR iXBRL → ESEF parse)
+include("extractors/pdf.jl")                # 🟢 PDF extractor (Format axis): pdfjs-dist → words → row/column → coordinate-anchored Facts
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, set_credentials, persist_user_agent, unpersist_user_agent,

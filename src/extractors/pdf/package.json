@@ -1,0 +1,11 @@
+{
+  "name": "edgar-pdf-extractor",
+  "private": true,
+  "type": "module",
+  "description": "EDGAR.jl PDF extractor — Node helper: pdfjs-dist (direct) -> positioned words JSON. See docs/dev/pdf-extractor-plan.md.",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "pdfjs-dist": "^6.0.0",
+    "dommatrix": "^1.0.0"
+  }
+}

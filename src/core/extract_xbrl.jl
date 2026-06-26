@@ -467,6 +467,7 @@ facts(f; classify = true, labels = true)  # …with the `statement` and `label` 
 ```
 """
 facts(f::Filing; classify::Bool=false, labels::Bool=false) =
+    f.kind === :pdf ? _pdf_filing_facts(f; classify = classify, labels = labels) :
     facts(_filing_selection(f, _extract_facts(f;
         statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
         negations = classify ? statement_negations(f) : Set{String}(),
