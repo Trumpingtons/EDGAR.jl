@@ -270,10 +270,21 @@ effort isn't throwaway.
 - ☐ P1.2 Julia subprocess driver + JSON ingest; `Filing(:pdf)` → positioned words.
 - ☐ P1.3 Geometric reconstruction: cluster words → rows × columns for ONE clean dual-format UK BS.
 - ☐ P1.4 🚦 **GATE:** show the reconstructed Balance-sheet grid for one filer; agree the row/column model.
-- ☐ P1.5 **Coordinate provenance (design in now, don't retrofit):** carry each fact's source `(page, bbox)`
+- ☑ P1.5 **Coordinate provenance (design in now, don't retrofit):** carry each fact's source `(page, bbox)`
   through to the `Fact` — the PDF analogue of `FactRow.source_selector` — so the Pollis workbench can
   back-link a number to its source pixel (see [pollis-workbench-vision.md](pollis-workbench-vision.md)).
   pdf.js already returns the bbox per item, so this is cheap if threaded through from P1.2.
+
+**P1 prototype DONE (2026-06)** — `tools/pdf-bakeoff/pdf_words.mjs` (pdfjs-dist→positioned words JSON,
+top-down y) + `cluster.jl` (rows by y-bin, period columns by numeric right-edge bands, label = left text,
+values→nearest column, parentheses/en-dash semantics, each cell coordinate-anchored). On Tesco's Group
+balance sheet it reconstructs the **whole statement**, and `Equity attributable to owners` = **11,671 /
+12,236** — an *exact* match to the iXBRL twin (current/prior). Generalisation finding: the **geometry is
+robust** (income statement reconstructs cleanly too) but **column *meaning* is statement-specific** — the
+BS's 3 columns are periods; the income statement's are a before-exceptional/exceptional/total split, and
+the twin's `Revenue 68,187` (total incl. discontinued) needs *semantic* line/column resolution. → that
+(column→period mapping, statement ID, twin-anchored line resolution) is exactly **P2**. Prototype lives in
+`tools/`; graduation into `src/` + `Fact`/`FactRow` is P2.4.
 
 ### P2 — Financial-semantics layer (the moat)
 - ☐ P2.1 Number parser: parentheses-negative, separators, **decimal-comma (reuse existing)**, currency.
