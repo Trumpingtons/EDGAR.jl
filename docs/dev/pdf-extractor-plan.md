@@ -34,6 +34,9 @@ carry only a **line-item label** ("Total assets", "Bilanzsumme"). So:
 - The classify engine already has label/role-name patterns; PDF leans on those rather than concept
   prefixes. This is the one place the extractor touches shared code — confirm the classify path works
   label-first before scaling.
+- **`source_selector` carries `(page, bbox)` for PDF** (it holds an HTML/CSS selector for HTML filings) —
+  the coordinate provenance that lets the Pollis workbench back-link a fact to its source pixel (P1.5;
+  [pollis-workbench-vision.md](pollis-workbench-vision.md)).
 
 ---
 
@@ -267,6 +270,10 @@ effort isn't throwaway.
 - ☐ P1.2 Julia subprocess driver + JSON ingest; `Filing(:pdf)` → positioned words.
 - ☐ P1.3 Geometric reconstruction: cluster words → rows × columns for ONE clean dual-format UK BS.
 - ☐ P1.4 🚦 **GATE:** show the reconstructed Balance-sheet grid for one filer; agree the row/column model.
+- ☐ P1.5 **Coordinate provenance (design in now, don't retrofit):** carry each fact's source `(page, bbox)`
+  through to the `Fact` — the PDF analogue of `FactRow.source_selector` — so the Pollis workbench can
+  back-link a number to its source pixel (see [pollis-workbench-vision.md](pollis-workbench-vision.md)).
+  pdf.js already returns the bbox per item, so this is cheap if threaded through from P1.2.
 
 ### P2 — Financial-semantics layer (the moat)
 - ☐ P2.1 Number parser: parentheses-negative, separators, **decimal-comma (reuse existing)**, currency.
