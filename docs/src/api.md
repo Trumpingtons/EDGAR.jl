@@ -67,7 +67,9 @@ resolves regardless of system. ESEF/UKSEF packages come from [`FilingsXBRLOrg`](
 filings.xbrl.org aggregator) or, for UK listed issuers, the FCA NSM via [`NSM`](@ref); UK registrar
 accounts come from [`CompaniesHouseApi`](@ref) (keyed, per company) or [`CompaniesHouseBulk`](@ref)
 (keyless, whole-registrar). Browse the NSM category vocabulary with [`nsm_categories`](@ref).
-Per-system credentials (e.g. a Companies House API key) are set with [`set_credentials`](@ref).
+Japanese (EDINET) filings are discovered **by date** from [`EDINETApi`](@ref) (keyed), which lists a
+day's submissions and filters them by EDINET code and document type.
+Per-system credentials (e.g. a Companies House or EDINET API key) are set with [`set_credentials`](@ref).
 
 Before discovery, find the entity itself with [`company_search`](@ref) — a registry/name search that
 returns uniform [`CompanyHit`](@ref) rows whose identity feeds straight into `discover`. It dispatches
@@ -85,6 +87,7 @@ NSM
 nsm_categories
 CompaniesHouseApi
 CompaniesHouseBulk
+EDINETApi
 set_credentials
 ```
 
