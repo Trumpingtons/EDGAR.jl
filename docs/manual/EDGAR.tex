@@ -2213,6 +2213,128 @@ OpenDART API (key required), which --- like the SEC --- additionally exposes a s
 financial-statement API. No adapter is implemented yet.
 
 % ===========================================================================
+% ===  EXTRACTION  ==========================================================
+% ===========================================================================
+\chapter{Extraction \textemdash{} from filings to facts}
+\label{sys:extraction}
+
+A fetched \texttt{Filing} is only bytes plus a \texttt{kind}. An \textbf{extractor} turns it into the
+\texttt{FactRow} row table that the rest of the toolkit consumes. \texttt{EDGAR.jl} has more than one
+extractor, selected automatically by \texttt{facts(f)} from the filing's format. Whatever the source,
+the output is the \emph{same} row table --- so classification, \texttt{select\_statement}, the
+CSV/DuckDB exports and the validation oracles (\S\ref{sec:validation}) all work unchanged.
+
+\section{Architecture: the format/extraction axis}
+
+The portability picture (\S\ref{sec:two-axes}) has two axes --- a \emph{jurisdiction} axis (fetch and
+identity) and a \emph{taxonomy} axis (the concept vocabulary). Extraction is a \textbf{third,
+orthogonal axis: \emph{format}} --- \emph{how} facts are recovered from the bytes. \texttt{Filing.kind}
+names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}), and \texttt{facts(f)} dispatches on it:
+
+\begin{itemize}
+  \item \texttt{:ixbrl} / \texttt{:xbrl} \(\rightarrow\) the \textbf{XBRL extractor} (reads inline or
+    classic XBRL, resolving contexts and units). This is the path every structured filing has used so far.
+  \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor} (\texttt{extract\_pdf}), described below.
+\end{itemize}
+
+\noindent The key invariant: \textbf{both emit the same \texttt{FactRow}}. So the XBRL parser is
+\emph{one} extractor on this axis, not the universal core --- a point the Companies House and German
+cases force, where a large share of filings are PDF, not XBRL.
+
+\paragraph{The concept problem.} An XBRL fact carries a taxonomy \emph{concept}
+(\texttt{us-gaap:Assets}); a PDF fact carries only a line-item \emph{label} (``Total assets'',
+``Bilanzsumme''). So for PDF the \texttt{standard\_concept} (the cross-company standardiser) is the real
+bridge, and classification keys off the label rather than a concept prefix. The fact's
+\texttt{source\_selector} carries a CSS selector for HTML filings and, for PDF, the source
+\texttt{(page, bbox)} --- coordinate provenance that lets an editor back-link a number to its source
+pixel.
+
+\section{The PDF extractor: a tiered toolchain}
+\label{sec:pdf-tiers}
+
+PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
+no text layer at all; and layouts vary by issuer and language. The extractor is therefore \textbf{tiered}:
+
+\begin{enumerate}
+  \item[\textbf{Tier 1}] \textbf{(deterministic --- built).} \texttt{pdfjs-dist} \emph{directly} (no
+    wrapper), via a small Node helper, yields positioned words; \texttt{EDGAR.jl} then reconstructs the
+    statement geometrically --- \emph{rows} by clustering on the vertical position, \emph{columns} by the
+    numeric right-edge bands --- reads the header for period dates and the scale (£m, etc.), and emits
+    coordinate-anchored facts. The number semantics (parentheses\,=\,negative, decimal-comma, scale
+    footers) live in Julia.
+  \item[\textbf{Tier 2}] \textbf{(OCR --- planned).} \texttt{tesseract.js} turns a \emph{scanned} page
+    into a text layer the Tier-1 path can then read.
+  \item[\textbf{Tier 3}] \textbf{(LLM --- planned, optional).} An arithmetic-validated language-model
+    pass for layouts Tier 1 cannot reconstruct; off by default so the library stays deterministic and
+    offline.
+\end{enumerate}
+
+\paragraph{Toolchain decision.} The whole stack is a \textbf{single Node/TypeScript toolchain} --- no
+Python/Conda, no JVM, no GPL/AGPL. The parser is \texttt{pdfjs-dist} used \emph{directly}: Mozilla's
+upstream pdf.js (Apache-2.0), pinned to a version we choose. In a bake-off it tied the popular wrappers
+(\texttt{pdf.js-extract}, \texttt{pdfreader}) on accuracy while being faster, leaner on dependencies, and
+on the best-maintained parser (the wrappers bundle older or \emph{forked} copies). The toolchain is also
+native to the editor host (a TypeScript VS Code fork), where the same \texttt{pdf.js} can render, extract
+\emph{and} supply the coordinates that link a fact to its source. Using it needs Node and the pinned
+\texttt{pdfjs-dist} (\texttt{npm install} in \texttt{src/extractors/pdf/}).
+
+\section{Where it plugs into the workflow}
+
+Extraction is one step in the same pipeline every system follows:
+
+\begin{center}
+\texttt{company\_search} \(\rightarrow\) \texttt{discover} \(\rightarrow\) \texttt{fetch\_filing}
+\(\rightarrow\) \textbf{\texttt{facts(f)}} \(\rightarrow\) \texttt{select\_statement} / export / validate
+\end{center}
+
+\noindent The extractor \emph{is} the \texttt{facts(f)} step, and it is identical for every jurisdiction
+--- SEC, ESEF, Companies House, the NSM. For XBRL filings \texttt{facts(f)} ``just works''. For PDF the
+working entry today is \textbf{\texttt{extract\_pdf(path)}} on a born-digital PDF on disk; calling
+\texttt{facts(f)} on a \texttt{:pdf} \texttt{Filing} currently needs the PDF bytes, which the fetch path
+does not yet retain --- so download the document, then \texttt{extract\_pdf}. (Tier 1 covers born-digital
+financial statements; scanned and exotic layouts await Tiers 2--3.)
+
+\section{Workflow examples}
+
+The extraction call is the same shape across systems; only discovery differs.
+
+\paragraph{SEC (inline XBRL).}
+\begin{lstlisting}
+using EDGAR
+set_user_agent("Your Name you@example.com")
+fs = filings_by_cik("320193"; forms = "10-K")            # Apple
+f  = fetch_filing("320193", fs[1].accession)             # f.kind == :ixbrl
+select_statement(facts(f; classify = true, labels = true), "BalanceSheet")
+\end{lstlisting}
+
+\paragraph{NSM / ESEF (UKSEF inline XBRL).}
+\begin{lstlisting}
+hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # Tesco PLC
+facts(fetch_filing(first(hs)); classify = true, labels = true)    # same call, ESEF package
+\end{lstlisting}
+
+\paragraph{Companies House (iXBRL \emph{or} PDF --- read \texttt{f.kind}).}
+\begin{lstlisting}
+f = fetch_filing(first(discover(CompaniesHouseApi(); company_number = "00021497")))
+if f.kind in (:ixbrl, :xbrl)
+    facts(f; classify = true)                            # structured path
+else                                                      # f.kind == :pdf
+    # download the document, then run the PDF extractor on the file:
+    extract_pdf("00021497_accounts.pdf")
+end
+\end{lstlisting}
+
+\paragraph{PDF extractor (born-digital).}
+\begin{lstlisting}
+rows = extract_pdf("annual_report.pdf"; page = 133)      # a Vector{FactRow}, like facts(f)
+select_statement(rows, "BalanceSheet")                   # every fact coordinate-anchored
+\end{lstlisting}
+
+\noindent In every case the result is the same \texttt{FactRow} row table, so the downstream
+(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
+of which extractor produced it.
+
+% ===========================================================================
 % ===  VALIDATION  ==========================================================
 % ===========================================================================
 \chapter{Additional Data Sources}
