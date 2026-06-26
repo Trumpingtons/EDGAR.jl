@@ -1985,9 +1985,28 @@ may be inline XBRL \emph{or} PDF (the document metadata can even offer both for 
 \emph{which} it is cannot be inferred from the company's size or status --- the only firm
 regularity observed is that \emph{listed} issuers file PDF at CH (their machine-readable copy lives on
 the NSM as UKSEF). So the rule is simple: \textbf{fetch the filing and read \texttt{f.kind}}
-(\texttt{:ixbrl}, \texttt{:xbrl} or \texttt{:pdf}); a PDF is a typed, non-fatal outcome, not an error.
+(Table~\ref{tab:ch-formats}); a PDF is a typed, non-fatal outcome, not an error.
 The relative prevalence of PDF-only, iXBRL-only and dual-format accounts across the registrar has not
 been measured here and would require a representative sample; it is left as an open question.
+
+\begin{table}[h]
+\centering
+\caption{The three Companies House document outcomes. \texttt{fetch\_filing} content-negotiates in
+preference order iXBRL \(\rightarrow\) XBRL \(\rightarrow\) PDF (a single filing's metadata may offer
+more than one), and reports which it got as \texttt{f.kind}. Unlike the NSM, Companies House serves only
+what the filer submitted --- it does not generate xBRL-CSV/xBRL-JSON renderings.}
+\label{tab:ch-formats}
+\small
+\begin{tabular}{@{}p{0.12\textwidth}p{0.26\textwidth}p{0.28\textwidth}p{0.20\textwidth}@{}}
+\toprule
+\textbf{\texttt{f.kind}} & \textbf{Document API serves as} & \textbf{What it is} & \textbf{EDGAR.jl} \\
+\midrule
+\texttt{:ixbrl} & \texttt{application/xhtml+xml} & Inline-XBRL accounts (FRS/IFRS) & parsed $\to$ \texttt{facts} \\
+\texttt{:xbrl}  & \texttt{application/xml}       & Classic XBRL instance            & parsed $\to$ \texttt{facts} \\
+\texttt{:pdf}   & \texttt{application/pdf} (or no structured resource) & Paper/PDF accounts & typed outcome, not parsed (PDF track) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Finding a company}
 \label{sec:uk-company-search}
@@ -2099,11 +2118,73 @@ select_statement(rows, "IncomeStatement")      # ifrs-full / issuer-extension re
 NSM category vocabulary by \texttt{nsm\_categories}) or a category code directly, and narrows the
 accounting-reference date by either \texttt{year} (a single calendar year) or an explicit
 \texttt{from}/\texttt{to} window of \texttt{Date}s --- the same within-filer date filter Companies
-House offers (\S\ref{sys:companieshouse}). Only Annual Financial Reports are XBRL-tagged on the NSM; other categories (quarterly
-results, half-year reports, RNS announcements) are untagged PDF/HTML and raise an informative error
-today --- they belong to the same PDF/text track noted for Companies House. The very same UKSEF
+House offers (\S\ref{sys:companieshouse}). Only the tagged UKSEF packages are XBRL-tagged on the NSM;
+the other formats (Table~\ref{tab:nsm-formats}) are untagged xHTML or PDF and raise an informative
+error today --- they belong to the same PDF/text track noted for Companies House. The very same UKSEF
 package is also reachable via \texttt{discover(FilingsXBRLOrg(); lei)} (\S\ref{sys:esef}); the two are
 independent sources for one document, and the Arelle oracle (\S\ref{sec:validation}) cross-checks them.
+
+\paragraph{Three document formats.} The NSM tags every document with a \texttt{tag\_esef} state, and
+each maps to a distinct format (Table~\ref{tab:nsm-formats}). The format is \emph{not} fixed by the
+kind of filing: an Annual Financial Report can appear in all three states --- even for the same issuer
+and period (we observed both a tagged package and a PDF for the same Tesco financial year).
+
+\begin{table}[h]
+\centering
+\caption{The three document formats the NSM serves, by \texttt{tag\_esef} state. Counts are
+\emph{documents} (one disclosure each), not distinct filers --- an issuer accumulates one tagged AFR
+per year since the FY2021 tagging mandate, so the \(\sim\)2{,}900 tagged documents span considerably
+fewer companies.}
+\label{tab:nsm-formats}
+\small
+\begin{tabular}{@{}p{0.12\textwidth}p{0.21\textwidth}p{0.15\textwidth}p{0.34\textwidth}@{}}
+\toprule
+\textbf{\texttt{tag\_esef}} & \textbf{Format} & \textbf{Extension} & \textbf{What it is} \\
+\midrule
+\texttt{"Tagged"}   & \textbf{iXBRL} (ESEF report package) & \texttt{.zip}                  & Machine-readable Annual Financial Reports (\(\sim\)2{,}900 docs). \\
+\texttt{"Untagged"} & \textbf{xHTML} (no XBRL tags)         & \texttt{.xhtml}/\texttt{.html} & Annual Financial Reports as structured HTML, untagged (\(\sim\)1{,}700 docs). \\
+\texttt{""} (empty) & \textbf{PDF} and \textbf{RNS HTML}    & \texttt{.pdf}/\texttt{.html}   & Annual reports filed as PDF, plus the entire RNS announcement stream (millions of docs). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The empty state is dominated by \textbf{RNS} --- the London Stock Exchange's
+\emph{Regulatory News Service}, the channel through which listed issuers disclose regulatory news
+(director dealings, shareholding notifications, dividends, trading updates, \ldots). A company issues
+dozens of RNS items a year but only one annual report, so RNS HTML vastly outnumbers everything else;
+it carries no financial statements and is out of scope for extraction. Of the three formats, only the
+\textbf{tagged} iXBRL packages are machine-readable financials --- which is why the adapter fetches
+those and leaves the xHTML and PDF/RNS tracks to a future text/PDF extractor.
+
+\paragraph{Download formats on the FCA website.} Table~\ref{tab:nsm-formats} is what an issuer
+\emph{files}; the FCA website (\texttt{data.fca.org.uk}) offers a richer download menu for the
+machine-readable ones (Table~\ref{tab:nsm-downloads}). For a \textbf{Tagged} Annual Financial Report you
+can download the original inline-XBRL package \emph{or} the same tagged facts re-serialised as
+\textbf{xBRL-CSV} or \textbf{xBRL-JSON} --- alternative encodings of one report, generated by the FCA
+from the inline-XBRL (the xBRL-JSON is the very serialisation the Arelle oracle consumes,
+\S\ref{sec:validation}). \emph{Untagged} and \emph{PDF} documents offer only their original file. So an
+AFR is filed as exactly one of \{iXBRL, xHTML, PDF\}, and only the tagged (iXBRL) one additionally
+yields xBRL-CSV/xBRL-JSON; the other categories are HTML or PDF and never carry XBRL.
+
+\begin{table}[h]
+\centering
+\caption{What the FCA website offers for download, by document. The xBRL-CSV/xBRL-JSON renderings exist
+\emph{only} for Tagged AFRs (they are generated from the inline-XBRL); they are a convenience of the FCA
+site, not something \texttt{EDGAR.jl} produces --- the adapter fetches the inline-XBRL package and parses
+it with the same jurisdiction-agnostic extractor used everywhere else.}
+\label{tab:nsm-downloads}
+\small
+\begin{tabular}{@{}p{0.34\textwidth}p{0.24\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Document} & \textbf{Filed as} & \textbf{Also downloadable as} \\
+\midrule
+Annual Financial Report --- \textbf{Tagged}   & iXBRL (XHTML+XBRL) & xBRL-CSV, xBRL-JSON \\
+Annual Financial Report --- \textbf{Untagged} & xHTML              & --- \\
+Annual Financial Report --- \textbf{PDF}      & PDF                & --- \\
+Any other category (RNS, quarterly, half-year, \ldots) & HTML or PDF & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{Coverage caveat.} Because discovery filters to the tagged UKSEF packages, an issuer or
 financial year with \emph{only} a PDF report --- all years before FY2021, and many issuers since ---
@@ -2134,92 +2215,155 @@ financial-statement API. No adapter is implemented yet.
 % ===========================================================================
 % ===  VALIDATION  ==========================================================
 % ===========================================================================
-\chapter{Validating the Extraction}
+\chapter{Additional Data Sources}
 \label{sec:validation}
 
 How do you know the numbers \texttt{EDGAR.jl} extracts are right? You can check them against
-independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships two \emph{do-it-yourself}
-validation oracles under \texttt{src/sources/}. They are deliberately \textbf{not part of the
-\texttt{EDGAR} module} (not \texttt{include}d by \texttt{src/EDGAR.jl}), so they add \textbf{no
-dependencies} to the package and never touch the working code; you load one on demand when you want
-reassurance. A stray \texttt{.jl} file under \texttt{src/} is ignored by the package loader.
+independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships three \emph{do-it-yourself}
+data sources under \texttt{src/sources/}, each an independent reference you compare the extraction
+against. They are deliberately \textbf{not part of the \texttt{EDGAR} module} (not \texttt{include}d by
+\texttt{src/EDGAR.jl}), so they add \textbf{no dependencies} to the package and never touch the working
+code; you load one on demand when you want reassurance. A stray \texttt{.jl} file under \texttt{src/}
+is ignored by the package loader.
 
 \begin{table}[h]
 \centering
-\caption{The two validation oracles.}
+\caption{The three additional data sources (validation oracles).}
 \label{tab:oracles}
 \small
 \begin{tabular}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.20\textwidth}p{0.14\textwidth}p{0.10\textwidth}@{}}
 \toprule
 \textbf{File} & \textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
 \midrule
-\texttt{arelle\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
 \texttt{yahoo\_oracle.jl} & \textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
+\texttt{alphavantage\_oracle.jl} & \textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
+\texttt{arelle\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent The two answer different questions. The \textbf{Arelle} oracle confirms we \emph{read the
-filing right}: it compares every consolidated numeric fact \texttt{EDGAR.jl} extracts from a filing's
-inline XBRL against the \emph{same filing's} xBRL-JSON as published by
-\href{https://filings.xbrl.org}{filings.xbrl.org} --- an independent, standards-grade parse of the
-identical document (\S\ref{sys:esef}). The \textbf{Yahoo} oracle confirms the \emph{numbers match the
-outside world}: it compares the headline totals (Assets, Equity, Revenue, Net income) against Yahoo
-Finance, an entirely separate data pipeline, across jurisdictions --- covering all three statements
-(balance sheet, income statement, and cash flow via operating cash flow). A parser oracle cannot catch a
-filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle can, but only
-approximately, since Yahoo normalizes. The Arelle approach mirrors
-\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266),
-using just the HTTP+JSON it needs --- credit there.
+\noindent They answer two different questions. A \textbf{data} oracle (\textbf{Yahoo Finance},
+\textbf{AlphaVantage}) confirms the \emph{numbers match the outside world}: it compares the headline
+totals (Assets, Equity, Revenue, Net income, operating cash flow) against an entirely separate data
+pipeline, across all three statements. A \textbf{parser} oracle (\textbf{Arelle}) confirms we
+\emph{read the filing right}: it compares every consolidated numeric fact against the \emph{same
+filing's} xBRL-JSON. A parser oracle cannot catch a filer \emph{mis-tagging} a value (everyone reads
+the same wrong tag); a data oracle can, but only approximately, since the data providers normalize.
 
 \medskip\noindent This is the same kind of check the package already applies on the SEC side: the
 extracted values are validated against the SEC's \texttt{companyfacts} API (the SEC's own parse of the
 same filing). Each filing system has an independent reference of this sort --- which is what lets us
 trust the one jurisdiction-agnostic parser across systems where no such API exists
-(\S\ref{sec:architecture}).
+(\S\ref{sec:architecture}). Each oracle's \texttt{validate} returns a row table --- one row per fact
+(or per headline metric) with the \texttt{EDGAR} value, the reference value, the relative difference
+and a \texttt{match} flag --- so you can \texttt{filter} to mismatches or render it with
+\texttt{PrettyTables}. A \texttt{User-Agent} must be set first (\S\ref{sec:caching}); the scripts fall
+back to the \texttt{EDGAR\_UA} environment variable.
 
-\section{Running the oracles}
+\section{Yahoo Finance}
 
-\paragraph{Arelle (needs only \texttt{EDGAR} --- runs in the package's own environment).}
+A \emph{data} oracle with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
+SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
+within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
+dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
+cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
+
+\paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
+headline totals against Yahoo:
+
+\begin{lstlisting}
+using YFinance
+include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+using .YahooOracle
+
+# 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
+f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
+select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
+
+# 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
+v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
+filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
+YahooOracle.report()                               # or the built-in multi-firm panel
+\end{lstlisting}
+
+\paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
+not its exchange symbol, so the data oracles take the ticker explicitly (\texttt{"AAPL"},
+\texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
+
+\section{AlphaVantage}
+
+A second \emph{data} oracle, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
+dependency}: AlphaVantage is an official, documented REST API (one keyed GET returns clean JSON), so
+the oracle uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
+allows only \(\sim\)25 calls/day, so the on-disk response cache makes re-runs free, and a fresh run is
+paced under the \(\sim\)5/minute limit (a burst of four network calls per minute; cached calls never
+block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
+variable):
+
+\begin{lstlisting}
+# https://www.alphavantage.co/support/#api-key
+$ export ALPHA_VANTAGE_API_KEY="your-key"
+$ julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
+\end{lstlisting}
+
+\paragraph{Validating the extraction.} Extract a US filer with \texttt{EDGAR}, then cross-check against
+AlphaVantage's fundamentals:
+
+\begin{lstlisting}
+include(joinpath(pkgdir(EDGAR), "src", "sources", "alphavantage_oracle.jl"))
+using .AlphaVantageOracle
+
+# 1. EDGAR side -- Microsoft's latest 10-K, classified.
+f = fetch_filing("789019", first(filings_by_cik("789019"; forms = "10-K")).accession)
+select_statement(facts(f; classify = true), "IncomeStatement")
+
+# 2. Cross-check against AlphaVantage (cached; a fresh run is paced under the free tier).
+v = AlphaVantageOracle.validate(:sec, "789019", "MSFT")   # CIK + the AlphaVantage symbol
+filter(r -> !r.match && r.alphavantage !== nothing, v)    # real disagreements only
+AlphaVantageOracle.report()                               # or the built-in US panel
+\end{lstlisting}
+
+\noindent On the default panel the balance-sheet totals match the extraction to \texttt{0.000\%}.
+A metric AlphaVantage did not return (e.g. a throttled call) has \texttt{alphavantage === nothing} and
+is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter above.
+Throttle responses (which AlphaVantage returns with HTTP~200) are purged from the cache so they cannot
+poison a later run.
+
+\section{Arelle xBRL-JSON}
+
+The \emph{parser} oracle: it pits \texttt{EDGAR.jl}'s inline-XBRL extraction against the \emph{same
+filing's} xBRL-JSON as published by \href{https://filings.xbrl.org}{filings.xbrl.org} --- an
+independent, standards-grade parse of the identical document produced by \textbf{Arelle}, the reference
+XBRL processor (\S\ref{sys:esef}). It needs no extra dependency (it uses just the HTTP+JSON
+\texttt{EDGAR} already has), and mirrors
+\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266)
+--- credit there.
 
 \begin{lstlisting}
 # the built-in firm panel (exits non-zero below 95% fact parity):
 $ julia --project=. src/sources/arelle_oracle.jl
 \end{lstlisting}
 
+\paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR},
+then check every consolidated fact against the same filing's xBRL-JSON:
+
 \begin{lstlisting}
 include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
 using .ArelleOracle
-rows = ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Citycon Oyj
-filter(r -> !r.match, rows)                                        # any discrepancies
-ArelleOracle.statements("549300P8N0P6KDGTJ206")                    # parity per BS / IS / CF
+
+# 1. EDGAR side -- discover + fetch Citycon Oyj's ESEF annual report, classified.
+h = first(discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206"))
+facts(fetch_filing(h); classify = true)
+
+# 2. Parser cross-check: every consolidated fact vs the SAME filing's xBRL-JSON.
+filter(r -> !r.match, ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
+ArelleOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
 \end{lstlisting}
 
 \noindent \texttt{ArelleOracle.statements(lei)} reports the parity \emph{per statement} --- one row
 \texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
-\texttt{CashFlow} --- so you can confirm each statement is extracted correctly, fact-by-fact, against
-the reference processor.
-
-\paragraph{Yahoo (needs \texttt{YFinance} in the active environment).}
-
-\begin{lstlisting}
-using YFinance
-include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-using .YahooOracle
-YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
-YahooOracle.report()                           # the built-in panel
-\end{lstlisting}
-
-\noindent Each oracle's \texttt{validate} returns a row table --- one row per fact (or per headline
-metric) with the \texttt{EDGAR} value, the reference value, the relative difference and a
-\texttt{match} flag --- so you can \texttt{filter} to mismatches or render it with \texttt{PrettyTables}.
-On the default panels the agreement is near-exact: \textbf{100\% fact parity} against Arelle and
-\textbf{no mismatches} against Yahoo on the totals it covers. A \texttt{User-Agent} must be set first
-(\S\ref{sec:caching}); the scripts fall back to the \texttt{EDGAR\_UA} environment variable.
-
-\paragraph{Why a \texttt{ticker} for Yahoo?} A \texttt{Filing} knows the filer's \texttt{EntityId}
-(CIK or LEI), not its exchange symbol, so the Yahoo oracle takes the ticker explicitly
-(\texttt{"AAPL"}, \texttt{"CTY1S.HE"}).
+\texttt{CashFlow}. On the default panels the agreement is near-exact: \textbf{100\% fact parity}
+against Arelle and \textbf{no mismatches} against the data oracles on the totals they cover.
 
 % ===========================================================================
 % ===  REFERENCE  ===========================================================
