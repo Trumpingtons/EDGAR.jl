@@ -1,0 +1,17 @@
+{
+  "name": "edgar-pdf-bakeoff",
+  "private": true,
+  "type": "module",
+  "description": "P0 table-specialist bake-off harness (see docs/dev/pdf-extractor-plan.md). Not part of EDGAR.jl; evaluation-only.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "extract": "node extract.mjs"
+  },
+  "dependencies": {
+    "pdf.js-extract": "1.0.1",
+    "pdfreader": "3.0.8",
+    "pdfexcavator": "0.1.2"
+  }
+}

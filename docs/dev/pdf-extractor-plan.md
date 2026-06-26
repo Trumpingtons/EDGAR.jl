@@ -279,6 +279,20 @@ effort isn't throwaway.
 
 ---
 
+## P0 progress — toolchain spike (verified 2026-06)
+
+Harness scaffold at `tools/pdf-bakeoff/` (Node, evaluation-only; `node_modules` gitignored, lockfile
+committed). **All three candidates run end-to-end** (`node extract.mjs <candidate> <pdf>`) on a 57-page
+born-digital PDF: pdf.js-extract → 8.4k words+coords; pdfreader → 20k items(x,y,text); pdfexcavator →
+parsed, **0 tables** (its *default* finder is ruling-line based and the test PDF's tables are borderless
+→ must use `detectBorderlessTables`/`extractTablesEnhanced` for financial statements). Verified facts:
+- **Runtime:** dev shell uses **nvm node v25.0.0** (non-LTS, transient) + **npm 11.6.2**; `package-lock.json`
+  is **v3**. npm is build-time only; the runtime in **Pollis is Electron's bundled Node** and stand-alone
+  Julia would use `NodeJS_jll` — three contexts. All candidates resolve to **pure-JS** deps (pdfjs-dist
+  4.10.38 via pdfexcavator; pdf.js-extract vendors full 5.5.207; pdfreader→pdf2json fork), so **no native
+  ABI** → portable across all three node contexts (this is why pdf-parse's native `@napi-rs/canvas` was
+  avoided). `engines: node>=20` pinned; reproducibility rides the committed lockfile, not the npm version.
+
 ## Open questions / risks
 - **Tier-1 fidelity on messy layouts** — multi-column, merged cells, wrapped labels. The twin oracle
   bounds this empirically; P3 decides how far Tier 1 reaches before Tier 3 is needed.
