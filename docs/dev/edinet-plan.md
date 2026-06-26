@@ -59,12 +59,15 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
   (`set_credentials(EDINET(); api_key=…)`) or `EDINET_API_KEY` env (reuses the CH N3 pattern). Verified.
 - ✅ E0.3 `include` + `export EDINET, EDINETApi` wired; package loads clean.
 
-### E1 — Offline parse (mirrors CH C1 / ESEF B1)  🚦 (fixture choice)
-- ☐ E1.1 `fetch_filing(::EDINET, path)` over a **local EDINET submission ZIP**: find the primary instance
-  under `XBRL/PublicDoc/*.xbrl` (or inline `*.htm`), read it as `content`, reuse the report-package reader.
-- ☐ E1.2 `_fetch_linkbase(::EDINET, f, suffix)` from the bundled ZIP (pre/cal/def/lab), like ESEF.
-- ☐ E1.3 🚦 **GATE:** commit a real (small) EDINET annual-report fixture + a parse test; confirm the ZIP
-  entry layout against a true filing (do NOT guess the paths).
+### E1 — Offline parse (mirrors CH C1 / ESEF B1) ✅ DONE (offline, no key)
+- ✅ E1.1 `fetch_filing(::EDINET, src)` over a submission ZIP: `_edinet_primary_report` finds the instance
+  under `XBRL/PublicDoc/`, reuses the report-package reader. Verified on the **real FSA sample** ZIP layout
+  (IFRS instance → 1375 facts, BS/IS/CF classified).
+- ✅ E1.2 `_fetch_linkbase(::EDINET, f, suffix)` from the bundled ZIP, like ESEF.
+- ✅ E1.3 GATE met: committed a **minimal synthetic** fixture (`test/data/edinet/edinet-min.zip`, 830 B,
+  J-GAAP, real `XBRL/PublicDoc/` layout — see the NOTICE) + a passing testset (runtests.jl
+  "EDINET: offline submission-ZIP extraction (E1)", 12/12). ZIP entry layout confirmed against the FSA
+  sample (not guessed).
 
 ### E2 — Discovery + authenticated fetch (`EDINETApi`)
 - ▶ E2.1 `EDINETApi <: FilingSource`; `discover(::EDINETApi; date, edinet_code=nothing, doc_type="120")`

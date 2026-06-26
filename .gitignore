@@ -46,4 +46,4 @@ filings_demo/
 /.postman/
 /postman/
 test/data/pdf/
-test/data/edinet/
+test/data/edinet/raw/

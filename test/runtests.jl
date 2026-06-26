@@ -1015,6 +1015,35 @@ end
     @test !any(k -> startswith(k, "ifrs-full:"), keys(lm))   # standard labels are not bundled
 end
 
+@testset "EDINET: offline submission-ZIP extraction (E1)" begin
+    # A minimal synthetic EDINET submission ZIP (see the NOTICE beside it): a tiny Japanese-GAAP instance
+    # under the real `XBRL/PublicDoc/` entry layout. Exercises the 4th FilingSystem end-to-end with NO
+    # network — the EDINET ZIP layout (`_edinet_primary_report`) + the shared report-package reader + the
+    # `jppfs_cor` (J-GAAP) classification vocabulary — all through the same fetch_filing/facts API.
+    pkg = joinpath(@__DIR__, "data", "edinet", "edinet-min.zip")
+    f = fetch_filing(EDINET(), pkg)
+    @test f.system isa EDINET
+    @test f.kind === :xbrl
+    @test endswith(lowercase(f.document), ".xbrl")             # the instance found under XBRL/PublicDoc/
+
+    rows = facts(f; classify = true)
+    @test length(rows) == 5                                    # the 5 jppfs_cor facts
+
+    assets = filter(r -> r.concept == "jppfs_cor:Assets", rows)
+    @test !isempty(assets)
+    @test all(r -> r.statement == "BalanceSheet", assets)
+    @test any(r -> r.value ≈ 1.0e9 && r.unit == "JPY" && r.period_end == Date(2017, 3, 31), assets)
+
+    @test all(r -> r.statement == "IncomeStatement",
+              filter(r -> r.concept == "jppfs_cor:NetSales", rows))
+    @test all(r -> r.statement == "CashFlow",
+              filter(r -> r.concept == "jppfs_cor:NetCashProvidedByUsedInOperatingActivities", rows))
+
+    @test any(r -> r.statement == "BalanceSheet", rows)
+    @test any(r -> r.statement == "IncomeStatement", rows)
+    @test any(r -> r.statement == "CashFlow", rows)
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →
