@@ -2251,8 +2251,39 @@ implemented but \textbf{awaits live verification with a free Subscription-Key} (
 remaining pieces also wait on that key or are planned: the full \textbf{form/document-type} catalogue, the
 \textbf{language-aware labels} (\texttt{label\_map(f;\ lang)} --- EDINET's label linkbase carries Japanese
 \emph{and} English via \texttt{xml:lang}, the forcing case for multilingual labels), and the EDINET
-\textbf{CSV fact export} as an independent parser oracle (the JP analogue of the Arelle oracle, since
-filings.xbrl.org does not carry Japan).
+\textbf{CSV fact export} as an independent parser oracle, described next.
+
+\section{Validation: the EDINET CSV oracle}
+\label{sec:edinet-oracle}
+
+Every system in this manual proves its numbers against an independent oracle (\S\ref{sec:validation}):
+the SEC path cross-checks \texttt{company\_facts}, and ESEF and Companies House cross-check
+\href{https://filings.xbrl.org}{filings.xbrl.org}, the Arelle-backed XBRL-International aggregator.
+\textbf{Japan has neither} --- \texttt{company\_facts} is SEC-only, and filings.xbrl.org does not carry
+EDINET. Without an oracle, ``\texttt{facts(f)} ran and returned numbers'' is not evidence that the numbers
+are \emph{right}: a wrong sign, a dropped scale factor, a mis-resolved period or a corrupted nil reads as
+a perfectly ordinary value.
+
+The escape is built into the EDINET document API itself, which serves the \emph{same} filing in two forms:
+
+\begin{itemize}[nosep]
+  \item \texttt{GET /documents/\{docID\}?type=1} \(\rightarrow\) the submission \textbf{ZIP} (inline XBRL +
+    bundled taxonomy) --- the bytes \emph{we} parse with \texttt{facts(f)}.
+  \item \texttt{GET /documents/\{docID\}?type=5} \(\rightarrow\) a \textbf{CSV} of the tagged facts ---
+    \textbf{the FSA's own parse of that exact same document}.
+\end{itemize}
+
+\noindent So the regulator extracts the facts for us, from byte-identical source. The validation
+(planned step \textbf{E4.2}) is therefore the strongest kind available: fetch both forms of one filing,
+run \texttt{facts(f)} over the ZIP, and assert our values match the CSV's \textbf{row for row}. It is
+\emph{same-document} (not a headline cross-check against a different data provider),
+\emph{authoritative} (the regulator's own parser, the JP analogue of Arelle), \emph{free}, and
+\emph{fact-level}. This is exactly the methodology that caught real extraction bugs on the SEC path ---
+the \texttt{\&\#8212;} em-dash entity corrupting every nil fact into the value \texttt{8212}, and the
+sign-flip on classic (non-inline) instances --- now turned on Japan. (The weaker checks still apply
+alongside it: Yahoo Finance headline totals for Tokyo tickers, e.g.\ Toyota \texttt{7203.T}.) Because
+\texttt{type=5} is authenticated, the oracle run waits on the same free Subscription-Key as live
+discovery.
 
 \chapter{DART \textemdash{} South Korea}
 \label{sys:dart}
