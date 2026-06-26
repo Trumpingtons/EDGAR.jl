@@ -73,12 +73,19 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
 - ▶ E2.2 `fetch_filing(::EDINET, h)` downloads the ZIP and routes to the E1 parser. **Implemented.**
 - ☐ E2.3 🚦 **GATE:** live probe with a free key (e.g. Toyota `E02144`); auth + list + fetch + `facts`.
 
-### E3 — J-GAAP vocabulary (the new taxonomy)
-- ☐ E3.1 `vocab_jpgaap.jl` — BS/IS/CF concept anchors under `jpcrp` / `jppfs` (jpdei for entity info),
-  keyed by prefix; merged into `classify_engine` like vocab_usgaap/ifrs/ukgaap. IFRS-adopting JP filers
-  also match `ifrs-full`.
-- ☐ E3.2 Concept local-names **verified against a real filing's facts** (no guessing). Classify BS/IS/CF.
-- ☐ E3.3 🚦 **GATE:** a J-GAAP filer classifies into IS/BS/CF; an IFRS-adopting JP filer still classifies.
+### E3 — J-GAAP vocabulary (the new taxonomy) ✅ DONE (offline, no key)
+- ✅ E3.1 `vocab_jpgaap.jl` — BS/IS/CF/Equity anchors under `jppfs_cor`, keyed by the standard EDINET
+  prefix (stable, unlike CH → no canonicalization); registered in `_TAXONOMY_VOCABULARIES`. IFRS-adopting
+  JP filers fall through to `ifrs-full`.
+- ✅ E3.2 Concept local-names **verified against a real filing** (Kakaku.com FY2017, jppfs 2017-02-28) —
+  `facts(f)` extracts 880 facts; the anchors classify BS/IS/CF.
+- ✅ E3.3 GATE met: `jppfs_cor:Assets/NetAssets→BalanceSheet`, `NetSales/OperatingIncome/ProfitLoss→
+  IncomeStatement`, `NetCashProvidedByUsedInOperatingActivities→CashFlow`; `select_statement` round-trips
+  (BS 92 / IS 48 / CF 8). **EDINET extraction reuses the common XBRL extractor unchanged — thesis confirmed.**
+
+> **Done WITHOUT the API key**, using a public EDINET `.xbrl` instance as a fixture. The key is now only
+> needed for E2.3 (live discovery/fetch). Still open: E1.3 — confirm the submission-**ZIP** entry layout
+> (`_edinet_primary_report`, XBRL/PublicDoc/) against a real ZIP (the public fixtures are raw `.xbrl`).
 
 ### E4 — N5 language-aware labels + validation
 - ☐ E4.1 `label_map(f; lang="en"|"ja")` + a `lang`-aware `_concept_labels` (EDINET label linkbase carries
