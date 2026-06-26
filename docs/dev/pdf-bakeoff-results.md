@@ -43,7 +43,36 @@ Revenue 68,187 · NetIncome 1,192 · Equity 11,671 · OperCashFlow 3,839.
   column detection should separate from the build-our-own (pdf.js-extract + clustering) baseline. That is
   the real P0 comparison (P0.4–P0.6) and the next milestone.
 
+## Milestone 2 — multi-twin + structured (same-row) matcher (2026-06)
+
+Added two more keyless NSM twins (Vodafone FY2025, Diageo FY2023) and a two-period ground truth
+(current + prior). `match2.mjs` upgrades the floor metric to a **position-aware structural test**: does a
+metric's current and prior value land on the **same row** (y normalised per page → candidate-agnostic)?
+That's the column-structure signal text-presence can't see.
+
+| Candidate | Tesco FY24 | Vodafone FY25 |
+|---|---|---|
+| pdf.js-extract | floor 4/4 · same-row **4/4** | floor 4/4 · same-row **4/4** |
+| pdfreader | floor 4/4 · same-row **4/4** | floor 4/4 · same-row **4/4** |
+| pdfexcavator | floor 4/4 · structural **pending** | floor 4/4 · structural **pending** |
+
+**Findings**
+- On **clean headline rows of born-digital IFRS annual reports, the two coordinate candidates tie** —
+  both reconstruct the current/prior columns perfectly. No separation here.
+- **pdfexcavator** still text-only in the harness (default finder = 0 on borderless; needs
+  `extractTablesEnhanced(chars,lines,rects,…)` to enter the structural test).
+- **Ground-truth quality varies by filer:** Diageo FY2023's iXBRL extraction returned implausible
+  headline values (Revenue/OperCF none; Equity 251/117 for a ~£17bn-revenue firm) — its IFRS tagging
+  selects different concepts. The twin oracle is only as good as the iXBRL extraction; this is a P3 concern
+  (some filers need better concept selection). Tesco + Vodafone truth are clean.
+
+**Implication for the bake-off:** the discriminating power is **not** in clean headline IFRS rows; it is in
+the **harder strata** — Companies House small-co **borderless FRS-105/filleted** layouts, **German**
+Bundesanzeiger, dense multi-column tables — plus wiring pdfexcavator's borderless path. Those strata are
+exactly what need the CH key + a German sourcing decision.
+
 ## Next
-- Scale to the stratified corpus (P0.1–P0.3): multi-jurisdiction (UK CH, NSM, **Germany**, US) × form type.
-- Replace presence-in-text with **structured cell-level accuracy** vs the twin (the metric that ranks the
-  specialists), plus the failure-mode classification (clean-fail vs confidently-wrong).
+- Build the harder strata (the ones that actually separate candidates): CH small-co PDFs (needs the API
+  key), German Bundesanzeiger (needs a sourcing route).
+- Wire pdfexcavator's `extractTablesEnhanced` borderless path into the harness so it joins the structural test.
+- Investigate the Diageo-style concept-selection gap in the twin ground truth.
