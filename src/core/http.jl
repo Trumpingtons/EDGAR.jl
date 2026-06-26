@@ -1,7 +1,8 @@
 # HTTP layer: the injectable client, the on-disk response cache, and fetch_url/_get_json (cached, User-Agent-aware). Uses a built-in hash for the cache key (no extra stdlib). Jurisdiction-agnostic.
 
-# HTTP helper (injectable for tests)
+# HTTP helpers (injectable for tests)
 http_get = HTTP.get
+http_post = HTTP.post
 
 # HTTP-response cache defaults (overridable via set_config). CACHE_DIR is the
 # :persistent-mode location — a per-user cache dir, never the working directory.
@@ -119,9 +120,14 @@ end
 """
     fetch_url(url; use_cache=true, timeout=15, allow_file=false) -> Vector{UInt8} or nothing
 
-The low-level HTTP GET that every higher-level function is built on. Fetches
+The low-level HTTP request that every higher-level function is built on. Fetches
 `url` and returns the raw response body as bytes, or `nothing` on any failure
 (network error, non-200 status, or a disallowed URL).
+
+Defaults to a GET; pass `method=:POST` with a `body` (a `String` or `Vector{UInt8}`)
+for a POST — the body is folded into the cache key so distinct POSTs cache separately.
+A POST must supply explicit `headers` (which also bypasses the SEC User-Agent
+requirement), e.g. for a JSON API: `headers=["Content-Type"=>"application/json"]`.
 
 Use it as an escape hatch to reach SEC endpoints that EDGAR.jl does not yet wrap:
 you get the configured `User-Agent` and the cache for free, and parse the bytes
@@ -140,7 +146,8 @@ skips the SEC User-Agent requirement. Sensitive headers such as `Authorization` 
 HTTP.jl on a cross-host redirect (so a redirect to signed object storage does not leak the key).
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false,
-                   headers::Union{Nothing,AbstractVector}=nothing)
+                   headers::Union{Nothing,AbstractVector}=nothing,
+                   method::Symbol=:GET, body=nothing)
     # Support file: for tests only when allow_file=true
     if startswith(url, "file://")
         if !allow_file
@@ -164,7 +171,10 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
     end
 
     caching = CONFIG.cache_mode !== :off
-    path = caching ? cache_path_for(url) : ""
+    # POST responses depend on the request body, so fold it into the cache key.
+    cachekey = (method === :POST && body !== nothing) ?
+        string(url, "\0POST\0", body isa AbstractVector{UInt8} ? String(copy(body)) : String(body)) : url
+    path = caching ? cache_path_for(cachekey) : ""
     caching && _maybe_prune_persistent()
     if caching && use_cache
         cand = _read_cache(path)
@@ -184,7 +194,9 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
     CACHE_METRICS[:requests] += 1
     r = nothing
     try
-        r = http_get(url, headers=req_headers, read_idle_timeout=timeout)
+        r = method === :POST ?
+            http_post(url, req_headers, body === nothing ? UInt8[] : body; read_idle_timeout=timeout) :
+            http_get(url, headers=req_headers, read_idle_timeout=timeout)
     catch e
         @info "fetch_url error: $e"
     end

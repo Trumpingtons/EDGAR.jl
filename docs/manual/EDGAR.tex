@@ -1923,17 +1923,194 @@ produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and ste
 \end{tabular}
 \end{table}
 
-\chapter{Companies House \textemdash{} United Kingdom}
+\chapter{UK filing systems}
+\label{sys:uk}
+
+The United Kingdom exposes company financial reports through \emph{two distinct channels}, and
+\texttt{EDGAR.jl} reaches both. They are not alternatives bolted together --- they are different
+\texttt{FilingSource}s (\S\ref{sec:architecture}) that serve different filer populations and, often,
+the same company in different formats. This chapter covers both and gives a worked workflow for each.
+
+\section{Two UK channels: Companies House and the NSM}
+\label{sec:uk-channels}
+
+\begin{enumerate}
+  \item[\textbf{(a)}] \textbf{Companies House (CH)} --- the UK \emph{registrar}. \emph{Every} UK
+    company must file annual accounts here, so CH spans the whole population (public \emph{and}
+    private). A company is identified by its \textbf{registration number}
+    (\texttt{EntityId(:companies\_house,\ \ldots)}), and accounts are tagged against UK GAAP
+    (FRS~101/102/105, the FRC taxonomy) or IFRS. A CH filing carries \textbf{no issuer extension
+    taxonomy}, so labels and classification \emph{delegate} to the published \emph{standard} taxonomy
+    for a concept's prefix. Access is the Companies House API (free key), with a keyless
+    whole-registrar bulk product as an alternative.
+
+  \item[\textbf{(b)}] \textbf{The National Storage Mechanism (NSM)} --- the FCA's official store of
+    \emph{regulated-market} disclosures. It covers only \textbf{listed issuers}, whose
+    \textbf{Annual Financial Reports} are filed as \textbf{UKSEF} --- the UK profile of ESEF
+    (\S\ref{sys:esef}): inline-XBRL report packages, \texttt{ifrs-full} plus an issuer extension,
+    identified by \textbf{LEI}. Because UKSEF \emph{is} ESEF in form, these parse through the shared
+    ESEF report-package path unchanged; the NSM supplies only its own discovery and fetch. Access is a
+    keyless JSON API.
+\end{enumerate}
+
+\paragraph{Format by channel and filer.} The same UKSEF annual report is reachable from \emph{two}
+sources --- the NSM directly, and the \texttt{FilingsXBRLOrg} aggregator (\S\ref{sys:esef}), which
+indexes the NSM's UK data. Going to the NSM directly removes the dependency on the aggregator.
+Table~\ref{tab:uk-channels} summarises what each channel yields.
+
+\begin{table}[h]
+\centering
+\caption{UK financial reports by channel and filer type. The NSM and FilingsXBRLOrg columns are the
+\emph{same} UKSEF document fetched from different sources.}
+\label{tab:uk-channels}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.22\textwidth}p{0.22\textwidth}p{0.20\textwidth}@{}}
+\toprule
+ & \textbf{UKSEF $\cdot$ NSM} (FCA direct) & \textbf{UKSEF $\cdot$ FilingsXBRLOrg} (aggregator) & \textbf{Companies House} \\
+\midrule
+\textbf{Public (listed)} \newline financials / text & iXBRL \emph{and} PDF & iXBRL: yes / yes & PDF: yes / yes \\
+\textbf{Private} \newline financials / text & --- (not on NSM) & --- (not on NSM) & iXBRL \emph{or} PDF \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The NSM holds both formats too.} The NSM is not an iXBRL-only store: its Annual Financial
+Reports are \emph{mostly} PDF, with a machine-readable UKSEF (inline-XBRL) copy added only for recent
+financial years (FY2021 onwards, when ESEF tagging became mandatory). The \emph{same} annual report
+can therefore appear on the NSM as \emph{two} records --- one PDF and one inline-XBRL package --- under
+the same period end. Only the tagged UKSEF packages are reachable through the adapter today
+(\S\ref{sys:nsm}); the PDF copies belong to the same PDF/text track as Companies House PDFs.
+
+\paragraph{The format is not predictable in advance.} For Companies House, a given company's accounts
+may be inline XBRL \emph{or} PDF (the document metadata can even offer both for one filing), and
+\emph{which} it is cannot be inferred from the company's size or status --- the only firm
+regularity observed is that \emph{listed} issuers file PDF at CH (their machine-readable copy lives on
+the NSM as UKSEF). So the rule is simple: \textbf{fetch the filing and read \texttt{f.kind}}
+(\texttt{:ixbrl}, \texttt{:xbrl} or \texttt{:pdf}); a PDF is a typed, non-fatal outcome, not an error.
+The relative prevalence of PDF-only, iXBRL-only and dual-format accounts across the registrar has not
+been measured here and would require a representative sample; it is left as an open question.
+
+\section{Finding a company}
+\label{sec:uk-company-search}
+
+Both UK workflows start from an identifier --- a registration number for Companies House, an LEI for
+the NSM --- that you rarely know by heart. \texttt{company\_search} is the lookup step \emph{before}
+discovery: it turns a name (or a set of criteria) into those identifiers. Like \texttt{discover}, it is
+a generic verb dispatched on the source, and every source returns the \emph{same} row type, a
+\texttt{CompanyHit}:
+
+\begin{lstlisting}
+const CompanyHit = @NamedTuple{name::String, id::EntityId, status::String, type::String,
+                              incorporated::Union{Date,Nothing}, sic::Vector{String},
+                              address::String, country::String}
+\end{lstlisting}
+
+\noindent The vector of hits is a Tables.jl row table (drops straight into \texttt{DataFrames}, CSV,
+DuckDB), and \texttt{hit.id} is the system-tagged identity --- pass \texttt{hit.id.value} into
+\texttt{discover}. Fields a given registry does not publish are left empty.
+
+\paragraph{Companies House --- by name or by criteria.}
+\begin{lstlisting}
+company_search(CompaniesHouseApi(), "tesco")                 # ranked free-text (name or number)
+# Any criterion switches to the advanced search (filters server-side):
+company_search(CompaniesHouseApi(), "tesco";
+               status = "active", type = "plc", sic = "47110",
+               incorporated_from = Date(1900), incorporated_to = Date(1990))
+only(company_search(CompaniesHouseApi(), "445790")).id.value # -> "00445790"
+\end{lstlisting}
+
+\noindent With only a query it is the registry's ranked search over name and number; supplying any of
+\texttt{status}, \texttt{type}, \texttt{sic}, \texttt{incorporated\_from}/\texttt{incorporated\_to},
+\texttt{dissolved\_from}/\texttt{dissolved\_to} or \texttt{location} switches to the advanced endpoint,
+which filters server-side. Hits populate the full \texttt{CompanyHit} (status, type, incorporation date,
+SIC, address).
+
+\paragraph{NSM --- name to LEI.} The NSM is a disclosure store, not a registry, so its search resolves
+a name to the issuer's LEI:
+\begin{lstlisting}
+hit = only(company_search(NSM(), "tesco"))      # id.value = the LEI; registrar fields empty
+discover(NSM(); lei = hit.id.value, year = 2025)
+\end{lstlisting}
+
+\noindent By default it scopes to the inline-XBRL Annual Financial Reports (the filings that carry an
+LEI \emph{and} that the adapter can fetch), deduplicated to one row per issuer; the registrar facets
+(\texttt{status}, \texttt{type}, \texttt{incorporated}, \texttt{sic}, \texttt{address}) are therefore
+empty. A consequence of that scoping: an issuer that has filed \emph{only} PDF annual reports --- which
+includes everything before FY2021 --- has no tagged record to match, so it does not resolve here.
+
+\section{Companies House workflow}
 \label{sys:companieshouse}
 
-\emph{Planned.} Companies House is the UK registrar; companies file accounts as iXBRL, and the UKSEF
-profile applies for issuers on UK-regulated markets. It is a useful forcing case for the architecture
-because a Companies House filing carries \textbf{no extension taxonomy at all} --- so linkbase lookup
-must \emph{delegate} to the published \emph{standard} taxonomy (FRS~101/102 or IFRS) for a concept's
-prefix, rather than read a bundled or sibling linkbase. Identity is the company registration number
-(\texttt{EntityId(:companies\_house,\ \ldots)}); access is via the Companies House API (key required).
-No adapter is implemented yet; this chapter is a placeholder so the manual's structure is stable as
-systems are added.
+Identity is the registration number. Set the API key once (or the
+\texttt{COMPANIES\_HOUSE\_API\_KEY} environment variable), discover a company's accounts, fetch, and
+--- when the filing is XBRL --- run the same system-agnostic pipeline as everywhere else.
+
+\begin{lstlisting}
+using EDGAR
+set_credentials(CompaniesHouse(); api_key = ENV["COMPANIES_HOUSE_API_KEY"])
+
+# Discover a company's accounts by registration number (newest first).
+hs = discover(CompaniesHouseApi(); company_number = "00021497")
+
+# Narrow within a company: a filing-type code and a period-end date range or single year.
+hs = discover(CompaniesHouseApi(); company_number = "00445790", type = "AA", from = Date(2020))
+hs = discover(CompaniesHouseApi(); company_number = "00445790", type = "AA", year = 2023)
+
+f  = fetch_filing(first(hs))      # a Filing; always inspect f.kind before parsing
+f.kind                            # :ixbrl | :xbrl | :pdf  -- not predictable in advance
+
+if f.kind in (:ixbrl, :xbrl)
+    rows = facts(f; classify = true, labels = true)   # FRS/IFRS facts (uk-core, ...)
+    select_statement(rows, "BalanceSheet")
+end
+
+# Keyless alternative: the whole-registrar bulk Accounts Data Product (no API key).
+hs = discover(CompaniesHouseBulk(); date = "2026-06-19", company_number = "00021497")
+f  = fetch_filing(first(hs))
+\end{lstlisting}
+
+\noindent \texttt{discover(CompaniesHouseApi())} filters server-side by \texttt{category} (default
+\texttt{"accounts"}) and, within a company, narrows further by \texttt{type} (a filing-type code such
+as \texttt{"AA"} for full accounts) and the accounting period end --- either a \texttt{from}/\texttt{to}
+range or a single \texttt{year} (the same date filter the NSM offers, \S\ref{sys:nsm}).
+Labels and classification delegate to the published FRC \emph{standard} taxonomy (the
+filing bundles no extension), so \texttt{labels=true} resolves FRS concept labels with no per-filing
+linkbase. A filing whose accounts are PDF returns \texttt{f.kind == :pdf} with the content URL
+retained; structured facts are not extracted from it (PDF extraction is a separate track).
+
+\section{NSM (UKSEF) workflow}
+\label{sys:nsm}
+
+Identity is the LEI. The NSM serves listed issuers' \textbf{Annual Financial Reports} as UKSEF
+report packages, which parse through the shared ESEF path. Browse the category vocabulary, discover by
+LEI, then fetch and extract:
+
+\begin{lstlisting}
+using EDGAR
+set_user_agent("Your Name you@example.com")   # for the UKSEF report-package download
+
+nsm_categories("annual")                       # ["ACS" => "Annual Financial Report", ...]
+hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # Tesco PLC
+f  = fetch_filing(first(hs))                   # Filing(:ixbrl) -- a UKSEF report package
+rows = facts(f; classify = true, labels = true)
+select_statement(rows, "IncomeStatement")      # ifrs-full / issuer-extension revenue, ...
+\end{lstlisting}
+
+\noindent \texttt{discover(NSM())} accepts a friendly \texttt{category} (resolved against the active
+NSM category vocabulary by \texttt{nsm\_categories}) or a category code directly, and narrows the
+accounting-reference date by either \texttt{year} (a single calendar year) or an explicit
+\texttt{from}/\texttt{to} window of \texttt{Date}s --- the same within-filer date filter Companies
+House offers (\S\ref{sys:companieshouse}). Only Annual Financial Reports are XBRL-tagged on the NSM; other categories (quarterly
+results, half-year reports, RNS announcements) are untagged PDF/HTML and raise an informative error
+today --- they belong to the same PDF/text track noted for Companies House. The very same UKSEF
+package is also reachable via \texttt{discover(FilingsXBRLOrg(); lei)} (\S\ref{sys:esef}); the two are
+independent sources for one document, and the Arelle oracle (\S\ref{sec:validation}) cross-checks them.
+
+\paragraph{Coverage caveat.} Because discovery filters to the tagged UKSEF packages, an issuer or
+financial year with \emph{only} a PDF report --- all years before FY2021, and many issuers since ---
+returns an \emph{empty} result, not an error. The \texttt{year} filter is also blind to undated PDFs:
+on the NSM the accounting period end is recorded only for the tagged packages, so PDF records carry no
+period date to filter on (they retain submission and publication dates instead). Both limitations lift
+once the PDF/text track lands.
 
 \chapter{EDINET \textemdash{} Japan}
 \label{sys:edinet}

@@ -22,7 +22,7 @@ EDGARDuckDBExt = "DuckDB"
 [compat]
 DuckDB = "1.5"
 EzXML = "1.2.3"
-HTTP = "1.10, 2"
+HTTP = "1.10"
 JSON3 = "1"
 OrderedCollections = "1"
 ZipArchives = "2.6.0"

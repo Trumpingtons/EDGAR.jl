@@ -59,6 +59,35 @@ statement_view
 archive_filings
 ```
 
+## Discovery and filing systems
+
+Beyond the SEC, filings are *discovered* from a [`FilingSource`](@ref) — an aggregator or a
+per-system API — which yields system-tagged [`FilingHandle`](@ref)s that [`fetch_filing`](@ref)
+resolves regardless of system. ESEF/UKSEF packages come from [`FilingsXBRLOrg`](@ref) (the
+filings.xbrl.org aggregator) or, for UK listed issuers, the FCA NSM via [`NSM`](@ref); UK registrar
+accounts come from [`CompaniesHouseApi`](@ref) (keyed, per company) or [`CompaniesHouseBulk`](@ref)
+(keyless, whole-registrar). Browse the NSM category vocabulary with [`nsm_categories`](@ref).
+Per-system credentials (e.g. a Companies House API key) are set with [`set_credentials`](@ref).
+
+Before discovery, find the entity itself with [`company_search`](@ref) — a registry/name search that
+returns uniform [`CompanyHit`](@ref) rows whose identity feeds straight into `discover`. It dispatches
+on the source: [`CompaniesHouseApi`](@ref) searches by name or criteria (status, type, SIC,
+incorporation/dissolution dates), while [`NSM`](@ref) resolves a name to its issuer LEI.
+
+```@docs
+FilingSource
+FilingHandle
+discover
+company_search
+CompanyHit
+FilingsXBRLOrg
+NSM
+nsm_categories
+CompaniesHouseApi
+CompaniesHouseBulk
+set_credentials
+```
+
 ## Financial data
 
 XBRL facts from the `data.sec.gov` structured-data endpoints.

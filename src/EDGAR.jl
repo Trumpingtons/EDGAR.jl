@@ -51,10 +51,13 @@ include("filing_systems/esef/discovery.jl") # 🔵 ESEF discovery: FilingsXBRLOr
 include("filing_systems/companies_house/companies_house.jl") # 🔵 Companies House FilingSystem: offline iXBRL accounts parse (C1)
 include("filing_systems/companies_house/discovery.jl")       # 🔵 Companies House discovery: CompaniesHouseApi source + authenticated fetch (C2)
 include("filing_systems/companies_house/bulk.jl")            # 🔵 Companies House bulk: CompaniesHouseBulk source over the keyless Accounts Data Product (C2)
+include("filing_systems/nsm/nsm_categories.jl")              # 🔵 NSM (FCA) category vocabulary: type_code → description
+include("filing_systems/nsm/nsm.jl")                         # 🔵 NSM discovery: FCA National Storage Mechanism source (UKSEF AFR iXBRL → ESEF parse)
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EntityId,
-       FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, discover,
+       FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
+       company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,

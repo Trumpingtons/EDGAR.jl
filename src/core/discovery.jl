@@ -62,3 +62,40 @@ Fetch a discovered filing into memory as a [`Filing`](@ref). Dispatches to the h
 call resolves any handle [`discover`](@ref) produced regardless of which system it came from.
 """
 fetch_filing(h::FilingHandle) = fetch_filing(h.system, h)
+
+# ── Entity (company) search ────────────────────────────────────────────────────────────────────
+# The step *before* discovery: finding the entity whose filings you then `discover`. Discovery keys
+# off a filer identity (a CIK, a company number, an LEI); `company_search` turns a name or a set of
+# criteria into those identities. Like `discover`, it is a generic verb dispatched on a
+# `FilingSource`, returning a uniform, system-neutral row table so the same downstream code works
+# whichever registry produced the hits.
+
+"""
+    CompanyHit
+
+One row of a [`company_search`](@ref) result — a matched entity, system-neutral so every registry
+returns the same shape. Fields: `name` (registered name), `id` (the system-tagged [`EntityId`](@ref),
+e.g. `EntityId(:companies_house, "00445790")`; the bare identifier is `hit.id.value`), `status`
+(e.g. `"active"`, `"dissolved"`), `type` (the registry's company-type code, e.g. `"plc"`, `"ltd"`),
+`incorporated` (date of creation, or `nothing`), `sic` (Standard Industrial Classification codes,
+possibly empty), `address` (a one-line registered-address snippet), and `country`.
+
+The vector of `CompanyHit`s is a [Tables.jl](https://github.com/JuliaData/Tables.jl) row table, so it
+drops straight into `DataFrames`, `CSV`, Arrow, or DuckDB, and indexes/slices as a plain `Vector`.
+"""
+const CompanyHit = @NamedTuple{name::String, id::EntityId, status::String, type::String,
+                               incorporated::Union{Date,Nothing}, sic::Vector{String},
+                               address::String, country::String}
+
+"""
+    company_search(source::FilingSource, query=""; kwargs...) -> Vector{CompanyHit}
+
+Find entities (companies) in `source`'s registry by name and/or criteria, returning a uniform
+[`CompanyHit`](@ref) row table. This is the lookup step before [`discover`](@ref): take a hit's
+identity and pass it on (e.g. `discover(CompaniesHouseApi(); company_number = hit.id.value)`).
+
+The accepted criteria depend on the source (e.g. [`CompaniesHouseApi`](@ref) takes `status`, `type`,
+`sic`, `incorporated_from`/`incorporated_to`). Dispatched on the source, so each registry implements
+its own method while callers get the same result shape.
+"""
+function company_search end
