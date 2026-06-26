@@ -2196,12 +2196,63 @@ once the PDF/text track lands.
 \chapter{EDINET \textemdash{} Japan}
 \label{sys:edinet}
 
-\emph{Planned.} EDINET is Japan's FSA disclosure system. Filers tag against the Japanese GAAP
-taxonomies (\texttt{jpcrp}/\texttt{jppfs}) or IFRS, with \textbf{multi-language, non-Latin labels}
-(Japanese/English), which is the forcing case for a language-aware label parser
-(\texttt{label\_map(f;\ lang)}). Identity is the EDINET code (\texttt{EntityId(:edinet,\ \ldots)});
-access is via the EDINET API (key required), which also offers a pre-parsed CSV fact fast-path. No
-adapter is implemented yet.
+EDINET is Japan's FSA disclosure system, and the fourth \texttt{FilingSystem}. A filing is a
+\textbf{submission ZIP} of inline XBRL plus its bundled taxonomy --- the same shape as a UKSEF/ESEF
+report package --- so it parses through the \emph{shared} report-package reader and the
+jurisdiction-agnostic XBRL extractor (\S\ref{sys:esef}, \S\ref{sys:extraction}) essentially unchanged;
+EDINET supplies only its API source, the ZIP entry layout (the primary instance lives under
+\texttt{XBRL/PublicDoc/}), and the new vocabularies below. Identity is the EDINET code
+(\texttt{EntityId(:edinet,\ "E\#\#\#\#\#")}).
+
+\emph{Status:} the system, the offline parse, and the classification vocabularies are
+\textbf{implemented and verified}; the live API discovery is implemented but awaits a key; the
+language-aware labels and CSV oracle are planned (see below).
+
+\section{Japanese GAAP and IFRS vocabularies}
+
+A Japanese filer reports under one of three accounting standards, and EDINET tags each with a different
+concept namespace --- so classification needs to recognise all of them. \texttt{vocab\_jpgaap.jl} adds the
+two Japan-specific ones (US-GAAP-adopting filers fall through to the existing \texttt{us-gaap} vocabulary):
+
+\begin{itemize}
+  \item \textbf{Japanese GAAP} --- the \texttt{jppfs\_cor} namespace (Japan Public Financial Statements),
+    e.g.\ \texttt{jppfs\_cor:Assets}, \texttt{jppfs\_cor:NetSales}, \texttt{jppfs\_cor:OperatingIncome},
+    \texttt{jppfs\_cor:NetCashProvidedByUsedInOperatingActivities}. Unlike Companies House (which binds the
+    FRC namespace to \emph{arbitrary} prefixes), EDINET filers use the \textbf{standard \texttt{jppfs\_cor}
+    prefix consistently}, so no canonicalisation is needed.
+  \item \textbf{IFRS} --- EDINET's own IFRS taxonomy, the \texttt{jpigp\_cor} namespace with
+    \texttt{…IFRS}-suffixed local names: \texttt{jpigp\_cor:RevenueIFRS},
+    \texttt{jpigp\_cor:AssetsIFRS}, \texttt{jpigp\_cor:OperatingProfitLossIFRS},
+    \texttt{jpigp\_cor:ProfitLossBeforeTaxIFRS},
+    \texttt{jpigp\_cor:NetCashProvidedByUsedInOperatingActivitiesIFRS}. Crucially, EDINET IFRS filers do
+    \emph{not} tag with the bare \texttt{ifrs-full} concepts, so they need their own anchors --- a gap that
+    only surfaced when an IFRS filer was tested, and was then filled from the verified concepts.
+\end{itemize}
+
+\noindent Both vocabularies are merged into the scored classification registry alongside \texttt{us-gaap},
+\texttt{ifrs-full} and the FRC set, and the right one is selected per filing by concept prefix --- exactly
+as for the other systems (\S\ref{sys:extraction}). They were \textbf{verified against four real filings}:
+J-GAAP --- Kakaku.com, Yahoo Japan and TIS; IFRS --- the official FSA IFRS sample instance. A filing then
+flows through the same pipeline as every other system:
+
+\begin{lstlisting}
+f = fetch_filing(EDINET(), "submission.zip")              # local ZIP, offline
+rows = facts(f; classify = true)                          # jppfs_cor / jpigp_cor facts, classified
+select_statement(rows, "BalanceSheet")                    # IS / BS / CF as usual
+\end{lstlisting}
+
+\section{Discovery, forms, and labels (pending an API key)}
+
+EDINET discovery is \textbf{date-based}: \texttt{discover(EDINETApi();\ date,\ edinet\_code,\ doc\_type)}
+lists a day's submissions from the EDINET REST API and returns handles, filtering server-listed results by
+EDINET code and document type (e.g.\ \texttt{"120"} = the annual securities report). It is
+implemented but \textbf{awaits live verification with a free Subscription-Key} (set via
+\texttt{set\_credentials(EDINET();\ api\_key)} or the \texttt{EDINET\_API\_KEY} environment variable). The
+remaining pieces also wait on that key or are planned: the full \textbf{form/document-type} catalogue, the
+\textbf{language-aware labels} (\texttt{label\_map(f;\ lang)} --- EDINET's label linkbase carries Japanese
+\emph{and} English via \texttt{xml:lang}, the forcing case for multilingual labels), and the EDINET
+\textbf{CSV fact export} as an independent parser oracle (the JP analogue of the Arelle oracle, since
+filings.xbrl.org does not carry Japan).
 
 \chapter{DART \textemdash{} South Korea}
 \label{sys:dart}
