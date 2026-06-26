@@ -279,13 +279,20 @@ effort isn't throwaway.
 
 ---
 
-## P0 progress — toolchain spike (verified 2026-06)
+## P0 progress (2026-06)
 
-Harness scaffold at `tools/pdf-bakeoff/` (Node, evaluation-only; `node_modules` gitignored, lockfile
-committed). **All three candidates run end-to-end** (`node extract.mjs <candidate> <pdf>`) on a 57-page
-born-digital PDF: pdf.js-extract → 8.4k words+coords; pdfreader → 20k items(x,y,text); pdfexcavator →
-parsed, **0 tables** (its *default* finder is ruling-line based and the test PDF's tables are borderless
-→ must use `detectBorderlessTables`/`extractTablesEnhanced` for financial statements). Verified facts:
+Harness at `tools/pdf-bakeoff/` (Node, evaluation-only; `node_modules` gitignored, lockfile committed):
+`extract.mjs` runs one candidate → JSON; `match.mjs` scores one candidate vs an iXBRL-twin's figures.
+Results log: [pdf-bakeoff-results.md](pdf-bakeoff-results.md).
+
+**Milestone 1 — single-twin end-to-end proof DONE** (Tesco FY2024, NSM dual-format twin). Ground truth =
+EDGAR's extractor on the iXBRL `.zip` (752 facts). All three candidates recover the headline figures from
+the PDF (presence-in-text floor, 4/4 each). Findings: **run one candidate per process** (mixed pdf.js
+versions crash in one process); **pdfexcavator v0.1.2** default `extractTables()` → 0 on borderless +
+interleave crash → needs the `extractTablesEnhanced(chars,lines,rects,…)` path. Floor metric doesn't yet
+rank the specialists — structured cell-level matching (P0.4–P0.6) is the next milestone.
+
+Earlier toolchain spike on a 57-page born-digital PDF confirmed all three execute and the runtime facts:
 - **Runtime:** dev shell uses **nvm node v25.0.0** (non-LTS, transient) + **npm 11.6.2**; `package-lock.json`
   is **v3**. npm is build-time only; the runtime in **Pollis is Electron's bundled Node** and stand-alone
   Julia would use `NodeJS_jll` — three contexts. All candidates resolve to **pure-JS** deps (pdfjs-dist
