@@ -71,8 +71,26 @@ the **harder strata** — Companies House small-co **borderless FRS-105/filleted
 Bundesanzeiger, dense multi-column tables — plus wiring pdfexcavator's borderless path. Those strata are
 exactly what need the CH key + a German sourcing decision.
 
-## Next
-- Build the harder strata (the ones that actually separate candidates): CH small-co PDFs (needs the API
-  key), German Bundesanzeiger (needs a sourcing route).
-- Wire pdfexcavator's `extractTablesEnhanced` borderless path into the harness so it joins the structural test.
-- Investigate the Diageo-style concept-selection gap in the twin ground truth.
+## Milestone 3 — DECISION: `pdfjs-dist` direct, no wrapper (2026-06)
+
+Added a wrapper-free path (`match2.mjs` candidate `pdfjs-direct`): straight `pdfjs-dist`
+(`getTextContent()` + a `dommatrix` polyfill), ~15 lines, our own clustering.
+
+| Candidate | accuracy (Tesco/Vodafone) | speed | dependency |
+|---|---|---|---|
+| **`pdfjs-dist` direct** | floor 4/4 · same-row **4/4** | **2.3 / 2.5 s** (4.x); 5.4 / 5.0 s (6.x) | `pdfjs-dist` + tiny `dommatrix` |
+| pdf.js-extract | 4/4 · 4/4 | 4.5 / 9.0 s | wrapper + bundled pdf.js |
+| pdfreader | 4/4 · 4/4 | 4.7 / 4.0 s | wrapper + **forked** pdf.js |
+
+**Decision:** **direct `pdfjs-dist` + our own clustering** — ties on accuracy, faster, fewer deps, best
+provenance (rides mozilla/pdf.js, pinned to a version we choose; re-verified on current **6.0.227**).
+Wrappers not adopted; pdfexcavator out as a base (v0.1.2 rough edges), kept only as a possible borderless
+helper. Stars sanity-check: the wrappers are low-star thin shells (pdf.js-extract 255★, pdfreader 703★)
+and even disagree with downloads — the trust that matters is on the parser, mozilla/pdf.js (53k★), which
+direct pdf.js rides without an intermediary.
+
+## Next (broad sweep = failure-boundary mapping, not ranking)
+- The base is decided. Run SEC/CH/NSM + DE/FR/IT/ES/NL ESEF + EDINET PDFs to find **where born-digital
+  pdf.js breaks** (scanned, non-Latin, dense) → defines Tier-2 (OCR) / Tier-3 (LLM) scope; dress rehearsal
+  for China/India. Oracle = iXBRL twin where it exists (exact); Yahoo only secondary for listed.
+- Investigate the Diageo-style concept-selection gap in the twin ground truth (P3).

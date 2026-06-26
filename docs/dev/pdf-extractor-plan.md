@@ -72,9 +72,10 @@ Python/Conda** (and no JVM).
 **Decision: a single Node/TypeScript toolchain**, driven via a Node subprocess that emits JSON; Julia
 reads the JSON and does all financial logic. Three layers:
 
-1. **Parse + table reconstruction** — **one** pdf.js-based candidate, **chosen by the P0 bake-off** (see
-   the candidates below). Whichever wins bundles pdf.js, so it *is* the parse layer — we do **not** wire a
-   separate `pdfjs-dist`.
+1. **Parse + table reconstruction** — **`pdfjs-dist` *directly*** (mozilla's official pdf.js, pinned to
+   current **6.x**), driven via the Node subprocess; **no third-party wrapper**. We do the row/column
+   clustering ourselves — ~15 lines on top of `getTextContent()` plus a small `dommatrix` polyfill.
+   *Resolved by the P0 bake-off (below): direct beat both wrappers.*
 2. **OCR (Tier 2)** — **`tesseract.js`** (Apache-2.0), same Node runtime.
 3. **LLM (Tier 3, optional)** — opt-in, arithmetic-validated assist for layouts the chosen tool can't
    reconstruct.
@@ -99,14 +100,23 @@ never trigger it.
 So P0 measures failure *mode*, not just accuracy, and estimates **combined** performance for the
 front-runners (P0.5, P0.7) — it does not pick the winner on standalone accuracy alone.
 
-### The table-specialist candidates (P0 competition)
+### P0 bake-off — RESOLVED: `pdfjs-dist` directly (no wrapper)
 
-All three are pdf.js-based, MIT, pure Node — but their pdf.js *provenance* differs sharply, which matters
-since "pdf.js is the most robust parser" only holds if it's the **full, current upstream** pdf.js
-(verified from the npm tarballs, 2026-06; current upstream `pdfjs-dist` = **6.0.227**):
+**Decision (2026-06):** drop the wrappers; use **`pdfjs-dist` directly + our own clustering**. On three
+keyless NSM twins (Tesco, Vodafone + the structural same-row test), direct pdf.js **tied the wrappers on
+accuracy (4/4), ran faster, and removed a dependency** — for ~15 lines of our own code. It also gives the
+**best provenance**: we stand *on* mozilla/pdf.js (53k★, updated daily), pinned to a version we choose
+(verified on current **6.0.227**), rather than a wrapper's bundled or forked copy. `pdf.js-extract` and
+`pdfreader` are therefore **not adopted** (kept in `tools/pdf-bakeoff/` only for the ongoing
+multi-jurisdiction sweep). `pdfexcavator` is out as a base (v0.1.2: 0 tables on borderless, buffer crash),
+retained only as a *possible* borderless-table helper if a hard stratum ever needs one.
+
+The candidates as evaluated (pdf.js *provenance* was the deciding axis once accuracy tied; verified from
+the npm tarballs, 2026-06; current upstream `pdfjs-dist` = **6.0.227**):
 
 | Candidate | Role | pdf.js it ships | License · adoption | Strength / risk |
 |---|---|---|---|---|
+| **`pdfjs-dist` direct** ⭐ | **WINNER** — parse only; we cluster | **upstream pdf.js, our pin (6.0.227)** | Apache-2.0 · mozilla 53k★ | best provenance + fastest + leanest deps; ~15 lines of our own code |
 | **pdfexcavator** | Generic table finder ("JS pdfplumber"); **borderless** | **official `pdfjs-dist ^4.7.76`** — full, but the 4.x line (~2 majors behind) | MIT · v0.1.2 · ~620/wk | best table fit; but **immature package** (bus-factor risk à la PDFIO.jl) + lagging pdf.js |
 | **pdfreader** (→ pdf2json 3.1.4) | Column detection + rule-based | **a modified *fork* of pdf.js** — divergent, version not cleanly exposed, **does not track upstream** | MIT · v3.0.8 · ~90k/wk | mature *package*, but **forked parser = weakest provenance** (no upstream fixes) |
 | **pdf.js-extract** | Glyphs + x/y coords **only** | **full vendored pdf.js 5.5.207** — freshest (~1 major behind) | MIT · v1.0.1 · ~148k/wk | **best parser provenance + highest adoption**; but **not a table-finder** → represents the *build-our-own-clustering* baseline (most work for us) |
@@ -130,10 +140,12 @@ Rationale for the toolchain shape:
   toolchain is **native to the host**. (Stand-alone Julia use vendors it via `NodeJS_jll` + the pinned JS
   bundle.) Project precedent for shipping JS already exists (the browser picker, `PICKER_JS`).
 
-**Whichever candidate wins, the financial-semantics layer (§1) is still ours** — a table finder gives
-cells, not financial meaning. When the chosen tool struggles on a layout, escalation stays inside the
-toolchain: improve our own clustering, or hand that filing to Tier 3 (LLM). We do **not** add a
-Python/Conda parser as a fallback.
+**The financial-semantics layer (§1) is ours regardless** — pdf.js (or any finder) gives cells, not
+financial meaning. When direct pdf.js struggles on a layout, escalation stays inside the toolchain:
+improve our own clustering, or hand that filing to Tier 3 (LLM). We do **not** add a Python/Conda parser,
+nor a wrapper, as a fallback. (Stars footnote: the *wrappers* are low-star thin shells — pdf.js-extract
+255★, pdfreader 703★ — and even disagree with downloads; the trust that matters attaches to the parser,
+mozilla/pdf.js at 53k★, which direct pdf.js rides without an intermediary.)
 
 ## 3. Where it plugs into the existing seam
 
@@ -289,8 +301,24 @@ Results log: [pdf-bakeoff-results.md](pdf-bakeoff-results.md).
 EDGAR's extractor on the iXBRL `.zip` (752 facts). All three candidates recover the headline figures from
 the PDF (presence-in-text floor, 4/4 each). Findings: **run one candidate per process** (mixed pdf.js
 versions crash in one process); **pdfexcavator v0.1.2** default `extractTables()` → 0 on borderless +
-interleave crash → needs the `extractTablesEnhanced(chars,lines,rects,…)` path. Floor metric doesn't yet
-rank the specialists — structured cell-level matching (P0.4–P0.6) is the next milestone.
+interleave crash → needs the `extractTablesEnhanced(chars,lines,rects,…)` path.
+
+**Milestone 2 — structured (same-row) matcher** (`match2.mjs`, +Vodafone/Diageo twins, current+prior
+periods): on clean IFRS headline rows the coordinate candidates **tie** (pdf.js-extract & pdfreader both
+same-row 4/4). Diageo truth came out implausible → twin-oracle quality varies by filer (P3).
+
+**Milestone 3 — DECISION: `pdfjs-dist` direct (no wrapper) — LOCKED.** A direct pdf.js path (~15 lines,
+`getTextContent()` + `dommatrix` polyfill) matched the wrappers' 4/4, ran faster, and removed the
+dependency; re-verified on **current upstream pdfjs-dist 6.0.227**. Harness pinned `pdfjs-dist ^6`. The
+wrappers are not adopted (kept only for the ongoing sweep).
+
+**Reframe — the broad multi-jurisdiction sweep is now failure-boundary mapping, not candidate ranking.**
+With the base decided, running SEC/CH/NSM + DE/FR/IT/ES/NL ESEF + EDINET PDFs serves to find **where
+born-digital pdf.js breaks** (scanned, non-Latin, dense layouts) → which defines **Tier-2 (OCR)** and
+**Tier-3 (LLM)** scope. Oracle = the **iXBRL twin** where it exists (NSM, ESEF via filings.xbrl.org,
+EDINET CSV — exact), Yahoo only as a secondary cross-check for listed filers; CH small-co (private) has no
+twin → cross-footing only; SEC is a weak PDF target (primary filings are iXBRL). This is the dress
+rehearsal for the **China/India** markets (no open XBRL, non-Latin) — the medium-term selling point.
 
 Earlier toolchain spike on a 57-page born-digital PDF confirmed all three execute and the runtime facts:
 - **Runtime:** dev shell uses **nvm node v25.0.0** (non-LTS, transient) + **npm 11.6.2**; `package-lock.json`

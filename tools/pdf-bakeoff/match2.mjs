@@ -43,6 +43,23 @@ async function tokens() {
     for (const it of items) for (const v of numsFrom(it.text)) out.push({ page: it.page, yn: it.y / (maxY[it.page] || 1), val: v });
     return out;
   }
+  if (candidate === "pdfjs-direct") {
+    // No wrapper — straight onto mozilla's pdfjs-dist. The only boilerplate the wrapper saved:
+    if (typeof globalThis.DOMMatrix === "undefined")
+      globalThis.DOMMatrix = (await import("dommatrix")).default;
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(PDF)), isEvalSupported: false, useSystemFonts: true }).promise;
+    const out = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const H = page.getViewport({ scale: 1 }).height;
+      for (const it of (await page.getTextContent()).items) {
+        const y = it.transform[5];                 // pdf.js origin is bottom-left
+        for (const v of numsFrom(it.str)) out.push({ page: i - 1, yn: (H - y) / H, val: v });
+      }
+    }
+    return out;
+  }
   if (candidate === "pdfexcavator") {
     const pdfexcavator = (await import("pdfexcavator")).default;
     const pdf = await pdfexcavator.open(PDF);

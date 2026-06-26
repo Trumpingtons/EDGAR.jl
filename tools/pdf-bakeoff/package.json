@@ -10,6 +10,8 @@
     "extract": "node extract.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "^6.0.0",
+    "dommatrix": "^1.0.0",
     "pdf.js-extract": "1.0.1",
     "pdfreader": "3.0.8",
     "pdfexcavator": "0.1.2"
