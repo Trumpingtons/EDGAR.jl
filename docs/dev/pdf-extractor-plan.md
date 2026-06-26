@@ -42,18 +42,44 @@ carry only a **line-item label** ("Total assets", "Bilanzsumme"). So:
 
 ## 1. Architecture — a tiered extractor, deterministic-first
 
+> **STRATEGIC PIVOT (2026-06) — vision-LLM-primary; the 3-tier "deterministic-first" model below is
+> superseded.** The P3 twin-validation harness measured the hand-rolled deterministic extractor at only
+> ~44% recall on Tesco and ~16% on Vodafone, and *layout-fragile* (Vodafone's landscape, wide,
+> many-column, period-as-row, €-denominated statements collapse it; a parameter fix barely moved it).
+> Making born-digital geometry robust across portrait/landscape × few/many columns × period-as-row ×
+> multi-currency × multi-language is an open-ended rabbit hole that yields mediocre numbers — which would
+> *poison* the analysis EDGAR.jl exists for. PDF extraction is a **means, not the end**: use the best
+> available tool. For messy, multilingual, often-scanned financial PDFs that is a **vision LLM**, not a
+> rule-based library (Camelot/pdfplumber are Python+Conda+GPL, weak on borderless tables, and no help on
+> scanned/CJK). **The revised architecture is two paths + a gate:**
+>
+> 1. **Primary — vision LLM** on the ~3–5 statement pages (found by heading search), as **images**, →
+>    structured `{label, period, value}`. One path covers born-digital + **scanned** (OCR is implicit) +
+>    messy + multilingual/CJK.
+> 2. **Cheap cross-check — deterministic pdf.js** (the extractor below), *only* where a text layer exists
+>    (clean born-digital). Where it and the LLM agree, the fact is high-confidence for free.
+> 3. **Validation gate** — cross-footing + the iXBRL twin oracle + a **confidence/validation status on
+>    every fact**, so nothing unverified reaches analysis (scanned facts are LLM-only + arithmetic-validated;
+>    born-digital can be LLM+pdf.js-corroborated).
+>
+> **OCR is no longer a primary tier** — the vision LLM reads scanned pages directly (OCR implicit) and does
+> it better than tesseract on tables/numbers/non-Latin. But `tesseract.js` is **not discarded**: it is
+> demoted to an **optional, later cross-check for *scanned* facts** — the scanned-page analog of the pdf.js
+> cross-check for born-digital. That makes the architecture symmetric: each LLM extraction can be
+> corroborated by a cheap independent second opinion (pdf.js when there's a text layer, tesseract OCR when
+> there isn't), raising confidence where they agree. The deterministic path described below survives as the
+> born-digital cross-check, not the primary.
+
 PDF financial extraction = **table reconstruction + financial-number semantics**. The library is only
 the easier half (positioned glyphs); the **financial-semantics layer is the moat** and is written in
 Julia regardless of base library.
 
-- **Tier 1 — deterministic core (the bulk).** Born-digital text-layer → words-with-bboxes → cluster into
-  line-item rows × period columns → parse numbers. Handles modern annual-report PDFs. No ML, explainable,
-  reproducible, offline.
-- **Tier 2 — OCR fallback (scanned / older).** Rasterize + OCR, then the same reconstruction. Gated and
-  flagged lower-confidence (a misread digit is a wrong number).
-- **Tier 3 — optional LLM assist (opt-in, never the deterministic core).** For layouts Tier 1 can't
-  reconstruct and for messy multilingual narrative. **Always routed through arithmetic validation** (see
-  §4); off by default so the library stays deterministic, offline-capable and free-to-run.
+- **Deterministic path (cross-check; built).** Born-digital text-layer → words-with-bboxes → cluster into
+  line-item rows × period columns → parse numbers. Explainable, reproducible, offline — but **layout-fragile**
+  (see the pivot above); kept as the cheap agreement check for clean born-digital pages, not the primary.
+- **Vision-LLM path (primary; next to build).** The statement pages as images → structured facts;
+  subsumes OCR (scanned) and handles arbitrary layouts and languages. Always routed through the
+  validation gate.
 
 ### The moat: the financial-semantics layer (Julia)
 
@@ -72,16 +98,19 @@ Generic table extractors give cells, not financial meaning. This layer must hand
 Two binding constraints: **non-GPL license**, and **minimal fragile dependency** — in particular **no
 Python/Conda** (and no JVM).
 
-**Decision: a single Node/TypeScript toolchain**, driven via a Node subprocess that emits JSON; Julia
-reads the JSON and does all financial logic. Three layers:
+*(Per the pivot above, the primary extractor is a vision LLM; the Node/pdf.js toolchain below is the
+born-digital **cross-check**. The bake-off that chose pdf.js-direct still stands for that role.)*
+
+**Decision: a single Node/TypeScript toolchain** for the deterministic cross-check, driven via a Node
+subprocess that emits JSON; Julia reads the JSON and does the financial logic.
 
 1. **Parse + table reconstruction** — **`pdfjs-dist` *directly*** (mozilla's official pdf.js, pinned to
    current **6.x**), driven via the Node subprocess; **no third-party wrapper**. We do the row/column
    clustering ourselves — ~15 lines on top of `getTextContent()` plus a small `dommatrix` polyfill.
    *Resolved by the P0 bake-off (below): direct beat both wrappers.*
-2. **OCR (Tier 2)** — **`tesseract.js`** (Apache-2.0), same Node runtime.
-3. **LLM (Tier 3, optional)** — opt-in, arithmetic-validated assist for layouts the chosen tool can't
-   reconstruct.
+2. **OCR cross-check (optional, later)** — **`tesseract.js`** (Apache-2.0), same Node runtime: an
+   independent OCR second opinion for *scanned* facts (the analog of pdf.js for born-digital). Not a
+   primary path — the vision LLM already OCRs scanned pages.
 
 No Python, no Conda, no JVM, no GPL/AGPL anywhere.
 
