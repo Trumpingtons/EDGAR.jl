@@ -83,9 +83,17 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
   IncomeStatement`, `NetCashProvidedByUsedInOperatingActivities→CashFlow`; `select_statement` round-trips
   (BS 92 / IS 48 / CF 8). **EDINET extraction reuses the common XBRL extractor unchanged — thesis confirmed.**
 
-> **Done WITHOUT the API key**, using a public EDINET `.xbrl` instance as a fixture. The key is now only
-> needed for E2.3 (live discovery/fetch). Still open: E1.3 — confirm the submission-**ZIP** entry layout
-> (`_edinet_primary_report`, XBRL/PublicDoc/) against a real ZIP (the public fixtures are raw `.xbrl`).
+> **Done WITHOUT the API key.** Verified across **4 real filers**: J-GAAP — Kakaku.com, Yahoo Japan, TIS
+> (jppfs_cor); **IFRS** — the official FSA IFRS sample instance. Testing the IFRS filer surfaced a real
+> gap and the vocab was **enriched** with it: EDINET IFRS filers tag with **`jpigp_cor:…IFRS`** concepts
+> (`RevenueIFRS`/`AssetsIFRS`/`…OperatingActivitiesIFRS`), NOT bare `ifrs-full` — now classified (IFRS
+> sample → BS 110 / IS 46 / CF 6). J-GAAP unchanged.
+>
+> The FSA sample instances (youseiushida/edinet mirror) also **confirm the ZIP layout for E1.3**:
+> `S00XXXXX/XBRL/PublicDoc/jpcrp030000-asr-001_….xbrl` — `_edinet_primary_report` (matches `publicdoc/`)
+> is correct. Remaining: build a committed ZIP fixture + `fetch_filing(::EDINET, zip)` test (E1.3); a
+> **bank** filer (J-GAAP `OrdinaryIncome` top line — likely covered, unverified) needs a real filing; and
+> E2.3 live discovery/fetch (needs the free key).
 
 ### E4 — N5 language-aware labels + validation
 - ☐ E4.1 `label_map(f; lang="en"|"ja")` + a `lang`-aware `_concept_labels` (EDINET label linkbase carries
