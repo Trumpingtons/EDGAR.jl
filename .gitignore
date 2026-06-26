@@ -45,3 +45,4 @@ filings_demo/
 # Postman app git-integration scaffold (local API tooling; not part of the package)
 /.postman/
 /postman/
+test/data/pdf/
