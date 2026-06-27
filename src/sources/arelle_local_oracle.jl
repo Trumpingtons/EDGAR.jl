@@ -67,6 +67,10 @@ _num(s) = tryparse(Float64, replace(replace(strip(String(s)), "\"" => ""), "," =
 # `f.url` is already a local file. Uses the system `unzip`.
 function _materialise(f)
     src = f.url
+    # Loose single instance (e.g. SEC inline XBRL): not a ZIP package. Its DTS (us-gaap + the filer's
+    # extension) resolves RELATIVE to the source, so hand Arelle the URL/path directly — it fetches the
+    # document and its taxonomy itself. (A local loose instance works only if its DTS sits beside it.)
+    endswith(lowercase(src), ".zip") || return mktempdir(; prefix = "arelle_local_"), src
     bytes = if startswith(src, "http://") || startswith(src, "https://")
         hdr = try EDGAR.system_headers(f.system) catch; nothing end
         EDGAR.fetch_url(src; headers = hdr, cache_mode = EDGAR.effective_cache_mode(f.system))

@@ -8,7 +8,7 @@ you load them on demand. Stray `.jl` files here are ignored by the package loade
 | File | Oracle | Kind | Coverage | Extra deps |
 |---|---|---|---|---|
 | `arelle_esef_oracle.jl` | filings.xbrl.org **xBRL-JSON** (produced by **Arelle**, the reference XBRL processor) | *parser* check — same document, independent parser; fact-level parity | ESEF + UKSEF (EU, UK) | none (uses EDGAR's own HTTP+JSON) |
-| `arelle_local_oracle.jl` | **Arelle run locally** (the reference XBRL processor, as a subprocess) | *parser* check — same document, fact-level **including dimensions** (covers the statement of changes in equity) | **any** XBRL package — incl. KR/DART, JP/EDINET, EU/ESEF | **Arelle CLI** (external tool) |
+| `arelle_local_oracle.jl` | **Arelle run locally** (the reference XBRL processor, as a subprocess) | *parser* check — same document, fact-level **including dimensions** (covers the statement of changes in equity) | **any** XBRL filing — SEC (US), ESEF/UKSEF (EU/UK), KR/DART, JP/EDINET | **Arelle CLI** (external tool) |
 | `yahoo_oracle.jl` | **Yahoo Finance** (via `YFinance.jl`) | *data* check — independent pipeline; headline totals within 1% | global (100+ countries) | `YFinance` |
 | `alphavantage_oracle.jl` | **AlphaVantage** (official REST API) | *data* check — independent pipeline; headline totals within 1% | US-strong (SEC filers) | none (uses EDGAR's own HTTP+JSON) |
 
@@ -31,8 +31,14 @@ the instance; a formal **report package** (ESEF/UKSEF, with `META-INF/taxonomyPa
 Arelle as a package so its catalog remaps the standard taxonomy (else the standard concepts have no schema
 and values come back empty). Both oracles compare values **raw** (as-stored), never the
 classified/as-presented values — which differ in sign for `negatedLabel` and cash-outflow concepts.
-Verified at 100%: Samsung FY2023 **5997/5997** facts (incl. SCE) and an ESEF filer (Citycon) **312/312**
-(incl. 41 SCE + 81 dimensional facts).
+It handles all three filing shapes: a **loose package** (DART), a **report package** (ESEF/UKSEF), and a
+**bare inline-XBRL instance** (SEC — `f.url` is the inline `.htm`, not a ZIP, so Arelle is pointed at it
+directly and fetches the DTS from the Archives). Verified across jurisdictions — the five financial
+statements (BS/IS/CIS/CF and the SCE) match Arelle **100%** on **SEC** (Apple 10-K), **ESEF** (Citycon,
+312/312), **UKSEF** (Kainos) and **DART** (Samsung, 5997/5997); the only unconfirmed facts are a handful of
+note-level *non-financial* disclosures (counts, percentages) with key-representation quirks. (EDINET needs
+a complete submission package — instance + bundled taxonomy; the trimmed test fixtures lack the DTS Arelle
+requires.)
 
 Why AlphaVantage needs no package (unlike Yahoo): AlphaVantage is an official, documented REST API
 (one keyed GET → clean JSON), so the oracle uses EDGAR's own cached fetcher — adding no dependency and,
