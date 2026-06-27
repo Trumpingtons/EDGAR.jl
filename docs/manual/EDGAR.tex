@@ -2441,6 +2441,15 @@ not left undimensioned but tagged on the \texttt{ConsolidatedAndSeparateFinancia
 (\texttt{ConsolidatedMember}), so those face facts are normalised to undimensioned for the shared metric
 picker.
 
+Yahoo covers only headline totals, so the \textbf{statement of changes in equity} --- a movements-by-equity-component
+table --- needs a fact-level, dimension-aware reference. That is the \textbf{local Arelle oracle}
+(\texttt{src/sources/arelle\_local\_oracle.jl}, \S\ref{sec:validation}): it runs Arelle itself on the
+downloaded \texttt{fnlttXbrl} package and compares \emph{every} fact, keyed by concept~+~period~+~full
+dimension set, so the per-component SCE cells are checked individually. On Samsung FY2023 it confirms
+\textbf{5997/5997} of EDGAR.jl's facts against Arelle --- all five statements, the SCE included
+(159/159) --- comparing values \emph{raw} (Arelle reports the as-stored value; EDGAR.jl's classified value
+flips sign for \texttt{negatedLabel}/cash-outflow concepts).
+
 OpenDART additionally re-serves each filing's parsed accounts as \texttt{fnlttSinglAcntAll.json} (the FSS's
 own parse). It is a handy sanity peek --- \texttt{account\_id} values such as \texttt{ifrs-full\_Assets} map
 straight onto our concepts --- but because it comes from the \emph{same} disclosure system as the filing it
@@ -2575,7 +2584,7 @@ of which extractor produced it.
 \label{sec:validation}
 
 How do you know the numbers \texttt{EDGAR.jl} extracts are right? You can check them against
-independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships three \emph{do-it-yourself}
+independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships four \emph{do-it-yourself}
 data sources under \texttt{src/sources/}, each an independent reference you compare the extraction
 against. They are deliberately \textbf{not part of the \texttt{EDGAR} module} (not \texttt{include}d by
 \texttt{src/EDGAR.jl}), so they add \textbf{no dependencies} to the package and never touch the working
@@ -2584,7 +2593,7 @@ is ignored by the package loader.
 
 \begin{table}[h]
 \centering
-\caption{The three additional data sources (validation oracles).}
+\caption{The four additional data sources (validation oracles).}
 \label{tab:oracles}
 \small
 \begin{tabular}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.20\textwidth}p{0.14\textwidth}p{0.10\textwidth}@{}}
@@ -2594,6 +2603,7 @@ is ignored by the package loader.
 \texttt{yahoo\_oracle.jl} & \textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
 \texttt{alphavantage\_oracle.jl} & \textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
 \texttt{arelle\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
+\texttt{arelle\_local\_oracle.jl} & \textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -2602,9 +2612,17 @@ is ignored by the package loader.
 \textbf{AlphaVantage}) confirms the \emph{numbers match the outside world}: it compares the headline
 totals (Assets, Equity, Revenue, Net income, operating cash flow) against an entirely separate data
 pipeline, across all three statements. A \textbf{parser} oracle (\textbf{Arelle}) confirms we
-\emph{read the filing right}: it compares every consolidated numeric fact against the \emph{same
-filing's} xBRL-JSON. A parser oracle cannot catch a filer \emph{mis-tagging} a value (everyone reads
-the same wrong tag); a data oracle can, but only approximately, since the data providers normalize.
+\emph{read the filing right}: it compares the extracted facts against the \emph{same filing} as parsed by
+the reference XBRL processor. There are two: \texttt{arelle\_oracle.jl} fetches Arelle's
+\emph{already-published} xBRL-JSON from filings.xbrl.org (no dependency, but limited to the ESEF/UKSEF
+filings the aggregator hosts and to consolidated facts), while \texttt{arelle\_local\_oracle.jl} \emph{runs}
+Arelle locally on a downloaded package (needs the Arelle CLI, but then validates \emph{any} filing ---
+including Korea/DART and Japan --- and \emph{every} fact, dimensions included, so it covers the statement of
+changes in equity; verified at 100\% on Samsung FY2023, 5997/5997, and an ESEF filer, 312/312). Both
+compare values \emph{raw}; the local oracle hands Arelle a formal report package (ESEF/UKSEF) as a package
+so its catalog resolves, and extracts loose packages (DART) to point Arelle at the instance. A parser
+oracle cannot catch a filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle
+can, but only approximately, since the data providers normalize.
 
 \medskip\noindent This is the same kind of check the package already applies on the SEC side: the
 extracted values are validated against the SEC's \texttt{companyfacts} API (the SEC's own parse of the
