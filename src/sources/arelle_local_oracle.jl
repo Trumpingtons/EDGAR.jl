@@ -76,15 +76,34 @@ function _materialise(f)
     bytes === nothing && error("could not fetch package $src")
     dir = mktempdir(; prefix = "arelle_local_")
     z = ZipArchives.ZipReader(Vector{UInt8}(bytes))
-    for n in ZipArchives.zip_names(z)
-        endswith(n, "/") && continue
-        open(joinpath(dir, basename(n)), "w") do io; write(io, ZipArchives.zip_readentry(z, n)); end
+    names = ZipArchives.zip_names(z)
+    # A formal report/taxonomy package (ESEF/UKSEF) carries `META-INF/taxonomyPackage.xml` (+ `catalog.xml`)
+    # that REMAPS the standard taxonomy. Arelle must load such a package AS A PACKAGE (`--file` on the zip)
+    # so the catalog resolves — otherwise the standard concepts have no schema and factList values come back
+    # empty. Loose packages (e.g. DART `fnlttXbrl`) have no `META-INF`: extract them (preserving the
+    # directory structure) and point Arelle at the instance.
+    if any(n -> occursin(r"META-INF/(taxonomyPackage|catalog)\.xml"i, n), names)
+        zp = joinpath(dir, "package.zip"); write(zp, bytes)
+        return dir, zp
     end
-    files = readdir(dir; join = true)
-    inst = findfirst(p -> endswith(lowercase(p), ".xbrl"), files)
-    inst === nothing && (inst = findfirst(p -> any(e -> endswith(lowercase(p), e), (".xhtml", ".htm", ".html")), files))
+    for n in names
+        endswith(n, "/") && continue
+        dest = joinpath(dir, n); mkpath(dirname(dest))
+        open(dest, "w") do io; write(io, ZipArchives.zip_readentry(z, n)); end
+    end
+    # Find the primary instance anywhere in the tree: a classic `.xbrl`, else inline-XBRL (`.xhtml`/`.htm`,
+    # ESEF/EDINET). Prefer an entry under `reports/` or `PublicDoc/` when several inline docs exist.
+    allf = String[]
+    for (root, _, fs) in walkdir(dir), fn in fs; push!(allf, joinpath(root, fn)); end
+    function pick(exts)
+        cands = filter(p -> any(e -> endswith(lowercase(p), e), exts), allf)
+        isempty(cands) && return nothing
+        pref = filter(p -> occursin(r"/reports/|/publicdoc/"i, p), cands)
+        return first(isempty(pref) ? cands : pref)
+    end
+    inst = something(pick((".xbrl",)), pick((".xhtml", ".htm", ".html")), Some(nothing))
     inst === nothing && error("no XBRL instance found in package $src")
-    return dir, files[inst]
+    return dir, inst
 end
 
 # Run Arelle on `instance`, returning its facts indexed by (concept, start, end, dims) => value.

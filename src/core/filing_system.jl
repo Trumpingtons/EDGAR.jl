@@ -160,5 +160,8 @@ end
 The cache mode in force for `system`: its [`set_cache_policy`](@ref) override if set, else the global
 `CONFIG.cache_mode`. Per-system fetch code passes this to `fetch_url` / `_get_json`.
 """
-effective_cache_mode(system::FilingSystem) =
-    get(SYSTEM_CACHE_MODE, system_tag(system), CONFIG.cache_mode)
+function effective_cache_mode(system::FilingSystem)
+    tag = try system_tag(system) catch; nothing end   # some systems (e.g. ESEF) define no tag
+    tag === nothing && return CONFIG.cache_mode        # → they just follow the global cache mode
+    return get(SYSTEM_CACHE_MODE, tag, CONFIG.cache_mode)
+end

@@ -21,12 +21,18 @@ XBRL processor, but differ in *who runs Arelle* and *what they can reach*. `arel
 Arelle's **already-published** xBRL-JSON from filings.xbrl.org, so it adds no dependency but is limited to
 what that aggregator hosts (ESEF + UKSEF) and to consolidated/undimensioned facts. `arelle_local_oracle.jl`
 runs **Arelle itself** (`arelleCmdLine`) on a locally downloaded package, so it needs the Arelle CLI
-installed but then works for jurisdictions the aggregator does **not** host — notably **Korea (DART)** and
-Japan — and compares **every** fact *including dimensional ones*, which is what lets it validate the
-**statement of changes in equity** (the per-equity-component movements table that Yahoo and OpenDART's
-`fnlttSinglAcntAll` cannot). Both compare values **raw** (as-stored), never the classified/as-presented
-values — which differ in sign for `negatedLabel` and cash-outflow concepts. (On Samsung FY2023 the local
-oracle confirms 5995/5997 facts, including all five statements: BS/IS/CIS/CF and SCE.)
+installed but then validates **any** XBRL filing — including jurisdictions the aggregator does **not** host
+(**Korea/DART**, Japan/EDINET) *and* the ESEF/UKSEF filings `arelle_oracle` covers — comparing **every**
+fact *including dimensional ones*, which is what lets it validate the **statement of changes in equity**
+(the per-equity-component movements table that Yahoo and OpenDART's `fnlttSinglAcntAll` cannot). It is thus
+a superset of `arelle_oracle`; the latter stays for the **zero-dependency** case (no Arelle install). It
+handles both package shapes: a **loose** package (DART `fnlttXbrl`) is extracted and Arelle is pointed at
+the instance; a formal **report package** (ESEF/UKSEF, with `META-INF/taxonomyPackage.xml`) is handed to
+Arelle as a package so its catalog remaps the standard taxonomy (else the standard concepts have no schema
+and values come back empty). Both oracles compare values **raw** (as-stored), never the
+classified/as-presented values — which differ in sign for `negatedLabel` and cash-outflow concepts.
+Verified at 100%: Samsung FY2023 **5997/5997** facts (incl. SCE) and an ESEF filer (Citycon) **312/312**
+(incl. 41 SCE + 81 dimensional facts).
 
 Why AlphaVantage needs no package (unlike Yahoo): AlphaVantage is an official, documented REST API
 (one keyed GET → clean JSON), so the oracle uses EDGAR's own cached fetcher — adding no dependency and,
