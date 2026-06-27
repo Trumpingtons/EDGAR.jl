@@ -44,15 +44,19 @@ function _edinet_zip_bytes(src::AbstractString)
 end
 
 # Locate the primary XBRL instance in an EDINET submission ZIP: the public document under
-# `XBRL/PublicDoc/` — inline-XBRL (`.htm`/`.xhtml`) preferred, else the classic `.xbrl` instance. Falls
-# back to any matching entry if PublicDoc isn't found. (Entry layout to be confirmed against a real
-# fixture — see edinet-plan.md E1.3.) Returns `(name, kind)` with `kind ∈ (:ixbrl, :xbrl)`, or nothing.
+# `XBRL/PublicDoc/`. A real annual report bundles BOTH a single complete classic `.xbrl` instance (which
+# `manifest_PublicDoc.xml` names as the `preferredFilename`) AND the inline-XBRL `.htm` document set — the
+# latter split across ~24 fragment files (`0000000_header…`, `0101010_honbun…`, …). The classic `.xbrl`
+# carries ALL facts in one file, whereas any single `.htm` is only a fragment (the header doc has one
+# fact), so the `.xbrl` is preferred; the `.htm` set is a fallback for filings that ship inline only.
+# (Confirmed against a real Toyota annual report, E02144.) Returns `(name, kind)` with
+# `kind ∈ (:xbrl, :ixbrl)`, or nothing.
 function _edinet_primary_report(z::ZipReader)
     names = filter(n -> occursin(r"publicdoc/"i, n), _rp_names(z))
     isempty(names) && (names = _rp_names(z))
     pick(exts) = findfirst(n -> any(e -> endswith(lowercase(n), e), exts), names)
-    i = pick((".htm", ".xhtml", ".html")); i !== nothing && return (names[i], :ixbrl)
     i = pick((".xbrl",));                   i !== nothing && return (names[i], :xbrl)
+    i = pick((".htm", ".xhtml", ".html")); i !== nothing && return (names[i], :ixbrl)
     return nothing
 end
 
@@ -78,8 +82,21 @@ end
 # calculation / label linkbases are bundled in the submission ZIP, so re-read it from `f.url` and read
 # the entry by suffix. Returns "" on any failure (which classification tolerates).
 function _fetch_linkbase(::EDINET, f::Filing, suffix::AbstractString; lang=nothing)
-    # EDINET bundles a SINGLE label linkbase carrying both ja and en (`xml:lang`), so `lang` is applied
-    # downstream by `_concept_labels` (the `_lang_ok` filter), not by file selection here.
     bytes = try _edinet_zip_bytes(f.url) catch; return "" end
-    return _rp_linkbase(ZipReader(bytes), suffix)
+    z = ZipReader(bytes)
+    # EDINET splits the label linkbase per language — `…_lab.xml` (Japanese, the filing's native language)
+    # and `…_lab-en.xml` (English), each single-language — NOT one bilingual file (confirmed against a real
+    # Toyota annual report). So for "lab" with a requested language, pick that file: `en` → `_lab-en.xml`;
+    # `ja` (or any non-en) → the BARE `_lab.xml`. Else `label_map`'s `xml:lang` filter drops everything from
+    # the wrong-language file. `lang=nothing` keeps the prior first-match behaviour.
+    if suffix == "lab" && lang !== nothing
+        primary = split(lowercase(String(lang)), '-')[1]
+        if primary == "en"
+            lb = _rp_linkbase(z, "lab-en"); isempty(lb) || return lb
+        else
+            i = findfirst(n -> endswith(lowercase(n), "_lab.xml"), _rp_names(z))
+            i === nothing || return _rp_read(z, _rp_names(z)[i])
+        end
+    end
+    return _rp_linkbase(z, suffix)
 end

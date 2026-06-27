@@ -1069,6 +1069,30 @@ end
     @test any(r -> r.statement == "CashFlow", rows)
 end
 
+@testset "EDINET: complete-instance preference + bilingual labels (real layout)" begin
+    # A real EDINET annual report ships BOTH a single complete `.xbrl` AND a multi-file inline-XBRL `.htm`
+    # document set, and splits its label linkbase per language (`…_lab.xml` ja / `…_lab-en.xml` en). This
+    # synthetic package (see the NOTICE) carries all of that, to cover two real-filing fixes offline.
+    pkg = joinpath(@__DIR__, "data", "edinet", "edinet-real-layout-min.zip")
+    f = fetch_filing(EDINET(), pkg)
+
+    # FIX 1 — `_edinet_primary_report` prefers the complete classic `.xbrl` over the `.htm` fragment
+    # (picking a fragment would yield almost nothing). The instance's facts must come through.
+    @test f.kind === :xbrl
+    @test endswith(lowercase(f.document), ".xbrl")
+    rows = facts(f; classify = true)
+    @test length(rows) == 3
+    @test all(r -> r.statement == "BalanceSheet", filter(r -> r.concept == "jppfs_cor:Assets", rows))
+    @test all(r -> r.statement == "IncomeStatement", filter(r -> r.concept == "jppfs_cor:NetSales", rows))
+
+    # FIX 2 — language-aware split labels: `_fetch_linkbase(::EDINET; lang)` picks `_lab-en.xml` for en and
+    # the bare `_lab.xml` for ja, so `label_map(f; lang)` returns the requested language (not a mix/empty).
+    en = label_map(f; lang = "en")
+    ja = label_map(f; lang = "ja")
+    @test en["ext:OperatingRevenue"] == "Operating revenue"
+    @test ja["ext:OperatingRevenue"] == "営業収益"
+end
+
 @testset "DART: offline fnlttXbrl-package extraction (D1)" begin
     # A minimal synthetic OpenDART financial-statement ZIP (see the NOTICE beside it): a tiny K-IFRS
     # (`ifrs-full`) instance in the real OpenDART entry layout — a FLAT ZIP whose classic `.xbrl` instance
