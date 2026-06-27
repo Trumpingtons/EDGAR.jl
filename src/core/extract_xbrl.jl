@@ -241,8 +241,9 @@ _filing_selection(f::Filing, fcts) =
 # (`statement_map`, `label_map`, `calculations`, `facts(f; classify, labels)`) dispatches through
 # this one seam, so a new system supplies only its linkbase slice. Returns the linkbase XML text, or
 # "" when the filing carries no such linkbase (which classification tolerates — see the FilingSummary
-# fallback for SEC inline-only filers).
-_fetch_linkbase(f::Filing, suffix::AbstractString) = _fetch_linkbase(f.system, f, suffix)
+# fallback for SEC inline-only filers). `lang` is consulted only by systems whose label linkbase is
+# split per language (DART: `…_lab-ko.xml` / `…_lab-en.xml`); every other system ignores it.
+_fetch_linkbase(f::Filing, suffix::AbstractString; lang=nothing) = _fetch_linkbase(f.system, f, suffix; lang)
 
 # Standard-taxonomy labels for a filing's concepts, fetched from the PUBLISHED taxonomy (keyed by the
 # concept's namespace), for systems whose filings DON'T bundle the standard labels. `label_map` merges

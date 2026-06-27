@@ -77,7 +77,9 @@ end
 # EDINET method of the per-system linkbase fetcher (core/extract_xbrl.jl): the presentation /
 # calculation / label linkbases are bundled in the submission ZIP, so re-read it from `f.url` and read
 # the entry by suffix. Returns "" on any failure (which classification tolerates).
-function _fetch_linkbase(::EDINET, f::Filing, suffix::AbstractString)
+function _fetch_linkbase(::EDINET, f::Filing, suffix::AbstractString; lang=nothing)
+    # EDINET bundles a SINGLE label linkbase carrying both ja and en (`xml:lang`), so `lang` is applied
+    # downstream by `_concept_labels` (the `_lang_ok` filter), not by file selection here.
     bytes = try _edinet_zip_bytes(f.url) catch; return "" end
     return _rp_linkbase(ZipReader(bytes), suffix)
 end

@@ -15,7 +15,7 @@
 # to FilingSummary.xml + the R-files (see `_filing_summary_statements`). The SEC method of the
 # per-system linkbase fetcher (generic dispatch declared in core/filing_system.jl); other systems
 # (e.g. ESEF, which bundles linkbases in the report-package zip) supply their own `::ESEF` method.
-function _fetch_linkbase(::SEC, f::Filing, suffix::AbstractString)
+function _fetch_linkbase(::SEC, f::Filing, suffix::AbstractString; lang=nothing)
     base = _filing_dir(f)
     names = try
         [String(it.name) for it in _get_json("$base/index.json").directory.item]
@@ -156,7 +156,7 @@ function label_map(f::Filing; lang::Union{AbstractString,Nothing}=nothing)
     # The filing's own (bundled/loose) labels override the standard-taxonomy labels, so an issuer's
     # preferred/renamed label wins; the standard labels fill concepts the filing doesn't label itself
     # (e.g. ESEF bundles only extension labels — the ifrs-full standard labels come from `_standard_labels`).
-    m = merge(_standard_labels(f), _concept_labels(_fetch_linkbase(f, "lab"); lang))
+    m = merge(_standard_labels(f), _concept_labels(_fetch_linkbase(f, "lab"; lang); lang))
     isempty(m) && @warn "No native labels for $(f.ref): the label linkbase was missing " *
         "(not loose and not in `<accession>-xbrl.zip`) — `label` will be empty."
     return m

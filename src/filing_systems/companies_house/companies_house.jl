@@ -161,7 +161,7 @@ end
 # `core` LABEL linkbase is resolved (the financial concepts' human labels); presentation/calculation
 # return "" (classification falls back to the prefix-keyed UK-GAAP vocabulary, which works). The fetch
 # is a public, keyless GET of the standard taxonomy; "" on any failure (tolerated downstream).
-function _fetch_linkbase(::CompaniesHouse, f::Filing, suffix::AbstractString)
+function _fetch_linkbase(::CompaniesHouse, f::Filing, suffix::AbstractString; lang=nothing)
     suffix == "lab" || return ""
     url = _frc_core_label_url(f.content)
     url === nothing && return ""

@@ -1069,6 +1069,37 @@ end
     @test any(r -> r.statement == "CashFlow", rows)
 end
 
+@testset "DART: offline fnlttXbrl-package extraction (D1)" begin
+    # A minimal synthetic OpenDART financial-statement ZIP (see the NOTICE beside it): a tiny K-IFRS
+    # (`ifrs-full`) instance in the real OpenDART entry layout — a FLAT ZIP whose classic `.xbrl` instance
+    # is named `entity<corp_code>_<date>.xbrl` (layout confirmed live against Samsung FY2023). Exercises the
+    # 5th FilingSystem end-to-end with NO network — the flat `fnlttXbrl` layout (`_dart_primary_report`),
+    # the shared report-package reader, and the K-IFRS thesis: the `ifrs-full` vocabulary reused unchanged.
+    pkg = joinpath(@__DIR__, "data", "dart", "dart-min.zip")
+    f = fetch_filing(DART(), pkg)
+    @test f.system isa DART
+    @test f.kind === :xbrl
+    @test f.entity == EntityId(:corp_code, "")                 # offline path: identity comes from discovery
+    @test endswith(lowercase(f.document), ".xbrl")             # the flat `entity…_<date>.xbrl` instance
+
+    rows = facts(f; classify = true)
+    @test length(rows) == 5                                    # the 5 ifrs-full facts
+
+    assets = filter(r -> r.concept == "ifrs-full:Assets", rows)
+    @test !isempty(assets)
+    @test all(r -> r.statement == "BalanceSheet", assets)
+    @test any(r -> r.value ≈ 1.0e9 && r.unit == "KRW" && r.period_end == Date(2023, 12, 31), assets)
+
+    @test all(r -> r.statement == "IncomeStatement",
+              filter(r -> r.concept == "ifrs-full:Revenue", rows))
+    @test all(r -> r.statement == "CashFlow",
+              filter(r -> r.concept == "ifrs-full:CashFlowsFromUsedInOperatingActivities", rows))
+
+    @test any(r -> r.statement == "BalanceSheet", rows)
+    @test any(r -> r.statement == "IncomeStatement", rows)
+    @test any(r -> r.statement == "CashFlow", rows)
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →

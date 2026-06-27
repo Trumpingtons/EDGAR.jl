@@ -56,17 +56,19 @@ include("filing_systems/nsm/nsm_categories.jl")              # 🔵 NSM (FCA) ca
 include("filing_systems/nsm/nsm.jl")                         # 🔵 NSM discovery: FCA National Storage Mechanism source (UKSEF AFR iXBRL → ESEF parse)
 include("filing_systems/edinet/edinet.jl")                   # 🔵 EDINET (Japan FSA) FilingSystem: offline submission-ZIP parse (reuses ESEF report-package path)
 include("filing_systems/edinet/discovery.jl")                # 🔵 EDINET discovery: EDINETApi source over the EDINET REST API (date-based)
+include("filing_systems/dart/dart.jl")                       # 🔵 DART (KR FSS) FilingSystem: offline OpenDART fnlttXbrl-package parse (reuses ESEF report-package path)
+include("filing_systems/dart/discovery.jl")                  # 🔵 DART discovery: OpenDARTApi source over the OpenDART REST API (by-company) + corp_code resolver
 include("extractors/pdf.jl")                # 🟢 PDF extractor (Format axis): pdfjs-dist → words → row/column → coordinate-anchored Facts
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 
-export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, EntityId,
+export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
-       set_config, set_user_agent, get_user_agent, set_credentials, persist_user_agent, unpersist_user_agent,
+       set_config, set_user_agent, get_user_agent, set_credentials, set_cache_policy, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik,
        profile, cik,

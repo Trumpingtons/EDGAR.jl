@@ -90,7 +90,7 @@ end
 # stored in `f.url` (local path or remote URL, both via the memoised `_esef_zip_bytes`) and read the
 # entry by suffix. Returns "" if the package can't be read or the linkbase is absent (which the
 # classification path tolerates).
-function _fetch_linkbase(::ESEF, f::Filing, suffix::AbstractString)
+function _fetch_linkbase(::ESEF, f::Filing, suffix::AbstractString; lang=nothing)
     bytes = try
         _esef_zip_bytes(f.url)
     catch
