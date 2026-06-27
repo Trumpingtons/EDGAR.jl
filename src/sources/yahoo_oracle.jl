@@ -70,8 +70,19 @@ function _edgar_rows(system::Symbol, locator::AbstractString)
         isempty(hs) && return nothing
         en = filter(x -> endswith(x.url, "-en.zip"), hs)
         return EDGAR.facts(fetch_filing(isempty(en) ? first(hs) : first(en)); classify = true)
+    elseif system === :dart
+        # `locator` is a 6-digit KRX stock_code or an 8-digit corp_code; take the most recent annual report.
+        cc = occursin(r"^\d{6}$", strip(locator)) ? EDGAR.dart_corp_code(locator) : String(strip(locator))
+        hs = discover(OpenDARTApi(); corp_code = cc, bgn_de = today() - Year(2), end_de = today())
+        isempty(hs) && return nothing
+        rows = EDGAR.facts(fetch_filing(first(hs)); classify = true)
+        # DART tags the consolidated FACE on `ConsolidatedMember` (not undimensioned), so normalize those
+        # face facts to undimensioned — dropping note breakdowns (extra axes → comma) and the
+        # separate-company facts — so the shared consolidated/undimensioned metric picker finds them.
+        isface(d) = isempty(d) || d == "{}" || (occursin("ConsolidatedMember", d) && !occursin(",", d))
+        return [merge(r, (dimensions = "{}",)) for r in rows if isface(r.dimensions)]
     end
-    return nothing                       # :edinet / :dart not implemented yet
+    return nothing                       # :edinet not implemented yet
 end
 
 # EDGAR.jl's (value, period_end) for a metric: consolidated (undimensioned), annual, most-recent.
