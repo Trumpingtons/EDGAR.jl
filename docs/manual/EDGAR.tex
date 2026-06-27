@@ -11,9 +11,31 @@
 % the fully-implemented system; the others carry what is implemented or planned.
 % ---------------------------------------------------------------------------
 
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
+% Engine-aware fonts: pdfLaTeX keeps the classic 8-bit setup; XeLaTeX/LuaLaTeX use fontspec so that
+% CJK (Korean/Japanese) can be typeset. The manual builds under BOTH engines — see the \cjk helpers below.
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+\else
+  \usepackage{fontspec}
+  \newfontfamily\cjkKRfont{Apple SD Gothic Neo}  % macOS system Korean (swap to Noto Sans CJK KR on Linux/CI)
+  \newfontfamily\cjkJPfont{Hiragino Sans}        % macOS system Japanese (swap to Noto Sans CJK JP on Linux/CI)
+\fi
+
+% CJK helpers — use SPARINGLY, for native company names / regulatory terms where the script itself
+% matters. Each takes the native script AND a romanization: under XeLaTeX the native script renders;
+% under pdfLaTeX (which cannot typeset CJK) the romanization is shown instead, so the manual still
+% builds either way. \krcjk{한글}{romanization} for Korean (DART), \jpcjk{日本語}{romanization} for Japanese (EDINET).
+\ifPDFTeX
+  \newcommand{\krcjk}[2]{#2}
+  \newcommand{\jpcjk}[2]{#2}
+\else
+  \newcommand{\krcjk}[2]{{\cjkKRfont #1}}
+  \newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
+\fi
+
 \usepackage[margin=1in]{geometry}
 \usepackage{microtype}
 \usepackage{xcolor}
@@ -2208,6 +2230,14 @@ EDINET supplies only its API source, the ZIP entry layout (the primary instance 
 \textbf{implemented and verified}; the live API discovery is implemented but awaits a key; the
 language-aware labels and CSV oracle are planned (see below).
 
+\paragraph{Formats.} EDINET serves each filing in three forms, flagged per document by the API's
+\texttt{pdfFlag} / \texttt{xbrlFlag} / \texttt{csvFlag}: a human-readable \textbf{PDF} (\texttt{type=2},
+out of scope for \texttt{facts()}); the \textbf{inline-XBRL submission ZIP} (\texttt{type=1}) --- the bytes
+\texttt{facts(f)} parses; and a \textbf{CSV} of the tagged facts (\texttt{type=5}), the regulator's own
+parse used as our oracle (\S\ref{sec:edinet-oracle}). EDINET's XBRL is \emph{inline} (iXBRL embedded in
+\texttt{.htm} files under \texttt{XBRL/PublicDoc/}) --- in contrast to DART, whose XBRL is \emph{classic}
+and which offers no CSV (\S\ref{sys:dart}).
+
 \section{Japanese GAAP and IFRS vocabularies}
 
 A Japanese filer reports under one of three accounting standards, and EDINET tags each with a different
@@ -2288,11 +2318,133 @@ discovery.
 \chapter{DART \textemdash{} South Korea}
 \label{sys:dart}
 
-\emph{Planned.} DART (and OpenDART) is South Korea's FSS disclosure system. Filers tag against K-IFRS
-(reusing the shared \texttt{ifrs-full} vocabulary) with Korean/English labels. Identity is the
-corporate registration / stock code (\texttt{EntityId(:corp\_code,\ \ldots)}); access is via the
-OpenDART API (key required), which --- like the SEC --- additionally exposes a structured
-financial-statement API. No adapter is implemented yet.
+DART (and its API, OpenDART) is South Korea's FSS disclosure system, and the \textbf{fifth}
+\texttt{FilingSystem}. A filing's financials are served as an XBRL \textbf{package} --- a ZIP of the
+classic \texttt{.xbrl} instance plus its bundled linkbases --- so, like ESEF and EDINET, it parses
+through the \emph{shared} report-package reader and the jurisdiction-agnostic XBRL extractor
+(\S\ref{sys:esef}, \S\ref{sys:extraction}). Korea adopted full IFRS as \textbf{K-IFRS}, so the working
+thesis is that DART filings classify against the \emph{existing} \texttt{ifrs-full} vocabulary with
+\textbf{no new national GAAP} --- and, verified live, they do (\S\ref{sec:dart-kifrs}). Identity is the
+eight-digit OpenDART corporate code (\texttt{EntityId(:corp\_code,\ "00126380")}) and/or the six-digit
+KRX stock code (\texttt{:stock\_code}).
+
+\emph{Status:} the system, the offline parse, the live API discovery/fetch, the K-IFRS classification and
+the language-aware Korean/English labels are \textbf{implemented and verified live} (against Samsung
+Electronics and SK~Hynix); independent validation uses the Yahoo Finance cross-check
+(\S\ref{sec:dart-oracle}).
+
+\paragraph{Formats.} DART does \emph{not} mirror EDINET's clean PDF/XBRL/CSV triple (\S\ref{sys:edinet}).
+It exposes the financials as \textbf{classic XBRL} --- the \texttt{fnlttXbrl} package is a separate
+\texttt{.xbrl} instance plus its linkbases, \emph{not} inline XBRL --- and as a pre-parsed \textbf{JSON}
+statement API (\texttt{fnlttSinglAcntAll}, the primary statements only --- the FSS's own parse,
+\S\ref{sec:dart-oracle}). There is \textbf{no CSV} endpoint (no analogue of EDINET's \texttt{type=5}); the
+disclosure document itself (\texttt{document.xml}) is human-readable DART markup, out of scope for
+\texttt{facts()}.
+
+\section{K-IFRS: classification by reuse}\label{sec:dart-kifrs}
+
+DART is the case the two-axis design (\S\ref{sec:two-axes}) was built for: a new \emph{jurisdiction} that
+brings \textbf{no new taxonomy}. Because K-IFRS \emph{is} IFRS, a Korean filer's primary statements are
+tagged with bare \texttt{ifrs-full} concepts (\texttt{ifrs-full:Assets}, \texttt{ifrs-full:Revenue},
+\texttt{ifrs-full:ProfitLoss}, \texttt{ifrs-full:CashFlowsFromUsedInOperatingActivities}, \ldots), which
+the existing \texttt{ifrs-full} vocabulary (shared with ESEF, Companies House and EDINET's IFRS filers)
+already classifies. \textbf{No \texttt{vocab\_krgaap.jl} was needed.}
+
+This was confirmed on two real FY2023 annual reports (\texttt{fnlttXbrl} packages): Samsung Electronics
+(\texttt{5{,}997} facts) and SK~Hynix (\texttt{6{,}306} facts). In both, roughly \textbf{80\,\% of
+concepts are bare \texttt{ifrs-full}} (Samsung \texttt{4{,}735}, SK~Hynix \texttt{5{,}072}); the remainder
+are the filer's own \texttt{entity\ldots} extensions ($\sim$11\,\%) and Korea-specific \texttt{dart} /
+\texttt{dart-gcd} concepts ($\sim$10\,\%). The balance sheet, income statement and cash-flow statement all
+classify through the shared vocabulary, and \texttt{select\_statement} round-trips on both filers (Samsung
+BS~1757 / IS~409 / CF~227; SK~Hynix BS~2043 / IS~126 / CF~216). A filing flows through the same pipeline as
+every other system:
+
+\begin{lstlisting}
+set_credentials(DART(); api_key = ENV["DART_API_KEY"])     # free OpenDART crtfc_key
+hs   = discover(OpenDARTApi(); stock_code = "005930",      # Samsung; resolves to corp_code 00126380
+                bgn_de = "20240101", end_de = "20241231")
+f    = fetch_filing(first(hs))                              # the fnlttXbrl package
+rows = facts(f; classify = true)                            # ifrs-full facts, classified
+select_statement(rows, "BalanceSheet")                     # IS / BS / CF as usual
+\end{lstlisting}
+
+\noindent Even the Korea-specific lines classify without a vocabulary. \textbf{Operating income}
+(\krcjk{영업이익}{\emph{yeongeop iik}}) is tagged \texttt{dart:OperatingIncomeLoss} --- a \texttt{dart}-namespace
+concept, not \texttt{ifrs-full} --- yet \texttt{facts(f;\ classify=true)} still places it on the income
+statement, because the classification engine reads the filing's \emph{presentation-linkbase statement
+roles}, not concept anchors alone (\S\ref{sys:extraction}). So a national extension is classified by
+\emph{where} it sits in the income-statement role, and no \texttt{vocab\_krgaap.jl} is needed at all ---
+verified on Samsung, where \texttt{dart:OperatingIncomeLoss} and numerous other \texttt{dart}/\texttt{entity}
+lines (e.g.\ cash-flow proceeds) are correctly bucketed. This is a stronger result than EDINET's, which
+needed a \texttt{jpigp\_cor} vocabulary addition (\S\ref{sys:edinet}): for K-IFRS, reuse plus role-based
+classification suffices outright.
+
+\section{Discovery and the corp-code resolver}
+
+Unlike EDINET (date-based), OpenDART discovery is \textbf{by company}, because DART publishes a clean
+identity index. \texttt{discover(OpenDARTApi();\ corp\_code|stock\_code,\ bgn\_de,\ end\_de)} lists a
+company's periodic disclosures from \texttt{list.json} and returns handles, keeping the annual business
+report (\krcjk{사업보고서}{\emph{saeop bogoseo}}) and pointing each handle at the \texttt{fnlttXbrl} financial-statement package
+(\texttt{reprt\_code\ =\ "11011"}). A free \texttt{crtfc\_key} is required, set via
+\texttt{set\_credentials(DART();\ api\_key)} or the \texttt{DART\_API\_KEY} / \texttt{OPENDART\_API\_KEY}
+environment variable. (OpenDART authenticates with the key as a \emph{query parameter}, not a header, so
+unlike the other keyed systems \texttt{system\_headers(::DART)} is empty and the key is appended to the
+URL.)
+
+Every other OpenDART endpoint is keyed by the \texttt{corp\_code}, not the public ticker, so resolution
+goes through \texttt{corpCode.xml} --- a ZIP holding one \texttt{CORPCODE.xml} that maps
+\texttt{corp\_code\ $\leftrightarrow$\ stock\_code\ $\leftrightarrow$\ name} for \emph{every} registered
+Korean entity ($\sim$118{,}000; $\sim$4{,}000 listed). \texttt{dart\_corp\_code("005930")} resolves a
+ticker (or a name) to its \texttt{corp\_code}, parsing that index in a single linear pass
+(\texttt{0.84\,s} for 118{,}371 rows) and caching it (\S\ref{sec:dart-caching}).
+
+\paragraph{Bilingual labels.} DART's label linkbase is \emph{split per language} ---
+\texttt{\ldots\_lab-ko.xml} (Korean) and \texttt{\ldots\_lab-en.xml} (English), each single-language ---
+unlike EDINET's one bilingual file. So \texttt{label\_map(f;\ lang)} (and \texttt{facts(f;\ labels=true,\
+lang)}) selects the file for the requested language: \texttt{lang="en"} yields English labels,
+\texttt{lang="ko"} Korean. On Samsung this gives 1{,}742 labels in each language (e.g.\
+\texttt{dart:OperatingIncomeLoss} \(\to\) ``Operating income(loss)'' / ``\krcjk{영업이익(손실)}{yeongeop iik (sonsil)}'').
+The \texttt{lang} keyword threads through the shared linkbase fetcher but is consulted only by systems
+with per-language label files (just DART today); every other system ignores it, so their behaviour is
+unchanged.
+
+\section{Caching: slow endpoints and the per-system policy}\label{sec:dart-caching}
+
+OpenDART's \emph{document} endpoints are \textbf{pathologically slow} --- measured at $\sim$12\,KB/s, so a
+single \texttt{fnlttXbrl} filing takes minutes and \texttt{corpCode.xml} (\texttt{3.4\,MB}) clocked
+\textbf{293\,s} --- while its metadata \texttt{list.json} answers in $\sim$1\,s. This is the forcing case
+for the \textbf{per-system cache policy} (\S\ref{sec:caching}): a single global cache mode is too coarse
+when DART is minutes-slow but the SEC and ESEF are fast. \texttt{set\_cache\_policy(DART();\
+cache\ =\ :persistent)} makes \emph{only} DART persist its downloads across sessions (each slow file paid
+once, ever) while everything else keeps the ephemeral default. It is the recommended setting for any
+sustained DART work.
+
+The corp-code index has its own renewal rule, because the
+\texttt{corp\_code\ $\leftrightarrow$\ stock\_code} mapping is stable: rather than the global 24\,h
+\texttt{cache\_ttl} (which would re-pay the multi-minute download daily), it is rebuilt only when older
+than a jurisdiction-specific backstop --- \textbf{30 days} by default, tunable with
+\texttt{dart\_index\_ttl!(days)}. As an immediate self-heal for newly-listed companies, a \emph{ticker}
+lookup that misses re-downloads the index once and retries; \texttt{dart\_corp\_code(q;\ refresh\ =\
+true)} forces a fresh pull on demand.
+
+\section{Validation: independent cross-checks}\label{sec:dart-oracle}
+
+Korea is the hardest jurisdiction to validate independently. filings.xbrl.org does \textbf{not} carry KR,
+so there is no Arelle xBRL-JSON oracle (unlike ESEF/UKSEF, \S\ref{sec:validation}), and
+\texttt{company\_facts}/AlphaVantage are US-centric. The independent reference that \emph{does} cover Korea
+is \textbf{Yahoo Finance}, whose KRX coverage uses the suffixes \texttt{.KS} (KOSPI) and \texttt{.KQ}
+(KOSDAQ) --- e.g.\ Samsung \texttt{005930.KS}, SK~Hynix \texttt{000660.KS}. The do-it-yourself oracle
+\texttt{src/sources/yahoo\_oracle.jl} compares EDGAR.jl's revenue, net income, assets and equity for the
+latest annual report against Yahoo's --- an \emph{independent data pipeline}, the same arms-length check it
+applies to every other jurisdiction. One DART subtlety the wiring handles: the consolidated face line is
+not left undimensioned but tagged on the \texttt{ConsolidatedAndSeparateFinancialStatementsAxis}
+(\texttt{ConsolidatedMember}), so those face facts are normalised to undimensioned for the shared metric
+picker.
+
+OpenDART additionally re-serves each filing's parsed accounts as \texttt{fnlttSinglAcntAll.json} (the FSS's
+own parse). It is a handy sanity peek --- \texttt{account\_id} values such as \texttt{ifrs-full\_Assets} map
+straight onto our concepts --- but because it comes from the \emph{same} disclosure system as the filing it
+is not an independent reference, so EDGAR.jl ships no comparison harness for it.
 
 % ===========================================================================
 % ===  EXTRACTION  ==========================================================
@@ -2652,6 +2804,23 @@ Two \textbf{independent} time limits apply: \texttt{cache\_ttl} (default 24\,h) 
 --- how long a file is kept on disk before being pruned. \texttt{cache\_max\_size}
 (default 10\,MB) caps the size of any single cached response.
 
+\paragraph{Per-system cache policy.}
+The mode above is \emph{global}, but one knob for every jurisdiction is too coarse when
+systems differ wildly in fetch cost --- the SEC and ESEF are fast, while OpenDART
+(\S\ref{sys:dart}) streams documents at $\sim$12\,KB/s, so a single filing or its
+118{,}000-row company index takes \emph{minutes}. \texttt{set\_cache\_policy(system;\
+cache)} overrides the global mode for \emph{one} \texttt{FilingSystem}, taking precedence
+over \texttt{set\_config} for requests to that system only:
+
+\begin{lstlisting}
+set_config(cache = :temporary)                 # global default: nothing persists
+set_cache_policy(DART(); cache = :persistent)  # but DART persists its slow downloads
+\end{lstlisting}
+
+\noindent so DART's minutes-slow files are paid once and survive across sessions, while
+SEC/ESEF stay ephemeral. The override registry defaults to the global mode for any system
+without an entry, so existing behaviour is unchanged.
+
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
 \toprule
 \textbf{Function} & \textbf{Purpose} \\
@@ -2660,6 +2829,8 @@ Two \textbf{independent} time limits apply: \texttt{cache\_ttl} (default 24\,h) 
 \texttt{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size,
   cache\_max\_age, host\_whitelist, allow\_file, user\_agent)} & Override the
   global runtime configuration (only the keywords you pass change). \\
+\texttt{set\_cache\_policy(system; cache)} & Override the cache mode for a single
+  \texttt{FilingSystem}, taking precedence over the global mode for that system. \\
 \texttt{clean\_cache()} & Prune the cache on demand. \\
 \texttt{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
 \texttt{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
