@@ -35,6 +35,7 @@
 \usepackage{longtable}
 \usepackage{enumitem}
 \usepackage{titlesec}
+\usepackage[title]{appendix}   % per-chapter Credentials appendices via subappendices
 \usepackage[colorlinks=true,linkcolor=BlueViolet,urlcolor=BlueViolet,
             citecolor=BlueViolet]{hyperref}
 \usepackage[dvipsnames]{xcolor}
@@ -76,11 +77,28 @@
   showstringspaces=false,
   columns=fullflexible,
   keepspaces=true,
-  % colour the REPL prompt green to match a real Julia session
   % colour the REPL prompt blue (bold) to stand apart from the green strings
   literate={julia>}{{\textcolor{juliaprompt}{\textbf{julia>}}}}{6},
 }
 \lstset{style=julia}
+
+% Terminal/shell listings: same look, no Julia keywords, and the leading `%` prompt coloured the SAME
+% as `julia>`. Used via \begin{lstlisting}[style=term] — so Julia listings never have a `%` coloured.
+\lstdefinestyle{term}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecom}\itshape,
+  morecomment=[l]{\#},
+  frame=single,
+  rulecolor=\color{coderule},
+  framesep=6pt,
+  xleftmargin=10pt,
+  xrightmargin=4pt,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  literate={\% }{{\textcolor{juliaprompt}{\textbf{\%}} }}{2},
+}
 
 % inline code shortcut
 \newcommand{\code}[1]{\texttt{\small #1}}
@@ -194,46 +212,36 @@ julia> using Pkg
 julia> Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")
 \end{lstlisting}
 
-\section{Setting an User-Agent}\label{sec:ua}
+\section{Setting credentials}\label{sec:install-credentials}
 
-The SEC's fair-access policy requires each request to include a \texttt{User-Agent} header identifying the requester with a name and a contact email address. Requests that do not include this header are rejected with an HTTP 403 error. There is no API key or registration process, users are simply expected to identify themselves honestly when accessing the data.
+Most filing systems need a credential before they will answer --- in every case \emph{free}, and for the
+SEC merely a self-identifying header rather than a key. Set the relevant one before discovery or fetch;
+Table~\ref{tab:credentials} shows what each system needs and where its full guide lives.
 
-The user agent should be set once per session as a single string of the form \texttt{"Name email"}:
-\begin{lstlisting}
-julia> using EDGAR
-julia> set_user_agent("Your Name name@example.com")
-\end{lstlisting}
-
-\noindent If the \texttt{User-Agent} header is not set, \texttt{EDGAR.jl} will raise an error locally and stop execution before making any request to the SEC, ensuring compliance with the SEC's access policy.
-
-\section{Persisting an User-Agent}
-The function \texttt{set\_user\_agent()} sets the User-Agent only for the \emph{current} Julia process. As a result, a new REPL session, script execution, or notebook kernel will start without this configuration. The resolution order used by \texttt{EDGAR.jl} is:
-\begin{enumerate}[nosep]
-  \item an explicit value set via \texttt{set\_user\_agent()}; otherwise
-  \item the \texttt{SEC\_USER\_AGENT} environment variable; otherwise
-  \item an error is thrown.
-\end{enumerate}
-
-
-
-\noindent To avoid configuring the User-Agent in every session, it can be defined once as an environment variable. This variable is automatically read by all future Julia processes, including REPL sessions, scripts, and notebook kernels. It can be set in \texttt{startup.jl} or exported from the shell,
-\begin{lstlisting}
-ENV["SEC_USER_AGENT"] = "Your Name name@example.com"
-\end{lstlisting}
-
-The User-Agent is not a secret: it is simply the identity transmitted to the SEC with each request. For this reason, storing it in a startup file is safe and recommended.
-
-Alternatively, \texttt{EDGAR.jl} provides convenience functions to manage persistence automatically,
-\begin{lstlisting}
-julia> persist_user_agent("Your Name name@example.com")
-julia> unpersist_user_agent()   # removes the persisted setting
-\end{lstlisting}
+\begin{table}[h]
+\centering
+\small
+\caption{Credentials by filing system. All keys are free; registration is per provider.}
+\label{tab:credentials}
+\begin{tabular}{@{}p{0.18\textwidth}p{0.27\textwidth}p{0.34\textwidth}p{0.10\textwidth}@{}}
+\toprule
+\textbf{System} & \textbf{Credential} & \textbf{Set with} & \textbf{Guide} \\
+\midrule
+SEC EDGAR & User-Agent (name + email; no key) & \texttt{set\_user\_agent("Name email")} & \S\ref{sec:ua} \\
+ESEF & none (keyless) & --- & \S\ref{sys:esef} \\
+UK Companies House & free API key & \texttt{set\_credentials(CompaniesHouse(); api\_key)} & \S\ref{sec:uk-credentials} \\
+UK NSM & none (User-Agent for download) & \texttt{set\_user\_agent} & \S\ref{sec:uk-credentials} \\
+EDINET & free Subscription-Key & \texttt{set\_credentials(EDINET(); api\_key)} & \S\ref{sec:edinet-credentials} \\
+DART (OpenDART) & free \texttt{crtfc\_key} & \texttt{set\_credentials(DART(); api\_key)} & \S\ref{sec:dart-credentials} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ===========================================================================
 \chapter{Quick Start}
 \label{sec:quickstart}
 
-\subsection{Searching}
+\section{Searching}
 \label{sec:qs-search}
 
 Resolve a ticker to a CIK, then search the text of filings:
@@ -253,7 +261,7 @@ end
 \end{lstlisting}
 
 
-\subsection{Filing Formats: Documents and iXBRL}
+\section{Filing Formats: Documents and iXBRL}
 \label{sec:qs-reports}
 
 \emph{Structured extraction of financial statements from inline XBRL (iXBRL) is
@@ -269,7 +277,7 @@ SEC has already extracted those facts for you, so you rarely need to parse the
 iXBRL by hand.
 
 
-\subsection{Financial Data}
+\section{Financial Data}
 \label{sec:qs-findata}
 
 The three XBRL endpoints share the \texttt{us-gaap} vocabulary and return JSON:
@@ -291,205 +299,250 @@ println(length(assets.data), " filers reported Assets")
 \noindent
 A trailing \texttt{I} on the frame period (\texttt{"CY2022Q4I"}) denotes an
 \emph{instant} (a balance-sheet point in time); drop it for a \emph{duration}
-(a flow such as revenue). See the Glossary (\S\ref{sec:glossary}).
+(a flow such as revenue). See the Glossary (Appendix~\ref{sec:glossary}).
 
 
-\chapter{EDGAR \textemdash{} U.S.\ SEC}
-\label{sys:edgar}
+\chapter{Architecture and Portability}
+\label{sec:architecture}
 
-EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S.\ Securities and
-Exchange Commission's filing system, and the \texttt{FilingSystem} that \texttt{EDGAR.jl} implements
-in full --- discovery, fetch and parse. Every capability described in this chapter (form-level
-section extraction, the search/lookup and XBRL structured-data APIs, the interactive picker, the
-fact warehouse) is available for SEC filings today. In the code the concrete system type is
-\texttt{SEC}\,\texttt{<:}\,\texttt{FilingSystem} (named \texttt{SEC} rather than \texttt{EDGAR} to
-avoid clashing with the \texttt{EDGAR} module); a filer's identity is a CIK
-(\texttt{EntityId(:cik,\ \ldots)}). The remaining chapters cover the other filing systems --- ESEF,
-Companies House, EDINET, DART --- which reuse the same jurisdiction-agnostic core
-(\S\ref{sec:architecture}) but are at earlier stages.
+EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic core} and a thin
+\textbf{jurisdiction layer}. This applies to both subsystems --- XBRL extraction and HTML document
+parsing. The XBRL core --- the regex-based extractor that resolves contexts, units
+and facts from raw \texttt{<ix:nonFraction>} / \texttt{xbrli:context} / \texttt{xbrli:unit}, the
+\texttt{Fact}/\texttt{Selection} model, the four export layers, the DuckDB warehouse, the browser
+picker, and the linkbase \emph{parsers} --- depends on no SEC-specific assumption. It has been
+validated unchanged against a non-SEC filing: the GLEIF 2024 annual report (an ESEF/IFRS report in
+both inline \texttt{.xhtml} and classic \texttt{.xbrl} form) extracts identically from both
+serializations, using the IFRS \texttt{ifrs-full} taxonomy, a \texttt{gleif} extension namespace,
+and an LEI entity identifier --- none of which the core was written for.
 
-\section{Form Types and Entities}
+What is genuinely SEC-specific is small: \emph{how} a filing is discovered and fetched, \emph{where}
+its linkbases live, how its filer is \emph{identified}, the role-name \emph{vocabulary} used to
+classify statements, and the SEC-only structured-data APIs. Table~\ref{tab:portability} shows where
+the lines fall. SEC is the one jurisdiction implemented today; other jurisdictions (ESEF report
+packages, Canada's SEDAR+) would supply only their slice of the jurisdiction column. Concretely, the
+common parsing already lives in \texttt{extract\_xbrl.jl} and the SEC linkbase access in
+\texttt{extract\_xbrl\_sec.jl}.
 
-For most corporate analysis, the “big three” report forms (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching and analysing.
+The same fault line runs through the \emph{text}-section layer (prose extraction). Here, however, the
+common substrate is \emph{small}: only the HTML document parser --- the \texttt{documents/} parser
+core (HTML$\rightarrow$node tree, text and table rendering) --- is jurisdiction-agnostic
+and could serve an ESEF or EDINET HTML filing unchanged. Everything layered above it is
+SEC-specific: the \emph{Item~N}/\emph{Part} section model has no ESEF/EDINET analog, so the section detectors
+(the \texttt{documents/} TOC/heading/pattern detectors and filing-agent logic), the
+\texttt{ChunkedDocument} port (\texttt{chunked\_document.jl}), \texttt{sections.jl}, the
+cross-reference-index strategy (\texttt{cross\_reference.jl}), and the per-form text accessors
+(\texttt{TenK}, \texttt{TwentyF}, and the 40-F AIF extractor) are all jurisdiction-specific. Unlike
+XBRL --- a universal standard, where the common/specific split is roughly even --- the text-section
+common part is only the HTML parser, because a filing's \emph{item} structure is a national
+regulatory construct rather than a shared technical standard.
 
-\medskip
-\noindent Using \texttt{EDGAR.jl} to retrieve any form, first pass its EDGAR code\footnote{The code is the name used in each heading \$\ref{big3}-\$\ref{hii} below, except where noted (e.g.\ \texttt{"SC 13D"}, \texttt{"13F-HR"}, \texttt{"NPORT-P"}, \texttt{"N-MFP2"}).} (e.g annual report "10-K", quarterly report "10-Q", current report "8-K") to,
-\begin{itemize}
-  \item \texttt{filings\_by\_cik}
-    \begin{lstlisting}
-    filings_by_cik(320193; forms = "8-K")          # Apple CIK = 320193
-    \end{lstlisting}
-  \item \texttt{filings\_by\_text}
-    \begin{lstlisting}
-    filings_by_text("supply chain disruption"; forms = ["10-K", "10-Q"]) 
-    \end{lstlisting}
-\end{itemize}
+\begin{table}[h]
+\centering
+\caption{Where the common core ends and the jurisdiction layer begins.}
+\label{tab:portability}
+\small
+\begin{tabular}{@{}p{0.30\textwidth}p{0.14\textwidth}p{0.47\textwidth}@{}}
+\toprule
+\textbf{Concern} & \textbf{Common core} & \textbf{Jurisdiction-specific} \\
+\midrule
+Context/unit/fact regex parsing & Yes (all) & --- \\
+\texttt{Fact}/\texttt{Selection}/\texttt{FactRow} representation & Yes & --- \\
+Markdown / Facts JSON / DuckDB / \texttt{save\_selection} & Yes & --- \\
+Browser picker (pure DOM) & Yes & --- \\
+\texttt{standardize} mechanism & Yes & mapping \emph{data} (\texttt{us-gaap} vs \texttt{ifrs-full}) \\
+Linkbase parsers (\texttt{\_concept\_statements} / \texttt{\_labels} / \texttt{\_calculations}) & Yes & --- \\
+Discovery/fetch of a filing & --- & SEC Archives vs ESEF zip package vs SEDAR+ \\
+Linkbase location & --- & SEC sibling files vs bundled-in-zip \\
+Identity & --- & CIK vs LEI vs SEDAR id \\
+Role vocabulary (\texttt{classify\_role}) & Yes (base) & small per-jurisdiction overrides \\
+Structured-data APIs (\texttt{company\_facts}, \texttt{xbrl\_frames}, \texttt{full\_text\_search}, \texttt{cik}) & --- & SEC-only --- no cross-jurisdiction analog \\
+\midrule
+HTML\,$\rightarrow$\,tree / text / tables parsing (\texttt{documents/} parser core) & Yes & --- \\
+Section/item detection (Item/Part, TOC, filing agents, cross-reference index) & --- & SEC-only --- \emph{Item~N}/\emph{Part} has no ESEF/EDINET analog \\
+Per-form text accessors (\texttt{TenK}, \texttt{TwentyF}, 40-F AIF, \texttt{sections}) & --- & SEC forms (10-K/10-K/A, 10-Q, 8-K, 20-F, 40-F) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{“Big Three” Report Forms}\label{big3}
+\noindent So the per-jurisdiction surface is small: roughly fetch, locate-linkbases, identity and
+role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry happens to offer. Most
+of the package stays common --- which is what makes adding a second jurisdiction tractable rather
+than a rewrite.
 
-\subsubsection{10-K: Annual Report}
-The annual report, denoted 10-K, provides a comprehensive overview of a company's business and financial performance for the fiscal year.
+\section{Statement classification: two orthogonal axes}
+\label{sec:two-axes}
+\label{sec:classification-layers}
 
-\subsubsection{10-Q: Quarterly Report}
-			
-The quarterly report, denoted 10-Q, updates investors on the company's performance during a fiscal quarter. There is typically no Q4 10-Q because the annual 10-K covers the full year. Unlike a 10-K, the financial statements are usually reviewed but not fully audited.
+Deciding which financial statement a fact belongs to (\texttt{statement\_map}, \S\ref{sec:export-layers})
+is the part most exposed to the messy diversity of real filings, so it is worth being explicit about
+how that knowledge is layered. The robust approach --- a multi-signal scorer adapted from
+\href{https://github.com/dgunning/edgartools}{edgartools} (MIT; see Acknowledgements) --- factors
+along the \emph{taxonomy}, \emph{not} the jurisdiction. There are three layers
+(Table~\ref{tab:classify-layers}).
 
-\subsubsection{8-K: Current Report}
+\begin{table}[h]
+\centering
+\caption{The three layers of statement-classification knowledge.}
+\label{tab:classify-layers}
+\small
+\begin{tabular}{@{}p{0.17\textwidth}p{0.60\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{What it is} & \textbf{Shared by} \\
+\midrule
+\textbf{Engine logic} (common) & The cascade + scoring + validation \emph{meta-rules}: prefer a complete statement over a fragment, validate that essential concepts are present, reject the wrong type, penalize parentheticals, and combined-statement aliasing. Plus the structural semantics --- a balance sheet \emph{is} Assets + Liabilities + Equity; an income statement runs revenue $\to$ profit. & All taxonomies \& jurisdictions \\
+\textbf{Taxonomy vocabulary} (per-taxonomy, often shared) & The concept anchors, concept patterns and role-name patterns. \texttt{ifrs-full} (profit-or-loss, financial position, changes in equity) is reused by ESEF, SEDAR+ (IFRS), Companies House (IFRS), DART (K-IFRS), MOPS (TW-IFRS) and EDINET (IFRS filers). \texttt{us-gaap} (tax-disclosure penalties, comprehensive-income variants, roll-forwards) is SEC. National GAAPs (JP \texttt{jpcrp}/\texttt{jppfs}, UK FRS~101/102, KR) are one regime each. & the taxonomy's users \\
+\textbf{Jurisdiction adapter} (per-jurisdiction) & Discovery/fetch, linkbase location, identity (CIK / LEI / \ldots), the filing-package conventions (SEC's \texttt{FilingSummary.xml} + R-files; ESEF zip; EDINET/DART APIs), and which taxonomies the regime uses. & one jurisdiction each \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-The current report, denoted 8-K, is filed whenever a material event occurs that investors should know about. Unlike 10-K and 10-Q filings, 8-K filings are event-driven and can be filed at any time. Common triggers include:
-\begin{itemize}
-  \item Acquisitions or mergers
-  \item Bankruptcy
-  \item CEO or CFO changes
-  \item Director appointments or resignations
-  \item Major contracts
-  \item Earnings announcements
-  \item Changes in auditors
-  \item Delisting notices
-\end{itemize}
+\noindent The edgartools scorer encodes roughly two dozen empirically-tuned, issue-driven rules
+(each a real filing that broke a naive classifier, then a fix). Of those, about \emph{45\%} is common
+engine logic, \emph{30\%} \texttt{us-gaap} data, and \emph{20\%} \texttt{ifrs-full} data --- and that
+IFRS slice is reused across the jurisdictions above. Almost nothing in the engine is SEC-specific, so
+adopting it front-loads both the engine \emph{and} the IFRS vocabulary: adding ESEF / Companies House
+/ DART / MOPS / EDINET becomes mostly adapters plus reuse, with a new national-GAAP vocabulary only
+where a regime actually uses one (chiefly Japan and the UK).
 
-
-\subsection{Foreign Companies}
-
-\subsubsection{20-F: Annual Report}
-The foreign-issuer equivalent of Form 10-K. Filed annually by foreign companies whose securities are traded in U.S. markets. Useful for understanding a foreign company’s business, risks, financial condition, and corporate governance. Examples include Toyota Motor Corporation and SAP SE.
-
-\subsection{Corporate Governance}
-\subsubsection{Proxy Statement (DEF 14A)}
-Many researchers consider the Proxy Statement (DEF 14A)\footnote{\textbf{DEF} denotes Definitive and \textbf{14A} refers to proxy materials filed under Section 14(a) of the Securities Exchange Act.} the best source of information on executive compensation, directors, and corporate governance. Typical contents include:
-\begin{itemize}
-\item Executive compensation
-\item Director biographies
-\item Board composition
-\item Related-party transactions
-\item Shareholder proposals
-\end{itemize}
-
-
-\subsection{Tender Offers and Mergers}
-\subsubsection{Schedule TO}
-Tender offer filing used in acquisitions, buyouts, and going-private transactions. Useful for understanding the terms, financing, and parties involved in a tender offer.
-\begin{itemize}
-\item Acquisitions
-\item Buyouts
-\item Going-private transactions
-\end{itemize}
-
-
-
-\subsection{Securities Offerings}
-
-\subsubsection{Form S-1}
-Form S-1 is the registration statement typically used by companies seeking to go public through an initial public offering (IPO). It is useful for understanding a company before its IPO. Typical contents include:
-\begin{itemize}
-  \item Detailed business description
-  \item Risk factors
-  \item Use of proceeds
-  \item Management team
-  \item Industry overview
-\end{itemize}
-
-\subsubsection{Form S-3}
-Form S-3 is a simplified registration statement used by eligible seasoned issuers to register additional securities offerings. It is commonly used for follow-on offerings and shelf registrations.
+This refines the portability picture above into \textbf{two orthogonal axes}: a \emph{jurisdiction}
+axis (\texttt{SEC <: Jurisdiction}, \ldots) handling fetch and identity, and a separate
+\emph{taxonomy} axis (\texttt{us-gaap} / \texttt{ifrs-full} / \ldots\ vocabularies, auto-selected from
+the concept prefixes a filing actually uses) handling classification. EDGAR.jl ships the
+classification \emph{registry} today; the full per-request scoring cascade is a planned, test-anchored
+port of the edgartools resolver. (This is a design direction and may change in detail.)
 
 
-\subsection{Ownership and Insider Activity}
+\section{Extraction \textemdash{} from filings to facts}
+\label{sys:extraction}
 
-\subsubsection{Schedule 13D}
-Filed when an investor acquires more than 5\% of a company's shares and intends to influence management or corporate policies. Useful for identifying activist investors, takeover attempts, and significant ownership positions.
+A fetched \texttt{Filing} is only bytes plus a \texttt{kind}. An \textbf{extractor} turns it into the
+\texttt{FactRow} row table that the rest of the toolkit consumes. \texttt{EDGAR.jl} has more than one
+extractor, selected automatically by \texttt{facts(f)} from the filing's format. Whatever the source,
+the output is the \emph{same} row table --- so classification, \texttt{select\_statement}, the
+CSV/DuckDB exports and the validation oracles (\S\ref{sec:validation}) all work unchanged.
 
-\subsubsection{Schedule 13G}
-A simplified alternative to Schedule 13D for passive investors who acquire more than 5\% of a company's shares without seeking to influence management or control of the company.
+\subsection{Architecture: the format/extraction axis}
 
-\subsubsection{Form 4}
-Reports purchases and sales of company securities by directors, officers, and beneficial owners holding more than 10\% of the company's shares. Useful for tracking insider trading activity.
-
-\subsection{Holdings of Institutional Investors}\label{hii}
-
-\subsubsection{Form 13F}
-An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \texttt{"13F-HR"} (the holdings report; \texttt{"13F-NT"} is a notice that another manager reports the holdings).
-
-\subsubsection{Form N-PORT}
-Individual registered fund portfolio disclosure, providing monthly portfolio reports required for registered open-end investment companies, including most mutual funds and ETFs \footnote{Main exemptions/exceptions include: (1) money market funds, which are primarily regulated under Form N-MFP instead (\S\ref{N-MFP}); (2) exchange-traded products that are not 1940 Act funds; (3) funds relying on master-feeder or umbrella structures; (4) newly formed or liquidating funds may benefit from transitional relief and reduced or modified reporting, respectively; (5) small fund conditional exemptions (limited scope).}. Each filing corresponds to a single registered investment fund. N-PORT filings are typically made public with a delay (generally $\sim$60 days after month-end), and therefore are not real-time.
-
-The public EDGAR form code is \texttt{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
-\begin{itemize}
-  \item Individual securities are reported
-  \item CUSIPs\footnote{A CUSIP (Committee on Uniform Security Identification Procedures) is a unique nine-character code used to identify North American financial securities, such as stocks, bonds, and mutual funds. Functioning much like a serial number, it uniquely identifies a security and facilitates the accurate tracking of investments, trade processing, and settlement by brokerages, banks, and clearing organizations.} are included
-  \item Positions are disclosed at the security level\footnote{Certain holdings may receive confidential treatment in limited, regulator-approved cases.}
-  \item Valuation per holding is provided
-\end{itemize}
-
-\noindent N-PORT filings may also include portfolio-level classifications and summaries, including,
-\begin{itemize}
-  \item Equity vs fixed income vs derivatives breakdowns
-  \item Sector and asset-type classifications
-  \item Country and currency exposure summaries
-  \item Liquidity categories
-\end{itemize}
-
-\noindent N-PORT filings may further include risk and exposure metrics (where applicable), including,
-\begin{itemize}
-  \item Portfolio duration (for fixed income)
-  \item VaR-style risk measures (where applicable)
-  \item Concentration levels
-  \item Exposure breakdowns across risk factors
-\end{itemize}
-
-\subsubsection{Form N-MFP}\label{N-MFP}
-Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \texttt{"N-MFP2"} (\texttt{"N-MFP3"} from the 2024 amendments).
-
-\subsection{Entities}
-
-Every filer on EDGAR, whoever submits a filing, is an \emph{entity},
-identified by a \textbf{CIK} (Central Index Key, \S\ref{sec:glossary}). An entity is
-not always an operating company: it may be a registered \emph{investment} company (a
-mutual fund, ETF, or money-market fund), an institutional investment manager, or an
-individual (e.g.\ a director filing Form 4). The SEC tags each filer with an
-\texttt{entityType}, and which forms it files follows from that type:
+The portability picture (\S\ref{sec:two-axes}) has two axes --- a \emph{jurisdiction} axis (fetch and
+identity) and a \emph{taxonomy} axis (the concept vocabulary). Extraction is a \textbf{third,
+orthogonal axis: \emph{format}} --- \emph{how} facts are recovered from the bytes. \texttt{Filing.kind}
+names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}), and \texttt{facts(f)} dispatches on it:
 
 \begin{itemize}
-  \item \texttt{"operating"} --- an operating company (or an institutional manager).
-    Files the corporate forms above: 10-K / 10-Q / 8-K, DEF 14A, S-1/S-3, 20-F for
-    foreign issuers; a manager also files \textbf{13F}.
-  \item \texttt{"investment"} --- a registered investment company: a mutual fund or
-    ETF (files \textbf{N-PORT}), or a money-market fund (files \textbf{N-MFP}).
+  \item \texttt{:ixbrl} / \texttt{:xbrl} \(\rightarrow\) the \textbf{XBRL extractor} (reads inline or
+    classic XBRL, resolving contexts and units). This is the path every structured filing has used so far.
+  \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor} (\texttt{extract\_pdf}), described below.
 \end{itemize}
 
-\noindent \texttt{EDGAR.jl} exposes entities through three functions. \texttt{cik} maps a name
-or ticker to a CIK, covering entities that \emph{have} a ticker (companies and
-listed ETFs/funds). \texttt{profile(cik)} returns a single filer's row-invariant
-record --- its \texttt{name}, \texttt{entityType}, SIC industry, fiscal year-end,
-tickers, former names, and so on. And the \texttt{entity} column of
-\texttt{filings\_by\_text} is simply that filer's name. So a typical workflow is:
-resolve the CIK (\texttt{cik}), inspect the filer (\texttt{profile}), then pull its
-filings of the relevant form (\texttt{filings\_by\_cik}).
+\noindent The key invariant: \textbf{both emit the same \texttt{FactRow}}. So the XBRL parser is
+\emph{one} extractor on this axis, not the universal core --- a point the Companies House and German
+cases force, where a large share of filings are PDF, not XBRL.
 
+\paragraph{The concept problem.} An XBRL fact carries a taxonomy \emph{concept}
+(\texttt{us-gaap:Assets}); a PDF fact carries only a line-item \emph{label} (``Total assets'',
+``Bilanzsumme''). So for PDF the \texttt{standard\_concept} (the cross-company standardiser) is the real
+bridge, and classification keys off the label rather than a concept prefix. The fact's
+\texttt{source\_selector} carries a CSS selector for HTML filings and, for PDF, the source
+\texttt{(page, bbox)} --- coordinate provenance that lets an editor back-link a number to its source
+pixel.
+
+\subsection{The PDF extractor: a tiered toolchain}
+\label{sec:pdf-tiers}
+
+PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
+no text layer at all; and layouts vary by issuer and language. The extractor is therefore \textbf{tiered}:
+
+\begin{enumerate}
+  \item[\textbf{Tier 1}] \textbf{(deterministic --- built).} \texttt{pdfjs-dist} \emph{directly} (no
+    wrapper), via a small Node helper, yields positioned words; \texttt{EDGAR.jl} then reconstructs the
+    statement geometrically --- \emph{rows} by clustering on the vertical position, \emph{columns} by the
+    numeric right-edge bands --- reads the header for period dates and the scale (£m, etc.), and emits
+    coordinate-anchored facts. The number semantics (parentheses\,=\,negative, decimal-comma, scale
+    footers) live in Julia.
+  \item[\textbf{Tier 2}] \textbf{(OCR --- planned).} \texttt{tesseract.js} turns a \emph{scanned} page
+    into a text layer the Tier-1 path can then read.
+  \item[\textbf{Tier 3}] \textbf{(LLM --- planned, optional).} An arithmetic-validated language-model
+    pass for layouts Tier 1 cannot reconstruct; off by default so the library stays deterministic and
+    offline.
+\end{enumerate}
+
+\paragraph{Toolchain decision.} The whole stack is a \textbf{single Node/TypeScript toolchain} --- no
+Python/Conda, no JVM, no GPL/AGPL. The parser is \texttt{pdfjs-dist} used \emph{directly}: Mozilla's
+upstream pdf.js (Apache-2.0), pinned to a version we choose. In a bake-off it tied the popular wrappers
+(\texttt{pdf.js-extract}, \texttt{pdfreader}) on accuracy while being faster, leaner on dependencies, and
+on the best-maintained parser (the wrappers bundle older or \emph{forked} copies). The toolchain is also
+native to the editor host (a TypeScript VS Code fork), where the same \texttt{pdf.js} can render, extract
+\emph{and} supply the coordinates that link a fact to its source. Using it needs Node and the pinned
+\texttt{pdfjs-dist} (\texttt{npm install} in \texttt{src/extractors/pdf/}).
+
+\subsection{Where it plugs into the workflow}
+
+Extraction is one step in the same pipeline every system follows:
+
+\begin{center}
+\texttt{company\_search} \(\rightarrow\) \texttt{discover} \(\rightarrow\) \texttt{fetch\_filing}
+\(\rightarrow\) \textbf{\texttt{facts(f)}} \(\rightarrow\) \texttt{select\_statement} / export / validate
+\end{center}
+
+\noindent The extractor \emph{is} the \texttt{facts(f)} step, and it is identical for every jurisdiction
+--- SEC, ESEF, Companies House, the NSM. For XBRL filings \texttt{facts(f)} ``just works''. For PDF the
+working entry today is \textbf{\texttt{extract\_pdf(path)}} on a born-digital PDF on disk; calling
+\texttt{facts(f)} on a \texttt{:pdf} \texttt{Filing} currently needs the PDF bytes, which the fetch path
+does not yet retain --- so download the document, then \texttt{extract\_pdf}. (Tier 1 covers born-digital
+financial statements; scanned and exotic layouts await Tiers 2--3.)
+
+\subsection{Workflow examples}
+
+The extraction call is the same shape across systems; only discovery differs.
+
+\paragraph{SEC (inline XBRL).}
 \begin{lstlisting}
-julia> id = only(cik("AAPL"; by = :ticker)).cik
-# Output:
-"0000320193"
-
-julia> profile(id).entityType 
-"operating"
-
-reports = filings_by_cik(id; forms = "10-K")
-table(reports)
-
+using EDGAR
+set_user_agent("Your Name you@example.com")
+fs = filings_by_cik("320193"; forms = "10-K")            # Apple
+f  = fetch_filing("320193", fs[1].accession)             # f.kind == :ixbrl
+select_statement(facts(f; classify = true, labels = true), "BalanceSheet")
 \end{lstlisting}
 
+\paragraph{NSM / ESEF (UKSEF inline XBRL).}
+\begin{lstlisting}
+hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # Tesco PLC
+facts(fetch_filing(first(hs)); classify = true, labels = true)    # same call, ESEF package
+\end{lstlisting}
+
+\paragraph{Companies House (iXBRL \emph{or} PDF --- read \texttt{f.kind}).}
+\begin{lstlisting}
+f = fetch_filing(first(discover(CompaniesHouseApi(); company_number = "00021497")))
+if f.kind in (:ixbrl, :xbrl)
+    facts(f; classify = true)                            # structured path
+else                                                      # f.kind == :pdf
+    # download the document, then run the PDF extractor on the file:
+    extract_pdf("00021497_accounts.pdf")
+end
+\end{lstlisting}
+
+\paragraph{PDF extractor (born-digital).}
+\begin{lstlisting}
+rows = extract_pdf("annual_report.pdf"; page = 133)      # a Vector{FactRow}, like facts(f)
+select_statement(rows, "BalanceSheet")                   # every fact coordinate-anchored
+\end{lstlisting}
+
+\noindent In every case the result is the same \texttt{FactRow} row table, so the downstream
+(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
+of which extractor produced it.
 
 % ===========================================================================
-\section{API}
+\chapter{Common API}
 \label{sec:api}
 
 CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
 \texttt{0000320193}). Any \texttt{cik} argument accepts an integer or a string, with
 or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"0000320193"}
 are equivalent); functions normalize to the 10-digit form. Every data call goes
-through the cached, User-Agent-aware request layer (\S\ref{sec:caching}).
+through the cached, User-Agent-aware request layer (\S\ref{sec:ua}).
 
-\subsection{Searching and Entity Lookup}
+\section{Searching and Entity Lookup}
 \label{sec:api-search}
 
 Searching typically begins with identifying a filer and then retrieving either company metadata or relevant filings. The package therefore provides functions for company lookup, filer profiling, full-text search of filing contents, and retrieval of filings submitted by a specific entity. Table~\ref{tab:searching} summarizes these functions and their intended usage.
@@ -521,7 +574,7 @@ Searching typically begins with identifying a filer and then retrieving either c
 \end{tabular}
 \end{table}
 
-\subsubsection{\texttt{cik}}
+\subsection{\texttt{cik}}
 
 \paragraph{Signatures}
 \begin{description}
@@ -602,7 +655,7 @@ julia> cik()[1:5]                # first 5 rows
  (entity = "AMAZON COM INC", ticker = "AMZN", cik = "0001018724")
 \end{lstlisting}
 
-\subsubsection{\texttt{full\_text\_search}}
+\subsection{\texttt{full\_text\_search}}
 
 \paragraph{Signature}
 \begin{description}
@@ -666,7 +719,7 @@ search spans many filers, so adding them would cost one submissions request per
 distinct filer (up to $\sim$100 per page). The method \texttt{filings\_by\_cik} adds them cheaply
 for a single filer (Table \ref{tab:filings_by_cik}).
 
-\subsubsection{\texttt{filings\_by\_cik}}
+\subsection{\texttt{filings\_by\_cik}}
 
 \paragraph{Signature}
 \begin{center}
@@ -726,7 +779,7 @@ julia> rows[1]
  isXBRL = true, isInlineXBRL = true, isXBRLNumeric = false)
 \end{lstlisting}
 
-\subsubsection{\texttt{profile}}
+\subsection{\texttt{profile}}
 
 \paragraph{Signature}
 
@@ -781,7 +834,7 @@ julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
 ("Apple Inc.", "operating", "3571", "0926")
 \end{lstlisting}
 
-\subsection{Filings Life-Cicle: Fetch, Render, Extract, Save}
+\section{Filings Life-Cicle: Fetch, Render, Extract, Save}
 \label{sec:api-filings}
 
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
@@ -802,7 +855,7 @@ julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
 \bottomrule
 \end{longtable}
 
-\subsubsection{The \texttt{Filing} Type}
+\subsection{The \texttt{Filing} Type}
 \label{sec:filing-type}
 
 \noindent A \texttt{Filing} is an immutable value representing a filing document in
@@ -832,7 +885,7 @@ Fields are accessed directly using dot notation. For example,
 compact one-line summary in the REPL and renders inline as HTML in notebook front-ends (\S\ref{sec:display-filing}).
 
 
-\subsubsection{Displaying a \texttt{Filing}}
+\subsection{Displaying a \texttt{Filing}}
 \label{sec:display-filing}
 
 \paragraph{Web Browser}
@@ -891,7 +944,7 @@ julia> html = repr("text/html", f)        # the rendered HTML as a String
 julia> display(f)                         # render to the active display on demand
 \end{lstlisting}
 
-\subsubsection{\texttt{fetch\_filing}}
+\subsection{\texttt{fetch\_filing}}
 
 \paragraph{Signature}
 \begin{center}
@@ -940,7 +993,7 @@ julia> f.kind, f.document, f.url
 \end{lstlisting}
 
 
-\subsubsection{\texttt{open\_filing}}
+\subsection{\texttt{open\_filing}}
 
 \begin{center}
 \textbf{\sig{open\_filing(f::Filing; assets = true)}}
@@ -1001,7 +1054,7 @@ julia> open_filing(path)          # reload from disk and view in the browser
 \end{lstlisting}
 
 
-\subsubsection{\texttt{extract\_section}}
+\subsection{\texttt{extract\_section}}
 
 \begin{center}
 \textbf{\sig{extract\_section(html, names; base\_path = nothing)}}
@@ -1013,7 +1066,7 @@ case-insensitive matching --- e.g.\ \texttt{"Item 7"} or
 \texttt{"Management's Discussion"}. Returns a \texttt{Dict} mapping each requested name
 to its extracted text (the full section, up to where the next section begins).
 
-\subsubsection{\texttt{find\_paragraphs}}
+\subsection{\texttt{find\_paragraphs}}
 
 \begin{center}
 \textbf{\sig{find\_paragraphs(f::Filing, query; ignorecase = true) -> Vector\{NamedTuple\{index, paragraph\}\}}}
@@ -1052,7 +1105,7 @@ highlighting it, so a search result can be read in its original visual context -
 ``pick / locate'' idea as the interactive picker, but driven by a text query. The \texttt{index}
 returned now is exactly the handle that feature will consume; it is not yet implemented.
 
-\subsubsection{\texttt{sections}}
+\subsection{\texttt{sections}}
 
 \begin{center}
 \textbf{\sig{sections(f::Filing; form = "10-K") -> Vector\{@NamedTuple\{item, title, text\}\}}}
@@ -1086,7 +1139,7 @@ forms). Such filings can still be fetched, converted to text (\texttt{markdown})
 \texttt{FundShareholderReport} for N-CSR, \texttt{RegistrationS1} for S-1), which \texttt{EDGAR.jl} does not
 currently replicate.
 
-\subsubsection{\texttt{save\_filing}}
+\subsection{\texttt{save\_filing}}
 
 \begin{center}
 \textbf{\sig{save\_filing(f::Filing; destdir = ".", assets = true)}}
@@ -1097,7 +1150,7 @@ downloaded into \texttt{destdir} via \texttt{download\_assets}, so the saved cop
 self-contained. Pass \texttt{assets = false} to write only the document. 
 
 
-\subsubsection{\texttt{download\_assets}}
+\subsection{\texttt{download\_assets}}
 
 \begin{center}
   \textbf{\sig{download\_assets(f::Filing; destdir = ".")}}
@@ -1115,7 +1168,7 @@ of filenames written is returned. \texttt{open\_filing} and \texttt{save\_filing
 for you; use it directly only to populate a directory yourself.
 
 
-\subsubsection{Worked Example: The Filings Life-Cycle}
+\subsection{Worked Example: The Filings Life-Cycle}
 \label{sec:lifecycle-example}
 
 \noindent The functions above compose into a complete workflow. The script below
@@ -1235,7 +1288,7 @@ by \texttt{save\_filing}).
 \newcommand{\swatch}[1]{\textcolor{#1}{\rule{1.4ex}{1.4ex}}}
 \newcommand{\htmltag}[1]{\texttt{\textless #1\textgreater}}
 
-\subsubsection{Interactive Extraction: \texttt{select\_section}}
+\subsection{Interactive Extraction: \texttt{select\_section}}
 \label{sec:select-section}
 
 \sig{select\_section(f::Filing; timeout=1800) -> Selection}
@@ -1439,7 +1492,7 @@ table together with its caption and notes.}
 \end{figure}
 
 
-\subsubsection{Exporting a Selection: iXBRL, Markdown, Facts JSON, DuckDB}
+\subsection{Exporting a Selection: iXBRL, Markdown, Facts JSON, DuckDB}
 \label{sec:export-layers}
 
 A picked \texttt{Selection} exports at three levels of abstraction --- \emph{preserve} it,
@@ -1739,7 +1792,7 @@ and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQ
 these would only add dependencies for no gain.
 
 
-\subsection{Financial Data (XBRL)}
+\section{Financial Data (XBRL)}
 \label{sec:api-xbrl}
 
 \begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
@@ -1756,7 +1809,7 @@ these would only add dependencies for no gain.
 \bottomrule
 \end{longtable}
 
-\subsubsection{company\_facts}
+\subsection{company\_facts}
 
 \sig{company\_facts(cik)}
 
@@ -1766,7 +1819,7 @@ JSON. \texttt{cik} may be an integer or a string, with or without leading zeros.
 Facts are grouped by taxonomy under \texttt{.facts} (e.g.\ \texttt{:dei},
 \texttt{Symbol("us-gaap")}).
 
-\subsubsection{company\_concept}
+\subsection{company\_concept}
 
 \sig{company\_concept(cik, taxonomy, tag)}
 
@@ -1776,7 +1829,7 @@ want a single line item. Observations live under \texttt{.units} keyed by unit (
 \texttt{.units.USD}), each carrying \texttt{start}/\texttt{end}, \texttt{val}, \texttt{fy},
 \texttt{fp}, \texttt{form} and \texttt{filed}.
 
-\subsubsection{xbrl\_frames}
+\subsection{xbrl\_frames}
 
 \sig{xbrl\_frames(taxonomy, tag, unit, period)}
 
@@ -1796,9 +1849,385 @@ for o in filter(o -> o.form == "10-K", concept.units.USD)
 end
 \end{lstlisting}
 
+
+\section{Low-Level Requests}
+\label{sec:api-lowlevel}
+
+\subsubsection{fetch\_url}
+
+\sig{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
+
+\noindent The primitive every function above is built on: it returns the raw
+response body as bytes (or \texttt{nothing} on failure), with the configured
+\texttt{User-Agent} and the cache applied. Use it as an escape hatch to reach SEC
+endpoints EDGAR.jl does not yet wrap, then parse the bytes yourself (e.g.\ with
+\texttt{JSON3.read}).
+
+\begin{lstlisting}
+body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")
+data = JSON3.read(body)
+\end{lstlisting}
+
+
+
+% ===========================================================================
+\section{Caching and runtime configuration}\label{sec:caching}
+
+The caching layer is shared by every system; DART is just the
+case that most needs tuning. The \texttt{cache} keyword of \texttt{set\_config} selects where the cache
+lives and how long it survives: \texttt{:temporary} (default --- an ephemeral per-process directory,
+deleted on exit), \texttt{:persistent} (kept in \texttt{\textasciitilde/.cache/EDGAR.jl} across sessions,
+pruned past \texttt{cache\_max\_age}), or \texttt{:off} (no caching). Two \textbf{independent} time limits
+apply: \texttt{cache\_ttl} (default 24\,h) is \emph{freshness} --- how long a cached response is reused
+before re-fetching --- while \texttt{cache\_max\_age} (default 7\,days) is \emph{retention} before a file is
+pruned; \texttt{cache\_max\_size} (default 10\,MB) caps a single response. \texttt{set\_cache\_policy(system;\
+cache)} overrides the global mode for one \texttt{FilingSystem}, taking precedence over \texttt{set\_config}
+for that system only --- the mechanism DART uses for its slow endpoints (\S\ref{sec:dart-caching}).
+
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist,
+  allow\_file, user\_agent)} & Override the global runtime configuration (only the keywords you pass
+  change). \\
+\texttt{set\_cache\_policy(system; cache)} & Override the cache mode for a single \texttt{FilingSystem}. \\
+\texttt{clean\_cache()} & Prune the cache on demand. \\
+\texttt{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
+\texttt{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+set_config(cache = :persistent, cache_ttl = 3600)   # keep across sessions, 1h freshness
+m = cache_metrics()                                  # (; hits, misses, requests, ...)
+clean_cache()
+\end{lstlisting}
+
+\chapter{EDGAR \textemdash{} U.S.\ SEC}
+\label{sys:edgar}
+
+EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S.\ Securities and
+Exchange Commission's filing system, and the \texttt{FilingSystem} that \texttt{EDGAR.jl} implements
+in full --- discovery, fetch and parse. Every capability described in this chapter (form-level
+section extraction, the search/lookup and XBRL structured-data APIs, the interactive picker, the
+fact warehouse) is available for SEC filings today. In the code the concrete system type is
+\texttt{SEC}\,\texttt{<:}\,\texttt{FilingSystem} (named \texttt{SEC} rather than \texttt{EDGAR} to
+avoid clashing with the \texttt{EDGAR} module); a filer's identity is a CIK
+(\texttt{EntityId(:cik,\ \ldots)}). The remaining chapters cover the other filing systems --- ESEF,
+Companies House, EDINET, DART --- which reuse the same jurisdiction-agnostic core
+(\S\ref{sec:architecture}) but are at earlier stages.
+
+\section{Entities covered}\label{sec:edgar-entities}
+
+Every filer on EDGAR --- whoever submits a filing --- is an \textbf{entity}, identified by a \textbf{CIK}
+(Central Index Key, Appendix~\ref{sec:glossary}). An entity is not always an operating company: the SEC tags each
+filer with an \texttt{entityType}, and the forms it files follow from that type. EDGAR's universe spans five
+kinds of filer (Table~\ref{tab:edgar-entities}); \texttt{EDGAR.jl} extracts the financial statements of the
+issuer types in full and reaches the rest for discovery and metadata, with anything not yet built flagged
+\emph{not implemented yet}.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The filer types on EDGAR, and what \texttt{EDGAR.jl} does with each.}
+\label{tab:edgar-entities}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.17\textwidth}p{0.20\textwidth}p{0.27\textwidth}@{}}
+\toprule
+\textbf{Entity type} & \textbf{Example} & \textbf{Primary forms} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Domestic operating company & Apple & 10-K, 10-Q, 8-K & financial statements extracted \\
+Foreign private issuer & Toyota, SAP SE & 20-F, 6-K, 40-F & financial statements extracted \\
+Investment fund \& institutional manager & Vanguard ETFs & N-PORT, N-MFP, 13F & metadata only --- portfolios \emph{not yet} \\
+Insider (officer / director) & a director & Forms 3, 4, 5 & discovery --- extraction \emph{not yet} \\
+Significant owner ($>$5\,\%) & an activist holder & Schedule 13D / 13G & discovery --- extraction \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Domestic operating companies}
+U.S.-incorporated public companies --- the bulk of EDGAR (\texttt{entityType} \texttt{"operating"}). They
+file the periodic and current reports (10-K / 10-Q / 8-K), the proxy statement (DEF~14A) and registration
+statements (S-1 / S-3). Their financial statements are extracted in full (\S\ref{sec:edgar-forms}).
+
+\subsection{Foreign private issuers}
+Non-U.S.\ companies whose securities trade in U.S.\ markets. They file the annual report on \textbf{Form
+20-F} (the 10-K equivalent) and furnish interim material on \textbf{Form 6-K}; Canadian issuers under the
+multi-jurisdictional disclosure system file \textbf{Form 40-F}. Examples: Toyota Motor, SAP~SE. Their
+financial statements are extracted in full.
+
+\subsection{Investment funds and institutional managers}
+Registered investment companies --- mutual funds, ETFs and money-market funds (\texttt{entityType}
+\texttt{"investment"}) --- and institutional investment managers. Funds file portfolio disclosures
+(\textbf{N-PORT}, \textbf{N-MFP}); managers file \textbf{13F}. Discovery and filer metadata work today;
+portfolio-level extraction is \emph{not implemented yet}.
+
+\subsection{Insiders (officers and directors)}
+Individuals subject to Section~16 reporting --- a company's officers and directors --- who report their
+holdings and trades on \textbf{Forms 3, 4 and 5}, useful for tracking insider activity. Discovery works;
+fact-level extraction of these forms is \emph{not implemented yet}.
+
+\subsection{Significant owners}
+Beneficial owners crossing the 5\,\% threshold, filing \textbf{Schedule 13D} (intent to influence) or
+\textbf{Schedule 13G} (passive), useful for spotting activist stakes and takeover positions. Discovery
+works; extraction is \emph{not implemented yet}.
+
+\medskip
+\noindent \textbf{Working with entities.} \texttt{EDGAR.jl} exposes entities through three functions.
+\texttt{cik} maps a name or ticker to a CIK (covering entities that \emph{have} a ticker --- companies and
+listed ETFs/funds); \texttt{profile(cik)} returns a filer's row-invariant record (its \texttt{name},
+\texttt{entityType}, SIC industry, fiscal year-end, tickers, former names); and the \texttt{entity} column
+of \texttt{filings\_by\_text} is simply that filer's name. So a typical workflow is: resolve the CIK
+(\texttt{cik}), inspect the filer (\texttt{profile}), then pull its filings of the relevant form
+(\texttt{filings\_by\_cik}):
+
+\begin{lstlisting}
+julia> id = only(cik("AAPL"; by = :ticker)).cik
+"0000320193"
+julia> profile(id).entityType
+"operating"
+julia> reports = filings_by_cik(id; forms = "10-K");
+\end{lstlisting}
+
+\section{Forms and statement types}\label{sec:edgar-forms}
+
+For most corporate analysis, the core periodic and current reports (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching and analysing.
+
+\medskip
+\noindent Using \texttt{EDGAR.jl} to retrieve any form, first pass its EDGAR code\footnote{The code is the name used in each heading \$\ref{big3}-\$\ref{hii} below, except where noted (e.g.\ \texttt{"SC 13D"}, \texttt{"13F-HR"}, \texttt{"NPORT-P"}, \texttt{"N-MFP2"}).} (e.g annual report "10-K", quarterly report "10-Q", current report "8-K") to,
+\begin{itemize}
+  \item \texttt{filings\_by\_cik}
+    \begin{lstlisting}
+    filings_by_cik(320193; forms = "8-K")          # Apple CIK = 320193
+    \end{lstlisting}
+  \item \texttt{filings\_by\_text}
+    \begin{lstlisting}
+    filings_by_text("supply chain disruption"; forms = ["10-K", "10-Q"]) 
+    \end{lstlisting}
+\end{itemize}
+
+\medskip
+\noindent The forms fall into the groups below --- each detailed in a subsection. Table~\ref{tab:edgar-forms}
+is the overview; the financial statements those reports carry are described under \emph{Statement types}
+(\S\ref{sec:edgar-statements}) at the end of the section.
+
+\begin{table}[h]
+\centering
+\small
+\caption{SEC form groups and what \texttt{EDGAR.jl} does with each.}
+\label{tab:edgar-forms}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Group ($\to$ subsection)} & \textbf{Main forms} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Periodic \& current reports & 10-K, 10-Q, 8-K; 20-F, 6-K, 40-F & financial statements + section text extracted \\
+Corporate governance & DEF 14A & fetch + section text; structured extraction \emph{not yet} \\
+Tender offers \& mergers & Schedule TO & fetch only --- \emph{not yet} \\
+Securities offerings & S-1, S-3 & fetch only --- \emph{not yet} \\
+Ownership \& insider activity & Sch 13D / 13G, Form 4 & fetch only --- \emph{not yet} \\
+Institutional holdings \& fund portfolios & 13F-HR, NPORT-P, N-MFP & fetch + metadata; portfolio extraction \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Periodic and Current Reports}\label{big3}
+
+\subsubsection{10-K: Annual Report}
+The annual report, denoted 10-K, provides a comprehensive overview of a company's business and financial performance for the fiscal year.
+
+\subsubsection{10-Q: Quarterly Report}
+			
+The quarterly report, denoted 10-Q, updates investors on the company's performance during a fiscal quarter. There is typically no Q4 10-Q because the annual 10-K covers the full year. Unlike a 10-K, the financial statements are usually reviewed but not fully audited.
+
+\subsubsection{8-K: Current Report}
+
+The current report, denoted 8-K, is filed whenever a material event occurs that investors should know about. Unlike 10-K and 10-Q filings, 8-K filings are event-driven and can be filed at any time. Common triggers include:
+\begin{itemize}
+  \item Acquisitions or mergers
+  \item Bankruptcy
+  \item CEO or CFO changes
+  \item Director appointments or resignations
+  \item Major contracts
+  \item Earnings announcements
+  \item Changes in auditors
+  \item Delisting notices
+\end{itemize}
+
+
+\subsection{Foreign Companies}
+
+\subsubsection{20-F: Annual Report}
+The foreign-issuer equivalent of Form 10-K. Filed annually by foreign companies whose securities are traded in U.S. markets. Useful for understanding a foreign company’s business, risks, financial condition, and corporate governance. Examples include Toyota Motor Corporation and SAP SE.
+
+\subsection{Corporate Governance}
+\subsubsection{Proxy Statement (DEF 14A)}
+Many researchers consider the Proxy Statement (DEF 14A)\footnote{\textbf{DEF} denotes Definitive and \textbf{14A} refers to proxy materials filed under Section 14(a) of the Securities Exchange Act.} the best source of information on executive compensation, directors, and corporate governance. Typical contents include:
+\begin{itemize}
+\item Executive compensation
+\item Director biographies
+\item Board composition
+\item Related-party transactions
+\item Shareholder proposals
+\end{itemize}
+
+
+\subsection{Tender Offers and Mergers}
+\subsubsection{Schedule TO}
+Tender offer filing used in acquisitions, buyouts, and going-private transactions. Useful for understanding the terms, financing, and parties involved in a tender offer.
+\begin{itemize}
+\item Acquisitions
+\item Buyouts
+\item Going-private transactions
+\end{itemize}
+
+
+
+\subsection{Securities Offerings}
+
+\subsubsection{Form S-1}
+Form S-1 is the registration statement typically used by companies seeking to go public through an initial public offering (IPO). It is useful for understanding a company before its IPO. Typical contents include:
+\begin{itemize}
+  \item Detailed business description
+  \item Risk factors
+  \item Use of proceeds
+  \item Management team
+  \item Industry overview
+\end{itemize}
+
+\subsubsection{Form S-3}
+Form S-3 is a simplified registration statement used by eligible seasoned issuers to register additional securities offerings. It is commonly used for follow-on offerings and shelf registrations.
+
+
+\subsection{Ownership and Insider Activity}
+
+\subsubsection{Schedule 13D}
+Filed when an investor acquires more than 5\% of a company's shares and intends to influence management or corporate policies. Useful for identifying activist investors, takeover attempts, and significant ownership positions.
+
+\subsubsection{Schedule 13G}
+A simplified alternative to Schedule 13D for passive investors who acquire more than 5\% of a company's shares without seeking to influence management or control of the company.
+
+\subsubsection{Form 4}
+Reports purchases and sales of company securities by directors, officers, and beneficial owners holding more than 10\% of the company's shares. Useful for tracking insider trading activity.
+
+\subsection{Holdings of Institutional Investors}\label{hii}
+
+\subsubsection{Form 13F}
+An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \texttt{"13F-HR"} (the holdings report; \texttt{"13F-NT"} is a notice that another manager reports the holdings).
+
+\subsubsection{Form N-PORT}
+Individual registered fund portfolio disclosure, providing monthly portfolio reports required for registered open-end investment companies, including most mutual funds and ETFs \footnote{Main exemptions/exceptions include: (1) money market funds, which are primarily regulated under Form N-MFP instead (\S\ref{N-MFP}); (2) exchange-traded products that are not 1940 Act funds; (3) funds relying on master-feeder or umbrella structures; (4) newly formed or liquidating funds may benefit from transitional relief and reduced or modified reporting, respectively; (5) small fund conditional exemptions (limited scope).}. Each filing corresponds to a single registered investment fund. N-PORT filings are typically made public with a delay (generally $\sim$60 days after month-end), and therefore are not real-time.
+
+The public EDGAR form code is \texttt{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
+\begin{itemize}
+  \item Individual securities are reported
+  \item CUSIPs\footnote{A CUSIP (Committee on Uniform Security Identification Procedures) is a unique nine-character code used to identify North American financial securities, such as stocks, bonds, and mutual funds. Functioning much like a serial number, it uniquely identifies a security and facilitates the accurate tracking of investments, trade processing, and settlement by brokerages, banks, and clearing organizations.} are included
+  \item Positions are disclosed at the security level\footnote{Certain holdings may receive confidential treatment in limited, regulator-approved cases.}
+  \item Valuation per holding is provided
+\end{itemize}
+
+\noindent N-PORT filings may also include portfolio-level classifications and summaries, including,
+\begin{itemize}
+  \item Equity vs fixed income vs derivatives breakdowns
+  \item Sector and asset-type classifications
+  \item Country and currency exposure summaries
+  \item Liquidity categories
+\end{itemize}
+
+\noindent N-PORT filings may further include risk and exposure metrics (where applicable), including,
+\begin{itemize}
+  \item Portfolio duration (for fixed income)
+  \item VaR-style risk measures (where applicable)
+  \item Concentration levels
+  \item Exposure breakdowns across risk factors
+\end{itemize}
+
+\subsubsection{Form N-MFP}\label{N-MFP}
+Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \texttt{"N-MFP2"} (\texttt{"N-MFP3"} from the 2024 amendments).
+
+\subsection{Statement types}\label{sec:edgar-statements}
+
+The periodic reports (10-K, 10-Q) and their foreign equivalents (20-F, 40-F) carry the issuer's financial
+statements as \textbf{inline XBRL}: the \textbf{balance sheet}, \textbf{income statement}, \textbf{statement
+of comprehensive income}, \textbf{cash-flow statement} and \textbf{statement of changes in equity}. Domestic
+filers tag against the \texttt{us-gaap} taxonomy; a foreign private issuer reporting under IFRS tags against
+\texttt{ifrs-full}. \texttt{facts(f)} recovers every tagged fact and \texttt{facts(f;\ classify=true)} sorts
+each onto its statement (\S\ref{sys:extraction}); from there the same row table feeds
+\texttt{select\_statement}, the CSV/DuckDB exports and the validation oracles (\S\ref{sec:validation}). The
+8-K and 6-K are event-driven narrative filings rather than statement carriers, so they yield press-release
+and exhibit text rather than a tagged statement set.
+
+\section{Workflow Use Case Examples}
+
+This section contains a collection of practical workflow examples illustrating how to accomplish common
+tasks with just a few lines of code. Examples include:
+
+\begin{itemize}
+  \item Selecting a company, retrieving its income statement for a given fiscal year, and storing the
+    results in DuckDB.
+  \item Comparing the balance sheets and income statements of companies within the same SIC industry.
+  \item Selecting a company and plotting its quarterly net income over time.
+  \item Selecting an investment fund and displaying its portfolio holdings.
+  \item Extracting all paragraphs from a specific filing section across a set of companies selected
+    according to user-defined criteria, followed by text analysis.
+  \item \ldots{} and many more.
+\end{itemize}
+
 % ===========================================================================
 % ===  FILING SYSTEMS BEYOND EDGAR  =========================================
 % ===========================================================================
+\begin{subappendices}
+\section{Credentials}\label{sec:edgar-credentials}\label{sec:ua}
+
+The SEC's fair-access policy requires each request to carry a \texttt{User-Agent} header identifying the
+requester by name and contact email; requests without it are rejected with HTTP~403. There is \textbf{no API
+key or registration} --- users simply identify themselves honestly. It is set once per session as a single
+\texttt{"Name email"} string:
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> set_user_agent("Your Name name@example.com")
+\end{lstlisting}
+
+\noindent If the \texttt{User-Agent} is not set, \texttt{EDGAR.jl} raises an error locally and stops
+\emph{before} making any request, ensuring compliance.
+
+\subsection{Persisting the User-Agent}
+\texttt{set\_user\_agent()} configures only the \emph{current} process, so a new REPL, script or notebook
+starts unconfigured. The resolution order is: (1)~an explicit value from \texttt{set\_user\_agent()};
+otherwise (2)~the \texttt{SEC\_USER\_AGENT} environment variable; otherwise (3)~an error. To avoid setting it
+every session, define the variable once --- in \texttt{startup.jl} or exported from the shell --- and every
+future process reads it:
+
+\begin{lstlisting}
+ENV["SEC_USER_AGENT"] = "Your Name name@example.com"
+\end{lstlisting}
+
+\noindent The User-Agent is not a secret --- it is just the identity sent to the SEC --- so storing it in a
+startup file is safe and recommended. \texttt{EDGAR.jl} also manages persistence automatically:
+
+\begin{lstlisting}
+julia> persist_user_agent("Your Name name@example.com")
+julia> unpersist_user_agent()   # removes the persisted setting
+\end{lstlisting}
+
+\subsection{Function reference}
+\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
+\toprule
+\textbf{Function} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{set\_user\_agent(user\_agent)} & Set the User-Agent from a single \texttt{"name email"} string
+  (validated). \\
+\texttt{get\_user\_agent()} & Return the User-Agent that will be sent (explicit value $\to$
+  \texttt{SEC\_USER\_AGENT} env var $\to$ error). \\
+\texttt{persist\_user\_agent(user\_agent; depot)} & Validate, set for this session, and write
+  \texttt{SEC\_USER\_AGENT} into the depot's \texttt{startup.jl}. \\
+\texttt{unpersist\_user\_agent(; depot)} & Remove the line that \texttt{persist\_user\_agent} wrote. \\
+\bottomrule
+\end{longtable}
+\end{subappendices}
+
 \chapter{ESEF \textemdash{} European Union}
 \label{sys:esef}
 
@@ -1809,22 +2238,54 @@ in \texttt{EDGAR.jl} after EDGAR, and the one that exercises the portability sea
 SEC filings, while ESEF supplies only its own \emph{fetch}, identity and linkbase-location slice. In
 code the system type is \texttt{ESEF}\,\texttt{<:}\,\texttt{FilingSystem}.
 
-\paragraph{What is different from EDGAR.} Three things, all data rather than logic:
-\begin{itemize}
-  \item \textbf{Packaging.} An ESEF filing is a \emph{report package} --- a single ZIP
-    (\texttt{documentType https://xbrl.org/report-package/2023}) holding \texttt{META-INF/}
-    (the package manifest + an OASIS \texttt{catalog.xml}), a \texttt{reports/} directory with the
-    primary report (an inline-XBRL \texttt{.xhtml} or a classic \texttt{.xbrl} instance), and the
-    issuer's bundled extension taxonomy with its linkbases. Unlike EDGAR --- where the linkbases are
-    loose sibling files fetched over HTTP from the filing's Archives directory --- everything needed
-    to parse \emph{and} classify an ESEF filing lives inside this one ZIP.
-  \item \textbf{Identity.} An issuer is identified by its \textbf{LEI} (Legal Entity Identifier, ISO
-    17442), read from the instance's context entity identifier, not by a CIK:
-    \texttt{EntityId(:lei,\ "506700GE1G29325QX363")}.
-  \item \textbf{Taxonomy.} ESEF reports tag against \texttt{ifrs-full} plus an issuer extension, not
-    \texttt{us-gaap}. Statement classification reuses the shared IFRS vocabulary
-    (\S\ref{sec:two-axes}), so no SEC-specific machinery (e.g.\ \texttt{FilingSummary.xml}) is involved.
-\end{itemize}
+\section{Entities covered}\label{sec:esef-entities}
+
+ESEF covers a single class of filer: an \textbf{issuer with securities admitted to trading on an
+EU-regulated market}, which must publish its annual financial report in this format. There are no fund or
+insider filings here --- the regime is the issuer's annual report only (Table~\ref{tab:esef-entities}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{The filer type on ESEF, and what \texttt{EDGAR.jl} does with it.}
+\label{tab:esef-entities}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.17\textwidth}p{0.20\textwidth}p{0.25\textwidth}@{}}
+\toprule
+\textbf{Entity type} & \textbf{Example} & \textbf{Primary form} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+EU-regulated-market issuer & Citycon, Signify & Annual Financial Report & financial statements extracted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Regulated-market issuers}
+An issuer is identified by its \textbf{LEI} (Legal Entity Identifier, ISO~17442), read from the instance's
+context entity identifier rather than a CIK: \texttt{EntityId(:lei,\ "506700GE1G29325QX363")}. Examples
+include Citycon Oyj (Finnish) and Signify~N.V.\ (Dutch). The filer's home country and the report's language
+(an issuer often files several language variants) travel on the discovery handle.
+
+\section{Forms and statement types}\label{sec:esef-forms}
+
+ESEF mandates a single document --- the \textbf{Annual Financial Report (AFR)} --- so there is one form
+group, delivered as a self-contained report package.
+
+\subsection{Annual Financial Report}
+An ESEF filing is a \emph{report package}: a single ZIP (\texttt{documentType
+https://xbrl.org/report-package/2023}) holding \texttt{META-INF/} (the package manifest + an OASIS
+\texttt{catalog.xml}), a \texttt{reports/} directory with the primary report (an inline-XBRL \texttt{.xhtml}
+or a classic \texttt{.xbrl} instance), and the issuer's bundled extension taxonomy with its linkbases.
+Unlike EDGAR --- where the linkbases are loose sibling files fetched over HTTP from the filing's Archives
+directory --- everything needed to parse \emph{and} classify the filing lives inside this one ZIP.
+
+\subsection{Statement types}
+The AFR carries the issuer's consolidated \textbf{IFRS} financial statements --- balance sheet, income
+statement, statement of comprehensive income, cash-flow statement and statement of changes in equity ---
+tagged against \texttt{ifrs-full} plus an issuer extension, not \texttt{us-gaap}. Statement classification
+therefore reuses the shared IFRS vocabulary (\S\ref{sec:two-axes}), with no SEC-specific machinery (e.g.\
+\texttt{FilingSummary.xml}) involved; \texttt{facts(f; classify=true)} sorts each fact onto its statement
+and the same row table feeds \texttt{select\_statement}, the exports and the validation oracles.
+
+\section{Reading and discovering packages}
 
 \paragraph{Reading a report package (offline).} \texttt{fetch\_filing(ESEF(), path)} reads a report
 package already on disk into the same \texttt{Filing} type used everywhere else, after which the whole
@@ -1873,8 +2334,11 @@ UKSEF), and per-country Officially Appointed Mechanisms (OAMs) can be added late
     Companies House requires --- is planned.
 \end{itemize}
 
-\section{Worked example: ESEF end-to-end}
+\section{Workflow Use Case Examples}
 \label{sec:esef-example}
+
+This section collects practical ESEF workflows --- a few lines each --- spanning discovery, extraction,
+prose search and validation. The worked example below runs end-to-end on a real filer; more will follow.
 
 \noindent The ESEF pieces compose into a full workflow --- the analogue of the SEC filings life-cycle
 (\S\ref{sec:lifecycle-example}), but spanning discovery, extraction, \emph{prose search}, and
@@ -1944,8 +2408,12 @@ The United Kingdom exposes company financial reports through \emph{two distinct 
 \texttt{FilingSource}s (\S\ref{sec:architecture}) that serve different filer populations and, often,
 the same company in different formats. This chapter covers both and gives a worked workflow for each.
 
-\section{Two UK channels: Companies House and the NSM}
+\section{Entities covered}
 \label{sec:uk-channels}
+
+The UK exposes company reports through two channels, each serving a different filer population
+(Table~\ref{tab:uk-entities}): the registrar (every UK company) and the FCA's store of regulated-market
+disclosures (listed issuers only).
 
 \begin{enumerate}
   \item[\textbf{(a)}] \textbf{Companies House (CH)} --- the UK \emph{registrar}. \emph{Every} UK
@@ -1965,6 +2433,24 @@ the same company in different formats. This chapter covers both and gives a work
     ESEF report-package path unchanged; the NSM supplies only its own discovery and fetch. Access is a
     keyless JSON API.
 \end{enumerate}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The UK filer types, by channel, and what \texttt{EDGAR.jl} does with each.}
+\label{tab:uk-entities}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.16\textwidth}p{0.18\textwidth}p{0.28\textwidth}@{}}
+\toprule
+\textbf{Entity type} & \textbf{Identity} & \textbf{Channel} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+All UK-registered companies (public \& private) & registration number & Companies House & accounts: iXBRL parsed, PDF a typed outcome \\
+Regulated-market issuers (listed) & LEI & NSM (UKSEF) & UKSEF report parsed via the shared ESEF path \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Forms and statement types}
+\label{sec:uk-forms}
 
 \paragraph{Format by channel and filer.} The same UKSEF annual report is reachable from \emph{two}
 sources --- the NSM directly, and the \texttt{FilingsXBRLOrg} aggregator (\S\ref{sys:esef}), which
@@ -2021,6 +2507,17 @@ what the filer submitted --- it does not generate xBRL-CSV/xBRL-JSON renderings.
 \end{tabular}
 \end{table}
 
+\subsection{Statement types}
+UK accounts are tagged under one of two taxonomy families: \textbf{UK GAAP} --- the FRC's FRS~101/102/105
+taxonomy --- or \textbf{IFRS} (\texttt{ifrs-full}). Disclosure scope varies with the standard: a
+micro-entity (FRS~105) filing is the most abridged, while FRS~102 and IFRS accounts carry the full balance
+sheet and income statement, with cash-flow and changes-in-equity statements where required. A Companies
+House filing carries \emph{no issuer extension taxonomy}, so labels and classification \emph{delegate} to
+the published \emph{standard} taxonomy for each concept's prefix; a UKSEF report on the NSM instead tags
+against \texttt{ifrs-full} plus an issuer extension, exactly as ESEF. When a filing is served as PDF rather
+than (i)XBRL (Table~\ref{tab:ch-formats}), no tagged statement set is produced and it belongs to the
+PDF/text track.
+
 \section{Finding a company}
 \label{sec:uk-company-search}
 
@@ -2069,7 +2566,13 @@ LEI \emph{and} that the adapter can fetch), deduplicated to one row per issuer; 
 empty. A consequence of that scoping: an issuer that has filed \emph{only} PDF annual reports --- which
 includes everything before FY2021 --- has no tagged record to match, so it does not resolve here.
 
-\section{Companies House workflow}
+\section{Workflow Use Case Examples}
+\label{sec:uk-workflows}
+
+This section gives a worked workflow for each UK channel --- a few lines each --- from identity through
+fetch to extraction; more examples will follow.
+
+\subsection{Companies House workflow}
 \label{sys:companieshouse}
 
 Identity is the registration number. Set the API key once (or the
@@ -2109,7 +2612,7 @@ filing bundles no extension), so \texttt{labels=true} resolves FRS concept label
 linkbase. A filing whose accounts are PDF returns \texttt{f.kind == :pdf} with the content URL
 retained; structured facts are not extracted from it (PDF extraction is a separate track).
 
-\section{NSM (UKSEF) workflow}
+\subsection{NSM (UKSEF) workflow}
 \label{sys:nsm}
 
 Identity is the LEI. The NSM serves listed issuers' \textbf{Annual Financial Reports} as UKSEF
@@ -2206,6 +2709,20 @@ on the NSM the accounting period end is recorded only for the tagged packages, s
 period date to filter on (they retain submission and publication dates instead). Both limitations lift
 once the PDF/text track lands.
 
+\begin{subappendices}
+\section{Credentials}\label{sec:uk-credentials}
+
+\textbf{Companies House} requires a \emph{free} API key (register on the CH developer portal). Set it per
+session, or read it from the environment:
+
+\begin{lstlisting}
+set_credentials(CompaniesHouse(); api_key = ENV["COMPANIES_HOUSE_API_KEY"])
+\end{lstlisting}
+
+\noindent The \textbf{NSM} (UKSEF) JSON API is \textbf{keyless}; only the report-package download needs a
+SEC-style \texttt{User-Agent} (\S\ref{sec:ua}), set via \texttt{set\_user\_agent}.
+\end{subappendices}
+
 \chapter{EDINET \textemdash{} Japan}
 \label{sys:edinet}
 
@@ -2229,11 +2746,108 @@ parse used as our oracle (\S\ref{sec:edinet-oracle}). EDINET's XBRL is \emph{inl
 \texttt{.htm} files under \texttt{XBRL/PublicDoc/}) --- in contrast to DART, whose XBRL is \emph{classic}
 and which offers no CSV (\S\ref{sys:dart}).
 
-\section{Japanese GAAP and IFRS vocabularies}
+\section{Entities covered}\label{sec:edinet-entities}
 
-A Japanese filer reports under one of three accounting standards, and EDINET tags each with a different
-concept namespace --- so classification needs to recognise all of them. \texttt{vocab\_jpgaap.jl} adds the
-two Japan-specific ones (US-GAAP-adopting filers fall through to the existing \texttt{us-gaap} vocabulary):
+EDINET receives disclosures from three kinds of filer (Table~\ref{tab:edinet-entities}). The securities
+issuers --- ordinary corporations --- file the periodic reports that carry the financial statements
+\texttt{EDGAR.jl} extracts; funds and the parties to large-shareholding and tender-offer disclosures file
+their own document types. A filer is identified by its \textbf{EDINET code}
+(\texttt{EntityId(:edinet,\ "E\#\#\#\#\#")}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{EDINET filer types and what \texttt{EDGAR.jl} does with each.}
+\label{tab:edinet-entities}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.15\textwidth}p{0.23\textwidth}p{0.22\textwidth}@{}}
+\toprule
+\textbf{Entity type} & \textbf{Example} & \textbf{Primary documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Securities issuer (corporation) & Toyota (E02144) & Annual / Quarterly / Semiannual Securities Report & financial statements extracted \\
+Investment fund & --- & Fund securities reports & \emph{not implemented yet} \\
+Large-holding / tender-offer party & --- & Large-Volume Holding, Tender Offer documents & \emph{not implemented yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Securities issuers}
+Ordinary listed or registered corporations. They file the periodic securities reports (annual, quarterly,
+semiannual) that carry the financial statements, plus registration, governance and extraordinary
+disclosures. Identity is the EDINET code (e.g.\ Toyota Motor E02144, Nintendo E01772). Their statements are
+extracted in full.
+
+\subsection{Investment funds}
+Collective investment vehicles, which file fund-specific securities reports. Discovery is reachable through
+the API; fact extraction for fund reports is \emph{not implemented yet}.
+
+\subsection{Large-holding and tender-offer parties}
+Investors crossing the 5\,\% large-volume-holding threshold, and the parties to a tender offer (the offeror
+and the subject company). They file the large-shareholding and tender-offer documents below rather than
+financial statements. Discovery only --- extraction is \emph{not implemented yet}.
+
+\section{Forms and statement types}\label{sec:edinet-forms}
+
+EDINET's document types group into six families (Table~\ref{tab:edinet-forms}); \texttt{EDGAR.jl} extracts
+the periodic securities reports --- the carriers of the financial statements --- and reaches the rest for
+discovery as the API matures. Each family is detailed below, followed by the statement types those reports
+carry.
+
+\begin{table}[h]
+\centering
+\small
+\caption{EDINET document families and their support in \texttt{EDGAR.jl}.}
+\label{tab:edinet-forms}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.43\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Family ($\to$ subsection)} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Periodic securities reports & Annual, Quarterly, Semiannual Securities Report (+ amendments) & statements extracted \\
+Registration statements & Securities Registration Statement; Shelf Registration Statement / Supplements & \emph{not yet} \\
+Governance \& control & Internal Control Report; Confirmation Letter; Status Report of Parent Company & \emph{not yet} \\
+Large shareholding & Report of Possession of Large Volume & \emph{not yet} \\
+Tender offers & Tender Offer Notification; Subject Company's Position Statement; Tender Offeror's Answer; Tender Offer Report; Written Withdrawal & \emph{not yet} \\
+Other corporate actions & Share Buyback Report; Extraordinary Report & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Periodic securities reports}
+The annual securities report (\emph{y\=uka sh\=oken h\=okokusho}, doc-type code \texttt{120}), the quarterly
+securities report and the semiannual securities report --- each with an amendment variant. These are the
+EDINET analogue of the 10-K/10-Q and the carriers of the tagged financial statements; they are extracted in
+full.
+
+\subsection{Registration statements}
+The securities registration statement and the shelf registration statement with its supplements (and their
+amendments), filed when offering securities. Discovery only; \emph{not implemented yet}.
+
+\subsection{Governance and control}
+The internal control report, the confirmation letter (management's attestation of the report), and the
+status report of a parent company. \emph{Not implemented yet}.
+
+\subsection{Large shareholding}
+The report of possession of large volume (\emph{tairy\=o hoy\=u h\=okokusho}), filed on crossing the 5\,\%
+beneficial-ownership threshold, with its change amendments. \emph{Not implemented yet}.
+
+\subsection{Tender offers}
+The tender offer notification, the subject company's position statement, the tender offeror's answer, the
+tender offer report and the written withdrawal of a tender offer. \emph{Not implemented yet}.
+
+\subsection{Other corporate actions}
+The share buyback report and the extraordinary report (\emph{rinji h\=okokusho}, filed on material events).
+\emph{Not implemented yet}.
+
+\subsection{Statement types}
+
+A Japanese filer's accounting basis may be \textbf{IFRS}, \textbf{Japanese GAAP} or (historically)
+\textbf{US-GAAP} --- but its EDINET securities report tags the figures in just \emph{two} EDINET concept
+namespaces, which is what classification keys on: \texttt{jpigp\_cor} for IFRS, and \texttt{jppfs\_cor} for
+everything else (including US-GAAP-basis filers). \texttt{vocab\_jpgaap.jl} supplies both. The SEC
+\texttt{us-gaap} namespace does \emph{not} appear in EDINET --- a flavour is read empirically from the
+concept prefixes, and on real annual reports we see \texttt{jpigp\_cor} for Toyota Motor (7203, IFRS),
+\texttt{jppfs\_cor} for Nintendo (7974, Japanese GAAP) and a megabank like Mitsubishi UFJ (8306), and
+--- notably --- \texttt{jppfs\_cor} again for Canon (7751), a historic US-GAAP name whose EDINET report
+is nonetheless Japanese-GAAP-tagged (its US-GAAP statements go to the SEC on a 20-F, not to EDINET):
 
 \begin{itemize}
   \item \textbf{Japanese GAAP} --- the \texttt{jppfs\_cor} namespace (Japan Public Financial Statements),
@@ -2253,16 +2867,11 @@ two Japan-specific ones (US-GAAP-adopting filers fall through to the existing \t
 \noindent Both vocabularies are merged into the scored classification registry alongside \texttt{us-gaap},
 \texttt{ifrs-full} and the FRC set, and the right one is selected per filing by concept prefix --- exactly
 as for the other systems (\S\ref{sys:extraction}). They were \textbf{verified against four real filings}:
-J-GAAP --- Kakaku.com, Yahoo Japan and TIS; IFRS --- the official FSA IFRS sample instance. A filing then
-flows through the same pipeline as every other system:
+J-GAAP --- Kakaku.com, Yahoo Japan and TIS; IFRS --- the official FSA IFRS sample instance. The right one is
+selected per filing by concept prefix, after which a filing flows through the same pipeline as every other
+system (\S\ref{sec:edinet-workflows}).
 
-\begin{lstlisting}
-f = fetch_filing(EDINET(), "submission.zip")              # local ZIP, offline
-rows = facts(f; classify = true)                          # jppfs_cor / jpigp_cor facts, classified
-select_statement(rows, "BalanceSheet")                    # IS / BS / CF as usual
-\end{lstlisting}
-
-\section{Discovery, forms, and labels (pending an API key)}
+\section{Discovery and labels (pending an API key)}
 
 EDINET discovery is \textbf{date-based}: \texttt{discover(EDINETApi();\ date,\ edinet\_code,\ doc\_type)}
 lists a day's submissions from the EDINET REST API and returns handles, filtering server-listed results by
@@ -2306,6 +2915,33 @@ alongside it: Yahoo Finance headline totals for Tokyo tickers, e.g.\ Toyota \tex
 \texttt{type=5} is authenticated, the oracle run waits on the same free Subscription-Key as live
 discovery.
 
+\section{Workflow Use Case Examples}\label{sec:edinet-workflows}
+
+Practical EDINET workflows --- a few lines each. With the live API still pending a Subscription-Key, the
+runnable example today is the offline parse-and-classify of a submission ZIP; live discovery and the
+CSV-oracle validation follow once the key lands.
+
+\begin{lstlisting}
+julia> f = fetch_filing(EDINET(), "submission.zip")     # local submission ZIP, offline
+julia> rows = facts(f; classify = true, labels = true); # jppfs_cor / jpigp_cor facts, classified
+julia> select_statement(rows, "BalanceSheet")           # BS / IS / CF as usual
+julia> label_map(f; lang = "en")                        # English labels (lang="ja" for Japanese)
+\end{lstlisting}
+
+\begin{subappendices}
+\section{Credentials}\label{sec:edinet-credentials}
+
+EDINET's REST API requires a \emph{free} \textbf{Subscription-Key}, obtained from the EDINET API
+registration page. Set it per session, or from the environment:
+
+\begin{lstlisting}
+set_credentials(EDINET(); api_key = ENV["EDINET_API_KEY"])
+\end{lstlisting}
+
+\noindent Offline parsing of a submission ZIP needs no credential; only live discovery and the CSV oracle
+(\S\ref{sec:edinet-oracle}) use the key.
+\end{subappendices}
+
 \chapter{DART \textemdash{} South Korea}
 \label{sys:dart}
 
@@ -2332,7 +2968,90 @@ statement API (\texttt{fnlttSinglAcntAll}, the primary statements only --- the F
 disclosure document itself (\texttt{document.xml}) is human-readable DART markup, out of scope for
 \texttt{facts()}.
 
-\section{K-IFRS: classification by reuse}\label{sec:dart-kifrs}
+\section{Entities covered}\label{sec:dart-entities}
+
+DART receives disclosures from listed and other disclosure-obligated companies, plus funds and ownership
+filers (Table~\ref{tab:dart-entities}). \texttt{EDGAR.jl} extracts the K-IFRS financial statements that the
+periodic business reports carry. A filer is identified by its eight-digit OpenDART corp-code and, for listed
+issuers, its six-digit KRX stock code.
+
+\begin{table}[h]
+\centering
+\small
+\caption{DART filer types and what \texttt{EDGAR.jl} does with each.}
+\label{tab:dart-entities}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.16\textwidth}p{0.21\textwidth}p{0.21\textwidth}@{}}
+\toprule
+\textbf{Entity type} & \textbf{Example} & \textbf{Primary documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Listed company (KOSPI / KOSDAQ) & Samsung (005930) & Business / Half-year / Quarterly Report & financial statements extracted \\
+Other disclosure-obligated company & --- & Periodic reports (corp-code only) & extracted where an XBRL package exists \\
+Investment fund & --- & Fund reports & \emph{not implemented yet} \\
+Large-holding / ownership filer & --- & 5\,\% large-holding, executive-holding reports & \emph{not implemented yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Listed companies}
+KOSPI- and KOSDAQ-listed corporations, identified by both an OpenDART corp-code (eight-digit) and a KRX
+stock code (six-digit) --- e.g.\ Samsung Electronics (corp \texttt{00126380}, stock \texttt{005930}) and
+SK~Hynix. They file the periodic business reports that carry the K-IFRS financial statements; extracted in
+full.
+
+\subsection{Other disclosure-obligated companies}
+Non-listed companies subject to external-audit and registration disclosure, identified by corp-code only.
+Their periodic reports carry K-IFRS statements through the same \texttt{fnlttXbrl} path and are extracted
+wherever an XBRL package is available.
+
+\subsection{Investment funds}
+Collective investment vehicles, which file fund-specific reports. Discovery is reachable through OpenDART;
+extraction is \emph{not implemented yet}.
+
+\subsection{Large-holding and ownership filers}
+Investors crossing the 5\,\% large-holding threshold, and executives and major shareholders reporting their
+holdings. They file ownership disclosures rather than financial statements. Discovery only --- extraction is
+\emph{not implemented yet}.
+
+\section{Forms and statement types}\label{sec:dart-forms}
+
+OpenDART groups disclosures into several families (Table~\ref{tab:dart-forms}); \texttt{EDGAR.jl} extracts
+the periodic disclosures --- the carriers of the financial statements --- and reaches the rest for discovery
+as the adapter matures. Each family is detailed below, followed by the statement types those reports carry.
+
+\begin{table}[h]
+\centering
+\small
+\caption{DART disclosure families and their support in \texttt{EDGAR.jl}.}
+\label{tab:dart-forms}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.43\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Family ($\to$ subsection)} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Periodic disclosures & Business Report (annual), Half-year Report, Quarterly Reports & statements extracted \\
+Major-event \& issuance & Major-Matters Report; securities registration statements & \emph{not yet} \\
+Ownership disclosures & 5\,\% large-holding report; executive / major-shareholder holding report & \emph{not yet} \\
+Other disclosures & fair-disclosure and other periodic filings & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Periodic disclosures}
+The business report (\krcjk{사업보고서}{\emph{saeop bogoseo}}, the annual report), the half-year report and the
+quarterly reports --- DART's analogue of the 10-K/10-Q, carrying the K-IFRS financial statements. Extracted
+in full via the \texttt{fnlttXbrl} package.
+
+\subsection{Major-event and issuance disclosures}
+The major-matters report and securities registration statements, filed on material events and securities
+offerings. \emph{Not implemented yet}.
+
+\subsection{Ownership disclosures}
+The 5\,\% large-holding report and the executive / major-shareholder holding report. \emph{Not implemented
+yet}.
+
+\subsection{Other disclosures}
+Fair-disclosure and other periodic filings. \emph{Not implemented yet}.
+
+\subsection{Statement types: K-IFRS by reuse}\label{sec:dart-kifrs}
 
 DART is the case the two-axis design (\S\ref{sec:two-axes}) was built for: a new \emph{jurisdiction} that
 brings \textbf{no new taxonomy}. Because K-IFRS \emph{is} IFRS, a Korean filer's primary statements are
@@ -2347,17 +3066,8 @@ concepts are bare \texttt{ifrs-full}} (Samsung \texttt{4{,}735}, SK~Hynix \textt
 are the filer's own \texttt{entity\ldots} extensions ($\sim$11\,\%) and Korea-specific \texttt{dart} /
 \texttt{dart-gcd} concepts ($\sim$10\,\%). The balance sheet, income statement and cash-flow statement all
 classify through the shared vocabulary, and \texttt{select\_statement} round-trips on both filers (Samsung
-BS~1757 / IS~409 / CF~227; SK~Hynix BS~2043 / IS~126 / CF~216). A filing flows through the same pipeline as
-every other system:
-
-\begin{lstlisting}
-set_credentials(DART(); api_key = ENV["DART_API_KEY"])     # free OpenDART crtfc_key
-hs   = discover(OpenDARTApi(); stock_code = "005930",      # Samsung; resolves to corp_code 00126380
-                bgn_de = "20240101", end_de = "20241231")
-f    = fetch_filing(first(hs))                              # the fnlttXbrl package
-rows = facts(f; classify = true)                            # ifrs-full facts, classified
-select_statement(rows, "BalanceSheet")                     # IS / BS / CF as usual
-\end{lstlisting}
+BS~1757 / IS~409 / CF~227; SK~Hynix BS~2043 / IS~126 / CF~216); a filing flows through the same pipeline as
+every other system (\S\ref{sec:dart-workflows}).
 
 \noindent Even the Korea-specific lines classify without a vocabulary. \textbf{Operating income}
 (\krcjk{영업이익}{\emph{yeongeop iik}}) is tagged \texttt{dart:OperatingIncomeLoss} --- a \texttt{dart}-namespace
@@ -2446,131 +3156,39 @@ own parse). It is a handy sanity peek --- \texttt{account\_id} values such as \t
 straight onto our concepts --- but because it comes from the \emph{same} disclosure system as the filing it
 is not an independent reference, so EDGAR.jl ships no comparison harness for it.
 
-% ===========================================================================
-% ===  EXTRACTION  ==========================================================
-% ===========================================================================
-\chapter{Extraction \textemdash{} from filings to facts}
-\label{sys:extraction}
+\section{Workflow Use Case Examples}\label{sec:dart-workflows}
 
-A fetched \texttt{Filing} is only bytes plus a \texttt{kind}. An \textbf{extractor} turns it into the
-\texttt{FactRow} row table that the rest of the toolkit consumes. \texttt{EDGAR.jl} has more than one
-extractor, selected automatically by \texttt{facts(f)} from the filing's format. Whatever the source,
-the output is the \emph{same} row table --- so classification, \texttt{select\_statement}, the
-CSV/DuckDB exports and the validation oracles (\S\ref{sec:validation}) all work unchanged.
+Practical DART workflows --- a few lines each. The live path resolves a KRX stock code to its corp-code,
+fetches the \texttt{fnlttXbrl} package, then classifies and labels through the shared pipeline; more
+examples will follow.
 
-\section{Architecture: the format/extraction axis}
-
-The portability picture (\S\ref{sec:two-axes}) has two axes --- a \emph{jurisdiction} axis (fetch and
-identity) and a \emph{taxonomy} axis (the concept vocabulary). Extraction is a \textbf{third,
-orthogonal axis: \emph{format}} --- \emph{how} facts are recovered from the bytes. \texttt{Filing.kind}
-names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}), and \texttt{facts(f)} dispatches on it:
-
-\begin{itemize}
-  \item \texttt{:ixbrl} / \texttt{:xbrl} \(\rightarrow\) the \textbf{XBRL extractor} (reads inline or
-    classic XBRL, resolving contexts and units). This is the path every structured filing has used so far.
-  \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor} (\texttt{extract\_pdf}), described below.
-\end{itemize}
-
-\noindent The key invariant: \textbf{both emit the same \texttt{FactRow}}. So the XBRL parser is
-\emph{one} extractor on this axis, not the universal core --- a point the Companies House and German
-cases force, where a large share of filings are PDF, not XBRL.
-
-\paragraph{The concept problem.} An XBRL fact carries a taxonomy \emph{concept}
-(\texttt{us-gaap:Assets}); a PDF fact carries only a line-item \emph{label} (``Total assets'',
-``Bilanzsumme''). So for PDF the \texttt{standard\_concept} (the cross-company standardiser) is the real
-bridge, and classification keys off the label rather than a concept prefix. The fact's
-\texttt{source\_selector} carries a CSS selector for HTML filings and, for PDF, the source
-\texttt{(page, bbox)} --- coordinate provenance that lets an editor back-link a number to its source
-pixel.
-
-\section{The PDF extractor: a tiered toolchain}
-\label{sec:pdf-tiers}
-
-PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
-no text layer at all; and layouts vary by issuer and language. The extractor is therefore \textbf{tiered}:
-
-\begin{enumerate}
-  \item[\textbf{Tier 1}] \textbf{(deterministic --- built).} \texttt{pdfjs-dist} \emph{directly} (no
-    wrapper), via a small Node helper, yields positioned words; \texttt{EDGAR.jl} then reconstructs the
-    statement geometrically --- \emph{rows} by clustering on the vertical position, \emph{columns} by the
-    numeric right-edge bands --- reads the header for period dates and the scale (£m, etc.), and emits
-    coordinate-anchored facts. The number semantics (parentheses\,=\,negative, decimal-comma, scale
-    footers) live in Julia.
-  \item[\textbf{Tier 2}] \textbf{(OCR --- planned).} \texttt{tesseract.js} turns a \emph{scanned} page
-    into a text layer the Tier-1 path can then read.
-  \item[\textbf{Tier 3}] \textbf{(LLM --- planned, optional).} An arithmetic-validated language-model
-    pass for layouts Tier 1 cannot reconstruct; off by default so the library stays deterministic and
-    offline.
-\end{enumerate}
-
-\paragraph{Toolchain decision.} The whole stack is a \textbf{single Node/TypeScript toolchain} --- no
-Python/Conda, no JVM, no GPL/AGPL. The parser is \texttt{pdfjs-dist} used \emph{directly}: Mozilla's
-upstream pdf.js (Apache-2.0), pinned to a version we choose. In a bake-off it tied the popular wrappers
-(\texttt{pdf.js-extract}, \texttt{pdfreader}) on accuracy while being faster, leaner on dependencies, and
-on the best-maintained parser (the wrappers bundle older or \emph{forked} copies). The toolchain is also
-native to the editor host (a TypeScript VS Code fork), where the same \texttt{pdf.js} can render, extract
-\emph{and} supply the coordinates that link a fact to its source. Using it needs Node and the pinned
-\texttt{pdfjs-dist} (\texttt{npm install} in \texttt{src/extractors/pdf/}).
-
-\section{Where it plugs into the workflow}
-
-Extraction is one step in the same pipeline every system follows:
-
-\begin{center}
-\texttt{company\_search} \(\rightarrow\) \texttt{discover} \(\rightarrow\) \texttt{fetch\_filing}
-\(\rightarrow\) \textbf{\texttt{facts(f)}} \(\rightarrow\) \texttt{select\_statement} / export / validate
-\end{center}
-
-\noindent The extractor \emph{is} the \texttt{facts(f)} step, and it is identical for every jurisdiction
---- SEC, ESEF, Companies House, the NSM. For XBRL filings \texttt{facts(f)} ``just works''. For PDF the
-working entry today is \textbf{\texttt{extract\_pdf(path)}} on a born-digital PDF on disk; calling
-\texttt{facts(f)} on a \texttt{:pdf} \texttt{Filing} currently needs the PDF bytes, which the fetch path
-does not yet retain --- so download the document, then \texttt{extract\_pdf}. (Tier 1 covers born-digital
-financial statements; scanned and exotic layouts await Tiers 2--3.)
-
-\section{Workflow examples}
-
-The extraction call is the same shape across systems; only discovery differs.
-
-\paragraph{SEC (inline XBRL).}
 \begin{lstlisting}
-using EDGAR
-set_user_agent("Your Name you@example.com")
-fs = filings_by_cik("320193"; forms = "10-K")            # Apple
-f  = fetch_filing("320193", fs[1].accession)             # f.kind == :ixbrl
-select_statement(facts(f; classify = true, labels = true), "BalanceSheet")
+julia> set_credentials(DART(); api_key = ENV["DART_API_KEY"])    # free OpenDART crtfc_key
+julia> hs = discover(OpenDARTApi(); stock_code = "005930",       # Samsung; resolves to corp_code 00126380
+                     bgn_de = "20240101", end_de = "20241231");
+julia> f  = fetch_filing(first(hs));                             # the fnlttXbrl package
+julia> rows = facts(f; classify = true, labels = true);          # K-IFRS facts, classified
+julia> select_statement(rows, "BalanceSheet")                    # BS / IS / CF as usual
+julia> label_map(f; lang = "en")                                 # English labels (lang="ko" for Korean)
 \end{lstlisting}
-
-\paragraph{NSM / ESEF (UKSEF inline XBRL).}
-\begin{lstlisting}
-hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # Tesco PLC
-facts(fetch_filing(first(hs)); classify = true, labels = true)    # same call, ESEF package
-\end{lstlisting}
-
-\paragraph{Companies House (iXBRL \emph{or} PDF --- read \texttt{f.kind}).}
-\begin{lstlisting}
-f = fetch_filing(first(discover(CompaniesHouseApi(); company_number = "00021497")))
-if f.kind in (:ixbrl, :xbrl)
-    facts(f; classify = true)                            # structured path
-else                                                      # f.kind == :pdf
-    # download the document, then run the PDF extractor on the file:
-    extract_pdf("00021497_accounts.pdf")
-end
-\end{lstlisting}
-
-\paragraph{PDF extractor (born-digital).}
-\begin{lstlisting}
-rows = extract_pdf("annual_report.pdf"; page = 133)      # a Vector{FactRow}, like facts(f)
-select_statement(rows, "BalanceSheet")                   # every fact coordinate-anchored
-\end{lstlisting}
-
-\noindent In every case the result is the same \texttt{FactRow} row table, so the downstream
-(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
-of which extractor produced it.
 
 % ===========================================================================
 % ===  VALIDATION  ==========================================================
 % ===========================================================================
+\begin{subappendices}
+\section{Credentials}\label{sec:dart-credentials}
+
+OpenDART requires a \emph{free} \texttt{crtfc\_key} (register on the OpenDART portal). Set it per session, or
+from the environment:
+
+\begin{lstlisting}
+set_credentials(DART(); api_key = ENV["DART_API_KEY"])
+\end{lstlisting}
+
+\noindent The same key authenticates discovery, the \texttt{fnlttXbrl} package download and the
+\texttt{corpCode.xml} resolver.
+\end{subappendices}
+
 \chapter{Additional Data Sources}
 \label{sec:validation}
 
@@ -2587,14 +3205,14 @@ is ignored by the package loader.
 \caption{The four additional data sources (validation oracles).}
 \label{tab:oracles}
 \small
-\begin{tabular}{@{}p{0.16\textwidth}p{0.26\textwidth}p{0.20\textwidth}p{0.14\textwidth}p{0.10\textwidth}@{}}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.26\textwidth}p{0.18\textwidth}p{0.12\textwidth}@{}}
 \toprule
-\textbf{File} & \textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
+\textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
 \midrule
-\texttt{yahoo\_oracle.jl} & \textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
-\texttt{alphavantage\_oracle.jl} & \textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
-\texttt{arelle\_esef\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
-\texttt{arelle\_local\_oracle.jl} & \textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
+\textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
+\textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
+filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
+\textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -2635,7 +3253,7 @@ trust the one jurisdiction-agnostic parser across systems where no such API exis
 (\S\ref{sec:architecture}). Each oracle's \texttt{validate} returns a row table --- one row per fact
 (or per headline metric) with the \texttt{EDGAR} value, the reference value, the relative difference
 and a \texttt{match} flag --- so you can \texttt{filter} to mismatches or render it with
-\texttt{PrettyTables}. A \texttt{User-Agent} must be set first (\S\ref{sec:caching}); the scripts fall
+\texttt{PrettyTables}. A \texttt{User-Agent} must be set first (\S\ref{sec:ua}); the scripts fall
 back to the \texttt{EDGAR\_UA} environment variable.
 
 \section{Yahoo Finance}
@@ -2678,10 +3296,10 @@ paced under the \(\sim\)5/minute limit (a burst of four network calls per minute
 block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
 variable):
 
-\begin{lstlisting}
+\begin{lstlisting}[style=term]
 # https://www.alphavantage.co/support/#api-key
-$ export ALPHA_VANTAGE_API_KEY="your-key"
-$ julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
+% export ALPHA_VANTAGE_API_KEY="your-key"
+% julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
 \end{lstlisting}
 
 \paragraph{Validating the extraction.} Extract a US filer with \texttt{EDGAR}, then cross-check against
@@ -2707,391 +3325,83 @@ is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter ab
 Throttle responses (which AlphaVantage returns with HTTP~200) are purged from the cache so they cannot
 poison a later run.
 
-\section{Arelle xBRL-JSON}
+\section{Arelle}
 
-The \emph{parser} oracle: it pits \texttt{EDGAR.jl}'s inline-XBRL extraction against the \emph{same
-filing's} xBRL-JSON as published by \href{https://filings.xbrl.org}{filings.xbrl.org} --- an
-independent, standards-grade parse of the identical document produced by \textbf{Arelle}, the reference
-XBRL processor (\S\ref{sys:esef}). It needs no extra dependency (it uses just the HTTP+JSON
-\texttt{EDGAR} already has), and mirrors
-\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266)
---- credit there.
+\textbf{Arelle} is the reference, open-source XBRL processor --- an independent implementation of the
+standard. \texttt{EDGAR.jl} validates against it two ways, both \emph{parser} oracles (same document,
+fact-level): the \textbf{local} oracle runs Arelle itself on the filing and covers \emph{every}
+\texttt{FilingSystem} and \emph{every} fact; the \textbf{published-JSON} oracle reuses Arelle's output from
+filings.xbrl.org with no extra dependency, for the ESEF/UKSEF filings that aggregator hosts.
+
+\subsection{Local Arelle --- the universal oracle}
+
+\texttt{arelle\_local\_oracle.jl} runs the Arelle CLI (\texttt{arelleCmdLine}) on the downloaded filing and
+compares EDGAR.jl's value for \emph{every} fact --- keyed by concept + period + full \emph{dimension} set
+--- against Arelle's. Because it keys on dimensions, it validates the dimensional statements the headline
+data checks cannot, in particular the \textbf{statement of changes in equity}. It needs the Arelle CLI
+installed (located via the \texttt{ARELLE\_CMD} env var, \texttt{PATH}, or the macOS app), and accepts
+whatever shape a filing arrives in:
+
+\begin{itemize}[nosep]
+  \item a \textbf{bare inline-XBRL/XBRL instance} (SEC --- \texttt{f.url} is the inline \texttt{.htm}, not a
+    ZIP); Arelle is pointed at the URL/file and fetches the DTS itself;
+  \item a formal \textbf{report package} (ESEF/UKSEF, with \texttt{META-INF/taxonomyPackage.xml}) --- handed
+    to Arelle \emph{as a package} so its catalog remaps the standard taxonomy;
+  \item a \textbf{loose package} (DART \texttt{fnlttXbrl}, an EDINET submission) --- extracted, with Arelle
+    pointed at the instance.
+\end{itemize}
+
+\noindent Values are compared \textbf{raw} (as stored): EDGAR.jl's classified value flips sign for
+\texttt{negatedLabel}/cash-outflow concepts, so the classification is used only to \emph{label} each row by
+statement, never to compare. The oracle is verified at \textbf{100\,\% on the financial statements ---
+including the changes-in-equity statement --- across every \texttt{FilingSystem}}: SEC (Apple 10-K), ESEF
+(Citycon, 312/312), UKSEF (Kainos), DART (Samsung, 5997/5997) and EDINET (Toyota 1378/1378; Nintendo, MUFG
+and Canon also 100\,\%). The handful of unconfirmed facts are note-level non-financial disclosures (counts,
+percentages).
 
 \begin{lstlisting}
-# the built-in firm panel (exits non-zero below 95% fact parity):
-$ julia --project=. src/sources/arelle_esef_oracle.jl
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_local_oracle.jl"))
+using .ArelleLocalOracle
+
+# Any filing, any system: materialise it, run Arelle, compare every fact (incl. the SCE).
+f = fetch_filing(EDINET(), "Toyota-annual.zip")
+ArelleLocalOracle.report(ArelleLocalOracle.validate(f))      # per-statement parity
+filter(r -> !r.match, ArelleLocalOracle.validate(f))         # any discrepancies
+
+# DART convenience -- discover + validate in one call:
+set_credentials(DART(); api_key = ENV["DART_API_KEY"])
+ArelleLocalOracle.report_dart("005930"; year = 2023)         # Samsung -- 5997/5997, incl. SCE
 \end{lstlisting}
 
-\paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR},
-then check every consolidated fact against the same filing's xBRL-JSON:
+\subsection{Published xBRL-JSON --- ESEF/UKSEF, no dependency}
+
+\texttt{arelle\_esef\_oracle.jl} skips the local install: it fetches the \emph{same filing's} xBRL-JSON as
+\textbf{already published} by \href{https://filings.xbrl.org}{filings.xbrl.org} (produced by Arelle), using
+just the HTTP+JSON \texttt{EDGAR} already has. So it adds no dependency, but is limited to the ESEF + UKSEF
+filings the aggregator hosts and to consolidated (undimensioned) facts. It mirrors
+\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266) ---
+credit there.
+
+\begin{lstlisting}[style=term]
+# the built-in firm panel (exits non-zero if parity drops below 95%):
+% julia --project=. src/sources/arelle_esef_oracle.jl
+\end{lstlisting}
+
+\paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR}, then
+check every consolidated fact against the same filing's xBRL-JSON:
 
 \begin{lstlisting}
 include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
 using .ArelleEsefOracle
-
-# 1. EDGAR side -- discover + fetch Citycon Oyj's ESEF annual report, classified.
-h = first(discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206"))
-facts(fetch_filing(h); classify = true)
-
-# 2. Parser cross-check: every consolidated fact vs the SAME filing's xBRL-JSON.
 filter(r -> !r.match, ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
 ArelleEsefOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
 \end{lstlisting}
 
-\noindent \texttt{ArelleEsefOracle.statements(lei)} reports the parity \emph{per statement} --- one row
+\noindent \texttt{ArelleEsefOracle.statements(lei)} reports parity \emph{per statement} --- one row
 \texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
-\texttt{CashFlow}. On the default panels the agreement is near-exact: \textbf{100\% fact parity}
-against Arelle and \textbf{no mismatches} against the data oracles on the totals they cover.
-
-% ===========================================================================
-% ===  REFERENCE  ===========================================================
-% ===========================================================================
-\chapter{Reference}
-\label{sec:reference}
-
-\section{Credentials and Caching}\label{sec:caching}
-
-\paragraph{Credentials (the User-Agent).}
-There is no API key; the only credential is the SEC \texttt{User-Agent}
-(\S\ref{sec:ua}).
-
-\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
-\toprule
-\textbf{Function} & \textbf{Purpose} \\
-\midrule
-\endhead
-\texttt{set\_user\_agent(user\_agent)} & Set the User-Agent from a single
-  \texttt{"name email"} string (validated). \\
-\texttt{get\_user\_agent()} & Return the User-Agent that will be sent (explicit
-  value $\to$ \texttt{SEC\_USER\_AGENT} env var $\to$ error). \\
-\texttt{persist\_user\_agent(user\_agent; depot)} & Validate, set for this session,
-  and write \texttt{SEC\_USER\_AGENT} into the depot's \texttt{startup.jl} so every
-  future session has it. \\
-\texttt{unpersist\_user\_agent(; depot)} & Remove the line that
-  \texttt{persist\_user\_agent} wrote. \\
-\bottomrule
-\end{longtable}
-
-\subsubsection{set\_user\_agent}
-
-\sig{set\_user\_agent(user\_agent)}
-
-\noindent Set the SEC \texttt{User-Agent} for the current process from a single
-\texttt{"name email"} string. It is validated (non-empty, contains an email) and
-returned. A User-Agent is required before any request; without one EDGAR.jl stops
-with a clear error \emph{before} contacting the SEC.
-
-\subsubsection{get\_user\_agent}
-
-\sig{get\_user\_agent()}
-
-\noindent Return the \texttt{User-Agent} that will be sent, following the resolution
-order: an explicit value from \texttt{set\_user\_agent}/\texttt{set\_config}, else the
-\texttt{SEC\_USER\_AGENT} environment variable, else an error.
-
-\subsubsection{persist\_user\_agent}
-
-\sig{persist\_user\_agent(user\_agent; depot = first(DEPOT\_PATH))}
-
-\noindent Validate and set the User-Agent for this session, \emph{and} write
-\texttt{SEC\_USER\_AGENT} into the depot's \texttt{startup.jl} so every future Julia
-session has it. \texttt{depot} selects which Julia depot's startup file to write.
-
-\subsubsection{unpersist\_user\_agent}
-
-\sig{unpersist\_user\_agent(; depot = first(DEPOT\_PATH))}
-
-\noindent Remove the \texttt{SEC\_USER\_AGENT} line that \texttt{persist\_user\_agent}
-wrote from the depot's \texttt{startup.jl}. Returns \texttt{true} if a line was
-removed, \texttt{false} if there was nothing to remove.
-
-\paragraph{Caching.}
-Responses are cached so repeated calls in a session do not re-download the same
-data. The \texttt{cache} keyword of \texttt{set\_config} selects where the cache
-lives and how long it survives:
-
-\begin{itemize}[nosep]
-  \item \texttt{:temporary} (default) --- an ephemeral per-process directory,
-    deleted when Julia exits. Nothing persists across sessions.
-  \item \texttt{:persistent} --- kept in \texttt{\textasciitilde/.cache/EDGAR.jl}
-    (or \texttt{XDG\_CACHE\_HOME}) across sessions; files older than
-    \texttt{cache\_max\_age} are pruned automatically.
-  \item \texttt{:off} --- no caching; every call re-fetches.
-\end{itemize}
-
-\noindent
-Two \textbf{independent} time limits apply: \texttt{cache\_ttl} (default 24\,h) is
-\emph{freshness} --- how long a cached response is reused before being re-fetched
-(it deletes nothing); \texttt{cache\_max\_age} (default 7\,days) is \emph{retention}
---- how long a file is kept on disk before being pruned. \texttt{cache\_max\_size}
-(default 10\,MB) caps the size of any single cached response.
-
-\paragraph{Per-system cache policy.}
-The mode above is \emph{global}, but one knob for every jurisdiction is too coarse when
-systems differ wildly in fetch cost --- the SEC and ESEF are fast, while OpenDART
-(\S\ref{sys:dart}) streams documents at $\sim$12\,KB/s, so a single filing or its
-118{,}000-row company index takes \emph{minutes}. \texttt{set\_cache\_policy(system;\
-cache)} overrides the global mode for \emph{one} \texttt{FilingSystem}, taking precedence
-over \texttt{set\_config} for requests to that system only:
-
-\begin{lstlisting}
-set_config(cache = :temporary)                 # global default: nothing persists
-set_cache_policy(DART(); cache = :persistent)  # but DART persists its slow downloads
-\end{lstlisting}
-
-\noindent so DART's minutes-slow files are paid once and survive across sessions, while
-SEC/ESEF stay ephemeral. The override registry defaults to the global mode for any system
-without an entry, so existing behaviour is unchanged.
-
-\begin{longtable}{@{}p{0.46\textwidth}p{0.50\textwidth}@{}}
-\toprule
-\textbf{Function} & \textbf{Purpose} \\
-\midrule
-\endhead
-\texttt{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size,
-  cache\_max\_age, host\_whitelist, allow\_file, user\_agent)} & Override the
-  global runtime configuration (only the keywords you pass change). \\
-\texttt{set\_cache\_policy(system; cache)} & Override the cache mode for a single
-  \texttt{FilingSystem}, taking precedence over the global mode for that system. \\
-\texttt{clean\_cache()} & Prune the cache on demand. \\
-\texttt{cache\_metrics()} & Inspect hit/miss/request/byte counters. \\
-\texttt{cache\_path\_for(url)} & The on-disk cache path for a given URL. \\
-\bottomrule
-\end{longtable}
-
-\subsubsection{set\_config}
-
-\sig{set\_config(; cache, cache\_dir, cache\_ttl, cache\_max\_size, cache\_max\_age, host\_whitelist, allow\_file, user\_agent)}
-
-\noindent Override the global runtime configuration, returning the updated
-\texttt{EDGARConfig}. Only the keywords you pass are changed; the rest keep their
-current values. \texttt{cache} selects the mode (\texttt{:temporary} / \texttt{:persistent}
-/ \texttt{:off}); \texttt{cache\_ttl} sets freshness and \texttt{cache\_max\_age}
-retention; \texttt{cache\_max\_size} caps a single response; \texttt{user\_agent} is an
-alternative to \texttt{set\_user\_agent}.
-
-\subsubsection{clean\_cache}
-
-\sig{clean\_cache(max\_age\_seconds = CACHE\_TTL)}
-
-\noindent Prune the on-disk cache on demand, deleting entries older than
-\texttt{max\_age\_seconds} and returning the number removed.
-
-\subsubsection{cache\_metrics}
-
-\sig{cache\_metrics()}
-
-\noindent Return a \texttt{Dict} of the session's cache counters --- hits, misses,
-requests and bytes --- for inspecting cache effectiveness.
-
-\subsubsection{cache\_path\_for}
-
-\sig{cache\_path\_for(url)}
-
-\noindent Return the on-disk cache path EDGAR.jl would use for \texttt{url}, whether
-or not it is currently cached.
-
-\begin{lstlisting}
-set_config(cache = :persistent, cache_ttl = 3600)   # keep across sessions, 1h freshness
-m = cache_metrics()                                  # (; hits, misses, requests, ...)
-clean_cache()
-\end{lstlisting}
-
-\section{Low-Level Requests}
-\label{sec:api-lowlevel}
-
-\subsubsection{fetch\_url}
-
-\sig{fetch\_url(url; use\_cache = true, timeout = 15, allow\_file = false)}
-
-\noindent The primitive every function above is built on: it returns the raw
-response body as bytes (or \texttt{nothing} on failure), with the configured
-\texttt{User-Agent} and the cache applied. Use it as an escape hatch to reach SEC
-endpoints EDGAR.jl does not yet wrap, then parse the bytes yourself (e.g.\ with
-\texttt{JSON3.read}).
-
-\begin{lstlisting}
-body = fetch_url("https://data.sec.gov/submissions/CIK0000320193.json")
-data = JSON3.read(body)
-\end{lstlisting}
+\texttt{CashFlow} --- near-exact on the default panel (\textbf{100\,\% fact parity}).
 
 
-% ===========================================================================
-\section{Glossary}
-\label{sec:glossary}
-
-SEC filings and their structured data come with their own vocabulary.
-The terms that matter here:
-
-\begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
-  \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
-    zero-padded to 10 digits (Apple $\to$ \texttt{0000320193}). Functions accept it
-    as an integer or a string, with or without leading zeros (\texttt{320193}
-    $\equiv$ \texttt{0000320193}). Look one up from a ticker or company name with
-    \texttt{cik}.
-  \item[Filing] a document submitted to the SEC, identified by an
-    \textbf{accession number} and a \textbf{form type} (\texttt{10-K} annual
-    report, \texttt{10-Q} quarterly, \texttt{8-K} current report, \dots). Get a filer's filings with \texttt{filings\_by\_cik}.
-  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable format companies tag their financial statements in; it is what makes the numbers queryable rather than locked inside a document. A pure XBRL filing is an XML document whose primary purpose is to represent structured facts,
-  \begin{lstlisting}
-<us-gaap:Assets contextRef="CurrentYear" unitRef="USD">
-    1000000
-</us-gaap:Assets>
-\end{lstlisting}
-A browser won't render this as a nice financial statement. It's intended for software.
-\item[iXBRL] \emph{Inline-XBRL}: those same tags embedded directly inside the filing's human-readable HTML, so one document is both readable and
-machine-parseable. The SEC has required it for financial statements since
-around 2019. An iXBRL filing is an HTML document that looks like a normal report,
-\begin{lstlisting}
-<p>
-Total assets were
-<ix:nonFraction
-    name="us-gaap:Assets"
-    contextRef="CurrentYear"
-    unitRef="USD">
-    1000000
-</ix:nonFraction>.
-</p>
-\end{lstlisting}
-Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although modern tools often treat it as HTML with XML namespaces.
-  \item[Fact] a single reported number: one \emph{concept}, for one
-    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
-    96{,}995{,}000{,}000 USD''). \texttt{company\_facts} returns every fact a
-    company has reported.
-  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
-    (e.g.\ \texttt{NetIncomeLoss}, \texttt{Assets}, \texttt{Revenues}) --- ``what is
-    being measured''. \texttt{company\_concept} returns one concept over time.
-  \item[Taxonomy] a dictionary that defines concepts. The big one is
-    \textbf{\texttt{us-gaap}} (US accounting standards); \textbf{\texttt{dei}}
-    (\emph{Document and Entity Information}) holds metadata about the filing
-    itself; \textbf{\texttt{srt}} holds shared elements; \textbf{\texttt{ifrs-full}}
-    is for filers reporting under IFRS; and each company has its own
-    \textbf{extension} namespace (e.g.\ \texttt{aapl} for Apple-specific concepts).
-  \item[Frame] a cross-section: one concept, one unit, one period, across
-    \emph{every} filer that reported it. \texttt{xbrl\_frames} returns a frame.
-  \item[Unit] the unit of measure of a fact: \texttt{USD}, \texttt{shares},
-    \texttt{USD/shares} (per-share), \texttt{pure} (a ratio), \dots
-  \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
-    use \emph{calendar} periods: \texttt{CY} + year, as in \texttt{CY2022} (a full
-    calendar year), \texttt{CY2022Q4} (a quarter), or \texttt{CY2022Q4I} (a single
-    instant --- note the trailing \texttt{I}). An \textbf{instant} is a point in
-    time (balance-sheet items such as Assets, at quarter-end); a
-    \textbf{duration} is a span (income-statement items such as Revenue). By
-    contrast, \textbf{\texttt{FY}} in a company's own facts is its \emph{fiscal}
-    year, which need not match the calendar (Apple's \texttt{FY2023} ended in
-    September 2023).
-\end{description}
-
-
-\chapter{Architecture and Portability}
-\label{sec:architecture}
-
-EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic core} and a thin
-\textbf{jurisdiction layer}. This applies to both subsystems --- XBRL extraction and HTML document
-parsing. The XBRL core --- the regex-based extractor that resolves contexts, units
-and facts from raw \texttt{<ix:nonFraction>} / \texttt{xbrli:context} / \texttt{xbrli:unit}, the
-\texttt{Fact}/\texttt{Selection} model, the four export layers, the DuckDB warehouse, the browser
-picker, and the linkbase \emph{parsers} --- depends on no SEC-specific assumption. It has been
-validated unchanged against a non-SEC filing: the GLEIF 2024 annual report (an ESEF/IFRS report in
-both inline \texttt{.xhtml} and classic \texttt{.xbrl} form) extracts identically from both
-serializations, using the IFRS \texttt{ifrs-full} taxonomy, a \texttt{gleif} extension namespace,
-and an LEI entity identifier --- none of which the core was written for.
-
-What is genuinely SEC-specific is small: \emph{how} a filing is discovered and fetched, \emph{where}
-its linkbases live, how its filer is \emph{identified}, the role-name \emph{vocabulary} used to
-classify statements, and the SEC-only structured-data APIs. Table~\ref{tab:portability} shows where
-the lines fall. SEC is the one jurisdiction implemented today; other jurisdictions (ESEF report
-packages, Canada's SEDAR+) would supply only their slice of the jurisdiction column. Concretely, the
-common parsing already lives in \texttt{extract\_xbrl.jl} and the SEC linkbase access in
-\texttt{extract\_xbrl\_sec.jl}.
-
-The same fault line runs through the \emph{text}-section layer (prose extraction). Here, however, the
-common substrate is \emph{small}: only the HTML document parser --- the \texttt{documents/} parser
-core (HTML$\rightarrow$node tree, text and table rendering) --- is jurisdiction-agnostic
-and could serve an ESEF or EDINET HTML filing unchanged. Everything layered above it is
-SEC-specific: the \emph{Item~N}/\emph{Part} section model has no ESEF/EDINET analog, so the section detectors
-(the \texttt{documents/} TOC/heading/pattern detectors and filing-agent logic), the
-\texttt{ChunkedDocument} port (\texttt{chunked\_document.jl}), \texttt{sections.jl}, the
-cross-reference-index strategy (\texttt{cross\_reference.jl}), and the per-form text accessors
-(\texttt{TenK}, \texttt{TwentyF}, and the 40-F AIF extractor) are all jurisdiction-specific. Unlike
-XBRL --- a universal standard, where the common/specific split is roughly even --- the text-section
-common part is only the HTML parser, because a filing's \emph{item} structure is a national
-regulatory construct rather than a shared technical standard.
-
-\begin{table}[h]
-\centering
-\caption{Where the common core ends and the jurisdiction layer begins.}
-\label{tab:portability}
-\small
-\begin{tabular}{@{}p{0.30\textwidth}p{0.14\textwidth}p{0.47\textwidth}@{}}
-\toprule
-\textbf{Concern} & \textbf{Common core} & \textbf{Jurisdiction-specific} \\
-\midrule
-Context/unit/fact regex parsing & Yes (all) & --- \\
-\texttt{Fact}/\texttt{Selection}/\texttt{FactRow} representation & Yes & --- \\
-Markdown / Facts JSON / DuckDB / \texttt{save\_selection} & Yes & --- \\
-Browser picker (pure DOM) & Yes & --- \\
-\texttt{standardize} mechanism & Yes & mapping \emph{data} (\texttt{us-gaap} vs \texttt{ifrs-full}) \\
-Linkbase parsers (\texttt{\_concept\_statements} / \texttt{\_labels} / \texttt{\_calculations}) & Yes & --- \\
-Discovery/fetch of a filing & --- & SEC Archives vs ESEF zip package vs SEDAR+ \\
-Linkbase location & --- & SEC sibling files vs bundled-in-zip \\
-Identity & --- & CIK vs LEI vs SEDAR id \\
-Role vocabulary (\texttt{classify\_role}) & Yes (base) & small per-jurisdiction overrides \\
-Structured-data APIs (\texttt{company\_facts}, \texttt{xbrl\_frames}, \texttt{full\_text\_search}, \texttt{cik}) & --- & SEC-only --- no cross-jurisdiction analog \\
-\midrule
-HTML\,$\rightarrow$\,tree / text / tables parsing (\texttt{documents/} parser core) & Yes & --- \\
-Section/item detection (Item/Part, TOC, filing agents, cross-reference index) & --- & SEC-only --- \emph{Item~N}/\emph{Part} has no ESEF/EDINET analog \\
-Per-form text accessors (\texttt{TenK}, \texttt{TwentyF}, 40-F AIF, \texttt{sections}) & --- & SEC forms (10-K/10-K/A, 10-Q, 8-K, 20-F, 40-F) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent So the per-jurisdiction surface is small: roughly fetch, locate-linkbases, identity and
-role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry happens to offer. Most
-of the package stays common --- which is what makes adding a second jurisdiction tractable rather
-than a rewrite.
-
-\subsection{Statement classification: two orthogonal axes}
-\label{sec:two-axes}
-\label{sec:classification-layers}
-
-Deciding which financial statement a fact belongs to (\texttt{statement\_map}, \S\ref{sec:export-layers})
-is the part most exposed to the messy diversity of real filings, so it is worth being explicit about
-how that knowledge is layered. The robust approach --- a multi-signal scorer adapted from
-\href{https://github.com/dgunning/edgartools}{edgartools} (MIT; see Acknowledgements) --- factors
-along the \emph{taxonomy}, \emph{not} the jurisdiction. There are three layers
-(Table~\ref{tab:classify-layers}).
-
-\begin{table}[h]
-\centering
-\caption{The three layers of statement-classification knowledge.}
-\label{tab:classify-layers}
-\small
-\begin{tabular}{@{}p{0.17\textwidth}p{0.60\textwidth}p{0.16\textwidth}@{}}
-\toprule
-\textbf{Layer} & \textbf{What it is} & \textbf{Shared by} \\
-\midrule
-\textbf{Engine logic} (common) & The cascade + scoring + validation \emph{meta-rules}: prefer a complete statement over a fragment, validate that essential concepts are present, reject the wrong type, penalize parentheticals, and combined-statement aliasing. Plus the structural semantics --- a balance sheet \emph{is} Assets + Liabilities + Equity; an income statement runs revenue $\to$ profit. & All taxonomies \& jurisdictions \\
-\textbf{Taxonomy vocabulary} (per-taxonomy, often shared) & The concept anchors, concept patterns and role-name patterns. \texttt{ifrs-full} (profit-or-loss, financial position, changes in equity) is reused by ESEF, SEDAR+ (IFRS), Companies House (IFRS), DART (K-IFRS), MOPS (TW-IFRS) and EDINET (IFRS filers). \texttt{us-gaap} (tax-disclosure penalties, comprehensive-income variants, roll-forwards) is SEC. National GAAPs (JP \texttt{jpcrp}/\texttt{jppfs}, UK FRS~101/102, KR) are one regime each. & the taxonomy's users \\
-\textbf{Jurisdiction adapter} (per-jurisdiction) & Discovery/fetch, linkbase location, identity (CIK / LEI / \ldots), the filing-package conventions (SEC's \texttt{FilingSummary.xml} + R-files; ESEF zip; EDINET/DART APIs), and which taxonomies the regime uses. & one jurisdiction each \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent The edgartools scorer encodes roughly two dozen empirically-tuned, issue-driven rules
-(each a real filing that broke a naive classifier, then a fix). Of those, about \emph{45\%} is common
-engine logic, \emph{30\%} \texttt{us-gaap} data, and \emph{20\%} \texttt{ifrs-full} data --- and that
-IFRS slice is reused across the jurisdictions above. Almost nothing in the engine is SEC-specific, so
-adopting it front-loads both the engine \emph{and} the IFRS vocabulary: adding ESEF / Companies House
-/ DART / MOPS / EDINET becomes mostly adapters plus reuse, with a new national-GAAP vocabulary only
-where a regime actually uses one (chiefly Japan and the UK).
-
-This refines the portability picture above into \textbf{two orthogonal axes}: a \emph{jurisdiction}
-axis (\texttt{SEC <: Jurisdiction}, \ldots) handling fetch and identity, and a separate
-\emph{taxonomy} axis (\texttt{us-gaap} / \texttt{ifrs-full} / \ldots\ vocabularies, auto-selected from
-the concept prefixes a filing actually uses) handling classification. EDGAR.jl ships the
-classification \emph{registry} today; the full per-request scoring cascade is a planned, test-anchored
-port of the edgartools resolver. (This is a design direction and may change in detail.)
 
 \chapter{Related Work and Comparison}
 \label{sec:related-work}
@@ -3166,4 +3476,72 @@ normalises context, unit and dimension into separate tables for transactional Po
 EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytical, columnar
 store like DuckDB prefers.
 
+
+% ===========================================================================
+\appendix
+
+\chapter{Glossary}
+\label{sec:glossary}
+
+SEC filings and their structured data come with their own vocabulary.
+The terms that matter here:
+
+\begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
+  \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
+    zero-padded to 10 digits (Apple $\to$ \texttt{0000320193}). Functions accept it
+    as an integer or a string, with or without leading zeros (\texttt{320193}
+    $\equiv$ \texttt{0000320193}). Look one up from a ticker or company name with
+    \texttt{cik}.
+  \item[Filing] a document submitted to the SEC, identified by an
+    \textbf{accession number} and a \textbf{form type} (\texttt{10-K} annual
+    report, \texttt{10-Q} quarterly, \texttt{8-K} current report, \dots). Get a filer's filings with \texttt{filings\_by\_cik}.
+  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable format companies tag their financial statements in; it is what makes the numbers queryable rather than locked inside a document. A pure XBRL filing is an XML document whose primary purpose is to represent structured facts,
+  \begin{lstlisting}
+<us-gaap:Assets contextRef="CurrentYear" unitRef="USD">
+    1000000
+</us-gaap:Assets>
+\end{lstlisting}
+A browser won't render this as a nice financial statement. It's intended for software.
+\item[iXBRL] \emph{Inline-XBRL}: those same tags embedded directly inside the filing's human-readable HTML, so one document is both readable and
+machine-parseable. The SEC has required it for financial statements since
+around 2019. An iXBRL filing is an HTML document that looks like a normal report,
+\begin{lstlisting}
+<p>
+Total assets were
+<ix:nonFraction
+    name="us-gaap:Assets"
+    contextRef="CurrentYear"
+    unitRef="USD">
+    1000000
+</ix:nonFraction>.
+</p>
+\end{lstlisting}
+Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although modern tools often treat it as HTML with XML namespaces.
+  \item[Fact] a single reported number: one \emph{concept}, for one
+    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
+    96{,}995{,}000{,}000 USD''). \texttt{company\_facts} returns every fact a
+    company has reported.
+  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
+    (e.g.\ \texttt{NetIncomeLoss}, \texttt{Assets}, \texttt{Revenues}) --- ``what is
+    being measured''. \texttt{company\_concept} returns one concept over time.
+  \item[Taxonomy] a dictionary that defines concepts. The big one is
+    \textbf{\texttt{us-gaap}} (US accounting standards); \textbf{\texttt{dei}}
+    (\emph{Document and Entity Information}) holds metadata about the filing
+    itself; \textbf{\texttt{srt}} holds shared elements; \textbf{\texttt{ifrs-full}}
+    is for filers reporting under IFRS; and each company has its own
+    \textbf{extension} namespace (e.g.\ \texttt{aapl} for Apple-specific concepts).
+  \item[Frame] a cross-section: one concept, one unit, one period, across
+    \emph{every} filer that reported it. \texttt{xbrl\_frames} returns a frame.
+  \item[Unit] the unit of measure of a fact: \texttt{USD}, \texttt{shares},
+    \texttt{USD/shares} (per-share), \texttt{pure} (a ratio), \dots
+  \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
+    use \emph{calendar} periods: \texttt{CY} + year, as in \texttt{CY2022} (a full
+    calendar year), \texttt{CY2022Q4} (a quarter), or \texttt{CY2022Q4I} (a single
+    instant --- note the trailing \texttt{I}). An \textbf{instant} is a point in
+    time (balance-sheet items such as Assets, at quarter-end); a
+    \textbf{duration} is a span (income-statement items such as Revenue). By
+    contrast, \textbf{\texttt{FY}} in a company's own facts is its \emph{fiscal}
+    year, which need not match the calendar (Apple's \texttt{FY2023} ended in
+    September 2023).
+\end{description}
 \end{document}
