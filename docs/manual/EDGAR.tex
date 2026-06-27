@@ -2593,7 +2593,7 @@ is ignored by the package loader.
 \midrule
 \texttt{yahoo\_oracle.jl} & \textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
 \texttt{alphavantage\_oracle.jl} & \textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
-\texttt{arelle\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
+\texttt{arelle\_esef\_oracle.jl} & filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
 \texttt{arelle\_local\_oracle.jl} & \textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
 \bottomrule
 \end{tabular}
@@ -2604,16 +2604,29 @@ is ignored by the package loader.
 totals (Assets, Equity, Revenue, Net income, operating cash flow) against an entirely separate data
 pipeline, across all three statements. A \textbf{parser} oracle (\textbf{Arelle}) confirms we
 \emph{read the filing right}: it compares the extracted facts against the \emph{same filing} as parsed by
-the reference XBRL processor. There are two: \texttt{arelle\_oracle.jl} fetches Arelle's
+the reference XBRL processor. There are two: \texttt{arelle\_esef\_oracle.jl} fetches Arelle's
 \emph{already-published} xBRL-JSON from filings.xbrl.org (no dependency, but limited to the ESEF/UKSEF
 filings the aggregator hosts and to consolidated facts), while \texttt{arelle\_local\_oracle.jl} \emph{runs}
-Arelle locally on a downloaded package (needs the Arelle CLI, but then validates \emph{any} filing ---
-including Korea/DART and Japan --- and \emph{every} fact, dimensions included, so it covers the statement of
-changes in equity; verified at 100\% on Samsung FY2023, 5997/5997, and an ESEF filer, 312/312). Both
-compare values \emph{raw}; the local oracle hands Arelle a formal report package (ESEF/UKSEF) as a package
-so its catalog resolves, and extracts loose packages (DART) to point Arelle at the instance. A parser
-oracle cannot catch a filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle
-can, but only approximately, since the data providers normalize.
+Arelle locally on the filing itself (needs the Arelle CLI, but then validates \emph{any} filing --- SEC,
+ESEF/UKSEF, Korea/DART, Japan --- and \emph{every} fact, dimensions included, so it covers the statement of
+changes in equity). It accepts whatever shape a filing comes in:
+
+\begin{itemize}[nosep]
+  \item a \textbf{bare inline-XBRL/XBRL instance} --- e.g.\ a SEC filing, whose \texttt{f.url} is the inline
+    \texttt{.htm} (not a ZIP); Arelle is pointed at the URL (or a local file) and fetches the DTS itself;
+  \item a formal \textbf{report package} (ESEF/UKSEF, carrying \texttt{META-INF/taxonomyPackage.xml}) ---
+    handed to Arelle \emph{as a package} so its catalog remaps the standard taxonomy;
+  \item a \textbf{loose package} (DART \texttt{fnlttXbrl}, an EDINET submission) --- extracted, with Arelle
+    pointed at the instance.
+\end{itemize}
+
+\noindent Both oracles compare values \emph{raw} (the as-stored value; the classified value flips sign for
+\texttt{negatedLabel}/cash-outflow concepts). The local oracle is verified at \textbf{100\%} on the five
+financial statements (balance sheet, income statement, comprehensive income, cash flow and changes in
+equity) across SEC (Apple 10-K), ESEF (Citycon, 312/312), UKSEF (Kainos) and DART (Samsung, 5997/5997);
+the few unconfirmed facts are note-level non-financial disclosures (counts, percentages). A parser oracle
+cannot catch a filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle can, but
+only approximately, since the data providers normalize.
 
 \medskip\noindent This is the same kind of check the package already applies on the SEC side: the
 extracted values are validated against the SEC's \texttt{companyfacts} API (the SEC's own parse of the
