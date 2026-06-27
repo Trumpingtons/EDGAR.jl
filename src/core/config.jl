@@ -100,9 +100,16 @@ function set_config(; cache=nothing, cache_dir=nothing, cache_ttl=nothing, cache
     return CONFIG
 end
 
-function get_cache_dir()
+# Per-FilingSystem cache-mode overrides (N6). The global `CONFIG.cache_mode` is the default for every
+# jurisdiction; an entry here overrides it for ONE system (keyed by `system_tag`), so e.g. the
+# pathologically-slow DART endpoints can be `:persistent` while SEC/ESEF stay `:temporary`. Written by
+# `set_cache_policy(::FilingSystem; cache=…)` and read by `effective_cache_mode` (both in
+# core/filing_system.jl, where the `FilingSystem` types live). A pinned `CONFIG.cache_dir` still wins.
+const SYSTEM_CACHE_MODE = Dict{Symbol,Symbol}()
+
+function get_cache_dir(mode::Symbol = CONFIG.cache_mode)
     CONFIG.cache_dir === nothing || return CONFIG.cache_dir
-    return CONFIG.cache_mode === :temporary ? _temp_cache_dir() : CACHE_DIR
+    return mode === :temporary ? _temp_cache_dir() : CACHE_DIR
 end
 get_cache_ttl() = CONFIG.cache_ttl === nothing ? CACHE_TTL : CONFIG.cache_ttl
 get_cache_max_size() = CONFIG.cache_max_size === nothing ? CACHE_MAX_SIZE : CONFIG.cache_max_size

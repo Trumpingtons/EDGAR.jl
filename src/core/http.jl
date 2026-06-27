@@ -50,9 +50,9 @@ end
 Return the on-disk path (without extension) used to cache `url`. The actual
 cache files are this path with `.body` and `.meta` suffixes.
 """
-function cache_path_for(url::AbstractString)
+function cache_path_for(url::AbstractString; mode::Symbol = CONFIG.cache_mode)
     h = string(abs(hash(url)))
-    return joinpath(get_cache_dir(), h)
+    return joinpath(get_cache_dir(mode), h)
 end
 
 function _read_cache(path::AbstractString)
@@ -147,7 +147,7 @@ HTTP.jl on a cross-host redirect (so a redirect to signed object storage does no
 """
 function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, allow_file::Bool=false,
                    headers::Union{Nothing,AbstractVector}=nothing,
-                   method::Symbol=:GET, body=nothing)
+                   method::Symbol=:GET, body=nothing, cache_mode::Symbol=CONFIG.cache_mode)
     # Support file: for tests only when allow_file=true
     if startswith(url, "file://")
         if !allow_file
@@ -170,11 +170,11 @@ function fetch_url(url::AbstractString; use_cache::Bool=true, timeout::Int=15, a
         url = "https:" * url
     end
 
-    caching = CONFIG.cache_mode !== :off
+    caching = cache_mode !== :off
     # POST responses depend on the request body, so fold it into the cache key.
     cachekey = (method === :POST && body !== nothing) ?
         string(url, "\0POST\0", body isa AbstractVector{UInt8} ? String(copy(body)) : String(body)) : url
-    path = caching ? cache_path_for(cachekey) : ""
+    path = caching ? cache_path_for(cachekey; mode = cache_mode) : ""
     caching && _maybe_prune_persistent()
     if caching && use_cache
         cand = _read_cache(path)
@@ -234,8 +234,8 @@ end
 # parse the body as JSON. Throws if the request fails (bad User-Agent, network
 # error, or the resource does not exist).
 function _get_json(url::AbstractString; use_cache::Bool=true,
-                   headers::Union{Nothing,AbstractVector}=nothing)
-    body = fetch_url(url; use_cache = use_cache, headers = headers)
+                   headers::Union{Nothing,AbstractVector}=nothing, cache_mode::Symbol=CONFIG.cache_mode)
+    body = fetch_url(url; use_cache = use_cache, headers = headers, cache_mode = cache_mode)
     body === nothing && error("EDGAR request failed: $url (network error, SEC rate limit, or the resource does not exist)")
     return JSON3.read(body)
 end

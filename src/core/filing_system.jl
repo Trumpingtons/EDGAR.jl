@@ -125,3 +125,40 @@ their authorization header. A new system adds a method here. (`fetch_url` will u
 3; today SEC injects the User-Agent itself.)
 """
 system_headers(::SEC) = ["User-Agent" => get_user_agent()]
+
+# ── Per-FilingSystem cache policy (N6) ───────────────────────────────────────────────────────────
+#
+# Caching is global by default (`CONFIG.cache_mode`), but one knob for every jurisdiction is too coarse
+# when systems differ wildly in fetch cost: SEC/ESEF are fast, while DART/OpenDART streams documents at
+# ~12 KB/s (a single filing or the 100k-row corpCode index takes minutes). `set_cache_policy` overrides
+# the global mode for ONE system, so DART can be `:persistent` (slow downloads paid once, ever) while
+# everything else stays `:temporary`. The store is `SYSTEM_CACHE_MODE` (core/config.jl); per-system fetch
+# code passes `effective_cache_mode(sys)` to `fetch_url` / `_get_json`.
+
+"""
+    set_cache_policy(system::FilingSystem; cache::Symbol) -> Symbol
+
+Override the cache mode (`:temporary` / `:persistent` / `:off`) for a single [`FilingSystem`](@ref),
+taking precedence over the global [`set_config`](@ref)`(cache=…)` for requests to that system only. Use it
+for jurisdictions whose endpoints are very slow, so their downloads persist across sessions while faster
+systems stay ephemeral:
+
+```julia
+set_cache_policy(DART(); cache = :persistent)   # DART persists; SEC/ESEF keep the global default
+```
+"""
+function set_cache_policy(system::FilingSystem; cache::Symbol)
+    cache in (:temporary, :persistent, :off) ||
+        throw(ArgumentError("cache must be :temporary, :persistent or :off"))
+    SYSTEM_CACHE_MODE[system_tag(system)] = cache
+    return cache
+end
+
+"""
+    effective_cache_mode(system::FilingSystem) -> Symbol
+
+The cache mode in force for `system`: its [`set_cache_policy`](@ref) override if set, else the global
+`CONFIG.cache_mode`. Per-system fetch code passes this to `fetch_url` / `_get_json`.
+"""
+effective_cache_mode(system::FilingSystem) =
+    get(SYSTEM_CACHE_MODE, system_tag(system), CONFIG.cache_mode)
