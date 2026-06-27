@@ -1308,7 +1308,7 @@ end
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
-include(joinpath(@__DIR__, "..", "src", "sources", "arelle_oracle.jl"))   # -> ArelleOracle (needs only EDGAR)
+include(joinpath(@__DIR__, "..", "src", "sources", "arelle_esef_oracle.jl"))   # -> ArelleEsefOracle (needs only EDGAR)
 include(joinpath(@__DIR__, "..", "src", "sources", "yahoo_oracle.jl"))    # -> YahooOracle (uses YFinance)
 @testset "network (live)" begin
 @testset "EDGAR basic" begin
@@ -1409,7 +1409,7 @@ end
 
     @testset "oracle validation: UK Jupiter Fund Mgmt (Arelle + Yahoo)" begin
         try
-            a = ArelleOracle.statements("5493003DJ1G01IMQ7S28")
+            a = ArelleEsefOracle.statements("5493003DJ1G01IMQ7S28")
             @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
             @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
             y = YahooOracle.validate(:esef, "5493003DJ1G01IMQ7S28", "JUP.L")
@@ -1424,7 +1424,7 @@ end
 
     @testset "oracle validation: EU Signify (Arelle + Yahoo)" begin
         try
-            a = ArelleOracle.statements("549300072P3J1X8NZO35")
+            a = ArelleEsefOracle.statements("549300072P3J1X8NZO35")
             @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
             @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
             y = YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
