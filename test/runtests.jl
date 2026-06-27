@@ -1100,6 +1100,34 @@ end
     @test any(r -> r.statement == "CashFlow", rows)
 end
 
+@testset "DART: bilingual (ko/en) labels (D4)" begin
+    # DART splits its label linkbase per language — `…_lab-ko.xml` / `…_lab-en.xml`, each single-language —
+    # unlike EDINET's one bilingual file. `label_map(f; lang)` must pick the file for the requested language
+    # (else the `xml:lang` filter drops everything from the wrong-language file). The fixture bundles both
+    # split label files (see the NOTICE); this exercises the language-aware `_fetch_linkbase(::DART,…;lang)`
+    # entirely offline. Every other system accepts-and-ignores `lang`, so this is DART-specific.
+    pkg = joinpath(@__DIR__, "data", "dart", "dart-min.zip")
+    f = fetch_filing(DART(), pkg)
+
+    en = label_map(f; lang = "en")
+    ko = label_map(f; lang = "ko")
+    @test length(en) == 5 && length(ko) == 5                   # all five concepts labelled in each language
+
+    @test en["ifrs-full:Assets"] == "Assets"
+    @test ko["ifrs-full:Assets"] == "자산"
+    @test en["ifrs-full:CashFlowsFromUsedInOperatingActivities"] == "Cash flows from operating activities"
+    @test ko["ifrs-full:CashFlowsFromUsedInOperatingActivities"] == "영업활동현금흐름"
+
+    # language correctness: English labels carry no Hangul; Korean labels do.
+    hangul(s) = any(c -> '가' <= c <= '힣', s)
+    @test all(!hangul, values(en))
+    @test all(hangul, values(ko))
+
+    # `lang` threads through facts(f; labels=true, lang): the row label honours the chosen language.
+    arow = first(filter(r -> r.concept == "ifrs-full:Assets", facts(f; labels = true, lang = "ko")))
+    @test arow.label == "자산"
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →

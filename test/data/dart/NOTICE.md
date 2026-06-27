@@ -18,9 +18,11 @@ The layout was **confirmed live** against a real OpenDART `fnlttXbrl` download (
     entity00126380_2023-12-31_lab-ko.xml  ← Korean labels   (note: labels are SPLIT per language)
     entity00126380_2023-12-31_lab-en.xml  ← English labels
 
-This fixture carries only the instance (classification is vocabulary-based, so the linkbases aren't needed
-to reach BS/IS/CF); the split `_lab-ko` / `_lab-en` label files are a DART-specific N5 concern handled
-separately (D4).
+This fixture carries the instance plus the two **split label linkbases** — `entity99999999_2023-12-31_lab-en.xml`
+(English) and `entity99999999_2023-12-31_lab-ko.xml` (Korean), each a single-language label linkbase for the
+five concepts — which mirror DART's per-language label split (the N5 concern). They let the offline test
+exercise `label_map(f; lang="en"|"ko")` selecting the right file (D4). Classification itself is
+vocabulary-based, so the presentation/calculation/definition linkbases are still omitted.
 
 It exercises the DART FilingSystem (the 5th) end-to-end with no network: the flat `fnlttXbrl` layout
 (`_dart_primary_report`), the shared report-package reader, and — the K-IFRS thesis — the **`ifrs-full`**
