@@ -7,7 +7,7 @@ you load them on demand. Stray `.jl` files here are ignored by the package loade
 
 | File | Oracle | Kind | Coverage | Extra deps |
 |---|---|---|---|---|
-| `arelle_oracle.jl` | filings.xbrl.org **xBRL-JSON** (produced by **Arelle**, the reference XBRL processor) | *parser* check — same document, independent parser; fact-level parity | ESEF + UKSEF (EU, UK) | none (uses EDGAR's own HTTP+JSON) |
+| `arelle_esef_oracle.jl` | filings.xbrl.org **xBRL-JSON** (produced by **Arelle**, the reference XBRL processor) | *parser* check — same document, independent parser; fact-level parity | ESEF + UKSEF (EU, UK) | none (uses EDGAR's own HTTP+JSON) |
 | `arelle_local_oracle.jl` | **Arelle run locally** (the reference XBRL processor, as a subprocess) | *parser* check — same document, fact-level **including dimensions** (covers the statement of changes in equity) | **any** XBRL package — incl. KR/DART, JP/EDINET, EU/ESEF | **Arelle CLI** (external tool) |
 | `yahoo_oracle.jl` | **Yahoo Finance** (via `YFinance.jl`) | *data* check — independent pipeline; headline totals within 1% | global (100+ countries) | `YFinance` |
 | `alphavantage_oracle.jl` | **AlphaVantage** (official REST API) | *data* check — independent pipeline; headline totals within 1% | US-strong (SEC filers) | none (uses EDGAR's own HTTP+JSON) |
@@ -16,16 +16,16 @@ The Arelle oracle confirms we *read the filing right*; the Yahoo and AlphaVantag
 *numbers match the outside world*. The Arelle approach mirrors
 [`ESEF.jl`](https://github.com/trr266/ESEF.jl)'s `pluck_xbrl_json` (MIT, TRR 266) — credit there.
 
-**`arelle_oracle.jl` vs `arelle_local_oracle.jl`.** Both pit EDGAR.jl against **Arelle**, the reference
-XBRL processor, but differ in *who runs Arelle* and *what they can reach*. `arelle_oracle.jl` fetches
+**`arelle_esef_oracle.jl` vs `arelle_local_oracle.jl`.** Both pit EDGAR.jl against **Arelle**, the reference
+XBRL processor, but differ in *who runs Arelle* and *what they can reach*. `arelle_esef_oracle.jl` fetches
 Arelle's **already-published** xBRL-JSON from filings.xbrl.org, so it adds no dependency but is limited to
 what that aggregator hosts (ESEF + UKSEF) and to consolidated/undimensioned facts. `arelle_local_oracle.jl`
 runs **Arelle itself** (`arelleCmdLine`) on a locally downloaded package, so it needs the Arelle CLI
 installed but then validates **any** XBRL filing — including jurisdictions the aggregator does **not** host
-(**Korea/DART**, Japan/EDINET) *and* the ESEF/UKSEF filings `arelle_oracle` covers — comparing **every**
+(**Korea/DART**, Japan/EDINET) *and* the ESEF/UKSEF filings `arelle_esef_oracle` covers — comparing **every**
 fact *including dimensional ones*, which is what lets it validate the **statement of changes in equity**
 (the per-equity-component movements table that Yahoo and OpenDART's `fnlttSinglAcntAll` cannot). It is thus
-a superset of `arelle_oracle`; the latter stays for the **zero-dependency** case (no Arelle install). It
+a superset of `arelle_esef_oracle`; the latter stays for the **zero-dependency** case (no Arelle install). It
 handles both package shapes: a **loose** package (DART `fnlttXbrl`) is extracted and Arelle is pointed at
 the instance; a formal **report package** (ESEF/UKSEF, with `META-INF/taxonomyPackage.xml`) is handed to
 Arelle as a package so its catalog remaps the standard taxonomy (else the standard concepts have no schema
@@ -44,13 +44,13 @@ no official API (cookie/crumb-gated, undocumented endpoints), so `YFinance.jl` e
 **Arelle** (needs only EDGAR — runs in the package's own environment):
 
 ```bash
-julia --project=. src/sources/arelle_oracle.jl       # runs the built-in firm panel
+julia --project=. src/sources/arelle_esef_oracle.jl       # runs the built-in firm panel
 ```
 
 ```julia
-include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
-using .ArelleOracle
-rows = ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Citycon Oyj
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+using .ArelleEsefOracle
+rows = ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Citycon Oyj
 filter(r -> !r.match, rows)                                        # any discrepancies
 ```
 

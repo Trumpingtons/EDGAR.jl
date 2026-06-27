@@ -1,7 +1,7 @@
 # Local-Arelle oracle — a do-it-yourself validation source that runs Arelle yourself.
 #
 # NOTE: this file is NOT part of the EDGAR module (it is not `include`d by src/EDGAR.jl). It is a
-# self-contained helper you load on demand. Unlike `arelle_oracle.jl` (which fetches Arelle's *published*
+# self-contained helper you load on demand. Unlike `arelle_esef_oracle.jl` (which fetches Arelle's *published*
 # xBRL-JSON from filings.xbrl.org and so adds no dependency), this oracle runs **Arelle itself** as a
 # subprocess on a locally downloaded XBRL package — so it needs the **Arelle CLI** installed
 # (https://arelle.org). In return it works for jurisdictions filings.xbrl.org does NOT host — notably

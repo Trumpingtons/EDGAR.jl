@@ -1903,9 +1903,9 @@ julia> EDGAR._paragraphs(f.content)[hits[1].index]    # the located paragraph
 
 # 5. (b) Validate the numbers against independent oracles (see "Validating the Extraction").
 #     Parser oracle -- Arelle xBRL-JSON, per statement:
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
-julia> using .ArelleOracle
-julia> ArelleOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+julia> using .ArelleEsefOracle
+julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
 
 #     Data oracle -- Yahoo Finance totals (needs YFinance in the environment):
 julia> using YFinance
@@ -1930,7 +1930,7 @@ produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and ste
 2. Fetch package           & \texttt{fetch\_filing(h)}                       & \texttt{Filing(:ixbrl)}, LEI identity \\
 3. Facts + classify        & \texttt{facts(f; classify=true)} $\to$ \texttt{select\_statement} & IFRS facts across BS / IS / CF \\
 4. Search prose            & \texttt{find\_paragraphs(f, "sustainability")} & matching paragraphs, each with its \texttt{index} \\
-5a. Validate (Arelle)      & \texttt{ArelleOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
+5a. Validate (Arelle)      & \texttt{ArelleEsefOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
 5b. Validate (Yahoo)       & \texttt{YahooOracle.validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
 \bottomrule
 \end{tabular}
@@ -2706,26 +2706,26 @@ XBRL processor (\S\ref{sys:esef}). It needs no extra dependency (it uses just th
 
 \begin{lstlisting}
 # the built-in firm panel (exits non-zero below 95% fact parity):
-$ julia --project=. src/sources/arelle_oracle.jl
+$ julia --project=. src/sources/arelle_esef_oracle.jl
 \end{lstlisting}
 
 \paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR},
 then check every consolidated fact against the same filing's xBRL-JSON:
 
 \begin{lstlisting}
-include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
-using .ArelleOracle
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+using .ArelleEsefOracle
 
 # 1. EDGAR side -- discover + fetch Citycon Oyj's ESEF annual report, classified.
 h = first(discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206"))
 facts(fetch_filing(h); classify = true)
 
 # 2. Parser cross-check: every consolidated fact vs the SAME filing's xBRL-JSON.
-filter(r -> !r.match, ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
-ArelleOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
+filter(r -> !r.match, ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
+ArelleEsefOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
 \end{lstlisting}
 
-\noindent \texttt{ArelleOracle.statements(lei)} reports the parity \emph{per statement} --- one row
+\noindent \texttt{ArelleEsefOracle.statements(lei)} reports the parity \emph{per statement} --- one row
 \texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
 \texttt{CashFlow}. On the default panels the agreement is near-exact: \textbf{100\% fact parity}
 against Arelle and \textbf{no mismatches} against the data oracles on the totals they cover.

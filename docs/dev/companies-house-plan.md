@@ -332,7 +332,7 @@ CH-native oracle in addition to the cross-checks.
   and filings.xbrl.org, assert **CH facts == FilingsXBRLOrg facts** — a free, high-confidence parity
   test that also guards against either source drifting. (This is the only role FilingsXBRLOrg keeps;
   see §1 source scope.)
-- **Arelle oracle** (`src/sources/arelle_oracle.jl`): unchanged — high-confidence baseline for the
+- **Arelle oracle** (`src/sources/arelle_esef_oracle.jl`): unchanged — high-confidence baseline for the
   UKSEF/GB filers that appear on filings.xbrl.org.
 - **Yahoo oracle** (`src/sources/yahoo_oracle.jl`): add `YahooOracle.validate(:companies_house, …)`
   once `_edgar_rows`/`_edgar_metric` knows the system. Covers headline totals for **listed** UK

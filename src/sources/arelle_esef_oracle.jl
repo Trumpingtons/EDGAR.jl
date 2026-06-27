@@ -14,12 +14,12 @@
 # Credit: ESEF.jl.
 #
 # Usage:
-#   include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_oracle.jl"))
-#   using .ArelleOracle
-#   rows = ArelleOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Vector of comparison rows
-#   ArelleOracle.report()                                              # run the built-in firm panel
+#   include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+#   using .ArelleEsefOracle
+#   rows = ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023)  # Vector of comparison rows
+#   ArelleEsefOracle.report()                                              # run the built-in firm panel
 
-module ArelleOracle
+module ArelleEsefOracle
 
 using EDGAR, Dates, Printf
 const JSON3 = EDGAR.JSON3            # not exported by EDGAR; reached through the module (no new dep)
@@ -202,8 +202,8 @@ function report(firms = FIRMS)
     return ok
 end
 
-end # module ArelleOracle
+end # module ArelleEsefOracle
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    exit(ArelleOracle.report() ? 0 : 1)    # `julia --project arelle_oracle.jl`
+    exit(ArelleEsefOracle.report() ? 0 : 1)    # `julia --project arelle_esef_oracle.jl`
 end

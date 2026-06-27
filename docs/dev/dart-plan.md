@@ -141,7 +141,7 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
   `dart:OperatingIncomeLoss` → "Operating income(loss)" / "영업이익(손실)"; sanity en=non-Hangul, ko=Hangul.
   Remaining for the test suite: add `_lab-ko`/`_lab-en` to `dart-min.zip` + an offline label testset.
 - ✅ D4.2 DONE (live-verified). **`src/sources/dart_oracle.jl`** — the `fnlttSinglAcntAll` structured-API
-  parser oracle (standalone module, no new deps, mirrors arelle_oracle). Maps `account_id`
+  parser oracle (standalone module, no new deps, mirrors arelle_esef_oracle). Maps `account_id`
   (`ifrs-full_Assets`→`ifrs-full:Assets`) to EDGAR's RAW fact, asserts agreement. Key subtlety: DART tags
   the consolidated FACE on `ConsolidatedAndSeparateFinancialStatementsAxis` (`ConsolidatedMember`/`SeparateMember`),
   NOT undimensioned — so a face fact = undimensioned OR single consolidation-member (no other axis/comma).
