@@ -2,8 +2,9 @@
 
 % ---------------------------------------------------------------------------
 % EDGAR.jl — User Manual
-% Compile with: pdflatex EDGAR.tex  (run twice for the table of contents /
-% cross-references). No --shell-escape required (uses `listings`, not minted).
+% Compile with: xelatex EDGAR.tex  (run twice for the table of contents /
+% cross-references). XeLaTeX is required (fontspec + CJK); pdfLaTeX is not
+% supported. No --shell-escape required (uses `listings`, not minted).
 %
 % Structure: the manual is organised per FilingSystem — one \chapter each for
 % EDGAR (SEC), ESEF, Companies House, EDINET and DART (some still stubs) — framed
@@ -11,30 +12,20 @@
 % the fully-implemented system; the others carry what is implemented or planned.
 % ---------------------------------------------------------------------------
 
-% Engine-aware fonts: pdfLaTeX keeps the classic 8-bit setup; XeLaTeX/LuaLaTeX use fontspec so that
-% CJK (Korean/Japanese) can be typeset. The manual builds under BOTH engines — see the \cjk helpers below.
+% XeLaTeX-only: fontspec provides Unicode fonts so CJK (Korean/Japanese) typesets natively. The body
+% font stays Latin Modern (fontspec's default, as under the old lmodern). Build with `xelatex EDGAR.tex`
+% (run twice for cross-references); pdfLaTeX is NOT supported (fontspec requires XeTeX/LuaTeX).
 \usepackage{iftex}
-\ifPDFTeX
-  \usepackage[utf8]{inputenc}
-  \usepackage[T1]{fontenc}
-  \usepackage{lmodern}
-\else
-  \usepackage{fontspec}
-  \newfontfamily\cjkKRfont{Apple SD Gothic Neo}  % macOS system Korean (swap to Noto Sans CJK KR on Linux/CI)
-  \newfontfamily\cjkJPfont{Hiragino Sans}        % macOS system Japanese (swap to Noto Sans CJK JP on Linux/CI)
-\fi
+\RequireXeTeX
+\usepackage{fontspec}
+\newfontfamily\cjkKRfont{Apple SD Gothic Neo}  % macOS system Korean (swap to Noto Sans CJK KR on Linux/CI)
+\newfontfamily\cjkJPfont{Hiragino Sans}        % macOS system Japanese (swap to Noto Sans CJK JP on Linux/CI)
 
 % CJK helpers — use SPARINGLY, for native company names / regulatory terms where the script itself
-% matters. Each takes the native script AND a romanization: under XeLaTeX the native script renders;
-% under pdfLaTeX (which cannot typeset CJK) the romanization is shown instead, so the manual still
-% builds either way. \krcjk{한글}{romanization} for Korean (DART), \jpcjk{日本語}{romanization} for Japanese (EDINET).
-\ifPDFTeX
-  \newcommand{\krcjk}[2]{#2}
-  \newcommand{\jpcjk}[2]{#2}
-\else
-  \newcommand{\krcjk}[2]{{\cjkKRfont #1}}
-  \newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
-\fi
+% matters. The native script (first arg) renders; the second arg is kept for a romanization gloss in
+% the source. \krcjk{한글}{romanization} for Korean (DART), \jpcjk{日本語}{romanization} for Japanese (EDINET).
+\newcommand{\krcjk}[2]{{\cjkKRfont #1}}
+\newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
 
 \usepackage[margin=1in]{geometry}
 \usepackage{microtype}
