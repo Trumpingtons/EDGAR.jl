@@ -1,0 +1,13 @@
+# Tier-2 (document-AI) Python dependencies for the PDF extractor — the MAIN approach.
+# Pinned so a reboot or a cache wipe is a non-event (re-create from these pins).
+# See docs/dev/pdf-extractor-plan.md (§3, Phase 0). Standalone-only; absent in Pollis by design.
+#
+# The venv lives OUTSIDE the repo and is the SOLE copy of the bytes (Option A — no retained uv cache):
+#   VENV=~/EDGAR-tools/tier2-venv
+#   uv venv --python 3.11 "$VENV"
+#   uv pip install --no-cache --python "$VENV/bin/python" -r requirements-tier2.txt
+#
+# Verify:  ~/EDGAR-tools/tier2-venv/bin/python -c "import docling, mineru; print('ok')"
+
+docling==2.107.0
+mineru==3.4.0

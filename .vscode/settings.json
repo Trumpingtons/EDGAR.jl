@@ -1,0 +1,22 @@
+{
+  "// note": "EDGAR.jl manual (docs/manual/EDGAR.tex) requires XeLaTeX (fontspec + CJK). These settings make LaTeX Workshop build with xelatex instead of the default pdflatex.",
+  "latex-workshop.latex.tools": [
+    {
+      "name": "xelatexmk",
+      "command": "latexmk",
+      "args": [
+        "-xelatex",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-outdir=%OUTDIR%",
+        "%DOC%"
+      ],
+      "env": {}
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    { "name": "xelatexmk", "tools": ["xelatexmk"] }
+  ],
+  "latex-workshop.latex.recipe.default": "xelatexmk"
+}

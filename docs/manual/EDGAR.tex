@@ -1,3 +1,5 @@
+% !TEX program = xelatex
+% !TEX encoding = UTF-8 Unicode
 \documentclass[11pt,a4paper]{report}
 
 % ---------------------------------------------------------------------------
@@ -131,9 +133,13 @@
 
 \begin{abstract}
 \noindent
-\texttt{EDGAR.jl} pulls company data from the U.S.\ Securities and Exchange
-Commission's \href{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}{EDGAR}
-system into Julia: a filer's \emph{submission history}, the \emph{XBRL financial facts} extracted from its filings, cross-filer \emph{frames}, with \emph{full-text search} of filing contents. 
+\texttt{EDGAR.jl} turns company filings into analysis-ready data in Julia. From the U.S.\ SEC's
+\href{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}{EDGAR} system it pulls a
+filer's \emph{submission history}, the \emph{XBRL financial facts} extracted from its filings, cross-filer
+\emph{frames}, and \emph{full-text search} of filing contents. The same jurisdiction-agnostic core reaches
+the EU (\emph{ESEF}), the UK (\emph{Companies House} and the \emph{NSM}), Japan (\emph{EDINET}) and South
+Korea (\emph{DART}); and a format-agnostic extraction axis is being extended from tagged XBRL to \emph{PDF
+reports}, so a filing's facts are recovered whether it is machine-tagged or published only as a PDF.
 \end{abstract}
 
 \tableofcontents
@@ -432,49 +438,15 @@ names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}), and \texttt{facts(f)}
 \begin{itemize}
   \item \texttt{:ixbrl} / \texttt{:xbrl} \(\rightarrow\) the \textbf{XBRL extractor} (reads inline or
     classic XBRL, resolving contexts and units). This is the path every structured filing has used so far.
-  \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor} (\texttt{extract\_pdf}), described below.
+  \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor}, described in Chapter~\ref{ch:pdf}
+    (\emph{PDF Reports}).
 \end{itemize}
 
 \noindent The key invariant: \textbf{both emit the same \texttt{FactRow}}. So the XBRL parser is
 \emph{one} extractor on this axis, not the universal core --- a point the Companies House and German
-cases force, where a large share of filings are PDF, not XBRL.
-
-\paragraph{The concept problem.} An XBRL fact carries a taxonomy \emph{concept}
-(\texttt{us-gaap:Assets}); a PDF fact carries only a line-item \emph{label} (``Total assets'',
-``Bilanzsumme''). So for PDF the \texttt{standard\_concept} (the cross-company standardiser) is the real
-bridge, and classification keys off the label rather than a concept prefix. The fact's
-\texttt{source\_selector} carries a CSS selector for HTML filings and, for PDF, the source
-\texttt{(page, bbox)} --- coordinate provenance that lets an editor back-link a number to its source
-pixel.
-
-\subsection{The PDF extractor: a tiered toolchain}
-\label{sec:pdf-tiers}
-
-PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
-no text layer at all; and layouts vary by issuer and language. The extractor is therefore \textbf{tiered}:
-
-\begin{enumerate}
-  \item[\textbf{Tier 1}] \textbf{(deterministic --- built).} \texttt{pdfjs-dist} \emph{directly} (no
-    wrapper), via a small Node helper, yields positioned words; \texttt{EDGAR.jl} then reconstructs the
-    statement geometrically --- \emph{rows} by clustering on the vertical position, \emph{columns} by the
-    numeric right-edge bands --- reads the header for period dates and the scale (£m, etc.), and emits
-    coordinate-anchored facts. The number semantics (parentheses\,=\,negative, decimal-comma, scale
-    footers) live in Julia.
-  \item[\textbf{Tier 2}] \textbf{(OCR --- planned).} \texttt{tesseract.js} turns a \emph{scanned} page
-    into a text layer the Tier-1 path can then read.
-  \item[\textbf{Tier 3}] \textbf{(LLM --- planned, optional).} An arithmetic-validated language-model
-    pass for layouts Tier 1 cannot reconstruct; off by default so the library stays deterministic and
-    offline.
-\end{enumerate}
-
-\paragraph{Toolchain decision.} The whole stack is a \textbf{single Node/TypeScript toolchain} --- no
-Python/Conda, no JVM, no GPL/AGPL. The parser is \texttt{pdfjs-dist} used \emph{directly}: Mozilla's
-upstream pdf.js (Apache-2.0), pinned to a version we choose. In a bake-off it tied the popular wrappers
-(\texttt{pdf.js-extract}, \texttt{pdfreader}) on accuracy while being faster, leaner on dependencies, and
-on the best-maintained parser (the wrappers bundle older or \emph{forked} copies). The toolchain is also
-native to the editor host (a TypeScript VS Code fork), where the same \texttt{pdf.js} can render, extract
-\emph{and} supply the coordinates that link a fact to its source. Using it needs Node and the pinned
-\texttt{pdfjs-dist} (\texttt{npm install} in \texttt{src/extractors/pdf/}).
+cases force, where a large share of filings are PDF, not XBRL. (The PDF extractor itself --- the main
+document-AI approach and its deterministic fallback --- has its own chapter, \emph{PDF Reports},
+Chapter~\ref{ch:pdf}.)
 
 \subsection{Where it plugs into the workflow}
 
@@ -489,8 +461,9 @@ Extraction is one step in the same pipeline every system follows:
 --- SEC, ESEF, Companies House, the NSM. For XBRL filings \texttt{facts(f)} ``just works''. For PDF the
 working entry today is \textbf{\texttt{extract\_pdf(path)}} on a born-digital PDF on disk; calling
 \texttt{facts(f)} on a \texttt{:pdf} \texttt{Filing} currently needs the PDF bytes, which the fetch path
-does not yet retain --- so download the document, then \texttt{extract\_pdf}. (Tier 1 covers born-digital
-financial statements; scanned and exotic layouts await Tiers 2--3.)
+does not yet retain --- so download the document, then \texttt{extract\_pdf}. (The deterministic fallback covers born-digital
+financial statements today; scanned and exotic layouts await the document-AI main path --- see
+Chapter~\ref{ch:pdf}.)
 
 \subsection{Workflow examples}
 
@@ -522,15 +495,158 @@ else                                                      # f.kind == :pdf
 end
 \end{lstlisting}
 
-\paragraph{PDF extractor (born-digital).}
+\noindent (For a born-digital PDF, the extractor call is \texttt{extract\_pdf(path)} --- see
+Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row table, so the downstream
+(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
+of which extractor produced it.
+
+% ===========================================================================
+\chapter{PDF Reports}
+\label{ch:pdf}
+
+Many regulatory filings are PDF, not XBRL --- at Companies House the format is unpredictable and much of
+the registrar is PDF, and Germany has no openly retrievable XBRL at all. The PDF extractor turns such a
+report into the \emph{same} \texttt{FactRow} row table the XBRL path produces (and, in time, the document
+family --- sections, descriptive tables and figures), so classification, \texttt{select\_statement}, the
+CSV/DuckDB exports and the validation oracles all work unchanged.
+
+\paragraph{The concept problem.} An XBRL fact carries a taxonomy \emph{concept}
+(\texttt{us-gaap:Assets}); a PDF fact carries only a line-item \emph{label} (``Total assets'',
+``Bilanzsumme''). So for PDF the \texttt{standard\_concept} (the cross-company standardiser) is the real
+bridge, and classification keys off the label rather than a concept prefix. The fact's
+\texttt{source\_selector} carries a CSS selector for HTML filings and, for PDF, the source
+\texttt{(page, bbox)} --- coordinate provenance that lets an editor back-link a number to its source pixel.
+
+\section{Two paths: document AI (main) and a deterministic fallback}
+
+PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
+no text layer at all; and layouts vary by issuer and language. \texttt{EDGAR.jl} therefore uses a
+\textbf{document-AI engine as the main approach}, and falls back to a \textbf{light deterministic path}
+when that engine is not installed:
+
+\begin{itemize}
+  \item[\textbf{Main}] \textbf{--- document AI (Docling or MinerU).} A document-structuring engine turns
+    the \emph{whole} PDF --- including scanned pages and non-Latin scripts --- into one Structured
+    Document, from which both the financial facts \emph{and} the narrative, descriptive tables and figures
+    are derived. This is the primary path; it is a heavier install (a Python stack, optionally a GPU) and
+    so is opt-in.
+  \item[\textbf{Fallback}] \textbf{--- deterministic pdf.js.} When neither Docling nor MinerU is
+    installed, a light Node\,+\,pdf.js path reconstructs the financial \emph{statements} geometrically ---
+    rows by vertical position, columns by the numeric right-edge bands --- and emits coordinate-anchored
+    facts. No Python, no GPU, no model downloads; statements-only. A graceful floor, not the main path.
+\end{itemize}
+
+\noindent Both paths emit the same \texttt{FactRow}, so everything downstream is identical regardless of
+which ran. The fallback's number semantics (parentheses\,=\,negative, decimal-comma, scale footers) are
+written in Julia and are reused to discipline the main path's output. \emph{Status:} today the
+deterministic fallback is the implemented path (\texttt{extract\_pdf}, \S\ref{sec:pdf-fallback}); the
+document-AI main path is in development.
+
+\section{The main approach: Docling versus MinerU}
+\label{sec:pdf-docai}
+
+Both engines convert a PDF into one Structured Document from which every derivation is taken; they differ
+in weight and in how they handle OCR and language (Table~\ref{tab:pdf-docai}). \texttt{EDGAR.jl} carries
+\emph{both}, so they can be compared on real filings and one selected later --- both work well in practice
+(Docling needs an OCR pass only for broken-text-layer cases such as Japanese EDINET; MinerU needs the
+document language set correctly). The stack is Python (installed via
+\texttt{PythonCall}\,+\,\texttt{CondaPkg}) and is therefore available only in the stand-alone package, not
+in the editor host.
+
+\begin{table}[h]
+\centering
+\caption{The document-AI engines: Docling and MinerU.}
+\label{tab:pdf-docai}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.37\textwidth}p{0.37\textwidth}@{}}
+\toprule
+ & \textbf{Docling} & \textbf{MinerU} \\
+\midrule
+OCR & Plugin; off for born-digital, several engines (RapidOCR favoured) & Bundled (PaddleOCR); always in the pipeline \\
+Language hint & Only when OCR runs & \texttt{pipeline} backend needs it (silent drop otherwise); VLM backend does not \\
+GPU & Not required (CPU) & \texttt{pipeline}: CPU works; VLM backend needs a GPU \\
+Footprint & Lighter (no external OCR binary via RapidOCR) & Heavier (large models; \(\sim\)20\,GB) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{OCR: a plugin in Docling, bundled in MinerU.} The two engines treat OCR differently, and this
+is what drives the install:
+\begin{itemize}
+  \item \textbf{Docling --- OCR is a plugin.} It reads the text layer first and invokes OCR only when text
+    is missing, so born-digital filings need \emph{no} OCR engine at all. When OCR is needed you choose an
+    engine --- EasyOCR, \textbf{RapidOCR}, Tesseract, or (macOS) the Vision framework. \texttt{EDGAR.jl}
+    favours \textbf{RapidOCR}: it is ONNX-based, installs with \texttt{pip} alone (\emph{no} external
+    system binary, unlike Tesseract), and is light and fast on CPU. In practice only broken-text-layer
+    filings (e.g.\ Japanese EDINET) trigger it.
+  \item \textbf{MinerU --- OCR is bundled.} OCR (PaddleOCR) is always part of the pipeline, so there is
+    nothing to choose --- but the classic \texttt{pipeline} backend needs the document \emph{language}
+    set correctly, or non-default scripts can be dropped \emph{silently}; its newer VLM backend is
+    multilingual without a hint but requires a GPU. Because \texttt{EDGAR.jl} knows each filing's
+    \texttt{FilingSystem} it largely knows the language already, so setting it is cheap.
+\end{itemize}
+
+\section{The ingestion pipeline}
+
+Whichever engine runs, the main approach produces \emph{one} Structured Document; every output family and
+every persistence target derives from it (Figure~\ref{fig:pdf-ingestion}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  node distance=8mm and 12mm,
+  box/.style={draw, rounded corners, align=center, inner sep=5pt},
+  store/.style={draw, rounded corners, align=center, inner sep=5pt, text width=4.4cm},
+  sd/.style={draw, thick, rounded corners, align=left, inner sep=6pt, text width=6.2cm},
+  arr/.style={-{Latex[length=2.2mm]}, thick},
+]
+  \node[box] (pdf) {PDF Document};
+  \node[box, below=of pdf] (parser) {Document Parser: \textbf{Docling} / \textbf{MinerU}
+    \\[1pt] {\scriptsize \texttt{pdf.js} path as the fallback}};
+  \node[sd, below=of parser] (sd) {\textbf{Structured Document}\\[2pt]
+    headings hierarchy \\ paragraphs \\ tables \\ figures \\ captions \\
+    page numbers / reading order \\ extracted document metadata};
+  \node[store, below left=12mm and -6mm of sd] (fs) {\textbf{Filesystem}
+    \\[1pt] {\scriptsize PDF / JSON / Markdown / CSV}};
+  \node[store, below right=12mm and -6mm of sd] (db) {\textbf{DuckDB Repository}
+    \\[1pt] {\scriptsize metadata \textperiodcentered\ sections \textperiodcentered\ tables
+    \textperiodcentered\ facts \textperiodcentered\ relationships}};
+  \node[box, below=34mm of sd, text width=8.2cm] (der) {\textbf{Derivations:} \;
+    \texttt{FactRow} \;+\; \texttt{Selection} / \texttt{SelectionTable} / \texttt{sections} / \texttt{figure}};
+
+  \draw[arr] (pdf) -- (parser);
+  \draw[arr] (parser) -- (sd);
+  \draw[arr] (sd.south) -- node[pos=0.4, fill=white, inner sep=1pt] {\scriptsize persist} (fs.north);
+  \draw[arr] (sd.south) -- (db.north);
+  \draw[arr] (fs.south) -- (der.north);
+  \draw[arr] (db.south) -- (der.north);
+\end{tikzpicture}
+\caption{The document-AI ingestion pipeline: one Structured Document, persisted to the filesystem and a
+DuckDB repository, feeding both output families (the main approach; in development). The extracted document
+metadata is the source (FilingSystem / URL), language, company, report type, fiscal year, and additional
+fields.}
+\label{fig:pdf-ingestion}
+\end{figure}
+
+\section{The deterministic fallback}
+\label{sec:pdf-fallback}
+
+When the document-AI stack is absent, the fallback runs: a \textbf{single Node/TypeScript toolchain} ---
+no Python/Conda, no JVM, no GPL/AGPL. The parser is \texttt{pdfjs-dist} used \emph{directly}: Mozilla's
+upstream pdf.js (Apache-2.0), pinned to a version we choose. In a bake-off it tied the popular wrappers
+(\texttt{pdf.js-extract}, \texttt{pdfreader}) on accuracy while being faster, leaner on dependencies, and
+on the best-maintained parser (the wrappers bundle older or \emph{forked} copies). It is also native to
+the editor host (a TypeScript VS Code fork), where the same \texttt{pdf.js} can render, extract \emph{and}
+supply the coordinates that link a fact to its source. Using it needs Node and the pinned
+\texttt{pdfjs-dist} (\texttt{npm install} in \texttt{src/extractors/pdf/}). It is the entry point that
+works today --- \texttt{extract\_pdf(path)} on a born-digital PDF returns a \texttt{Vector\{FactRow\}},
+exactly like \texttt{facts(f)}:
+
 \begin{lstlisting}
 rows = extract_pdf("annual_report.pdf"; page = 133)      # a Vector{FactRow}, like facts(f)
 select_statement(rows, "BalanceSheet")                   # every fact coordinate-anchored
 \end{lstlisting}
-
-\noindent In every case the result is the same \texttt{FactRow} row table, so the downstream
-(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
-of which extractor produced it.
 
 % ===========================================================================
 \chapter{Common API}
@@ -1792,6 +1908,103 @@ and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQ
 these would only add dependencies for no gain.
 
 
+\section{PDF documents}
+\label{sec:api-pdf}
+
+Turning a PDF report into the structured \emph{document family} (sections, prose, tables, figures) is the
+document-first path of Chapter~\ref{ch:pdf}. It is the \textbf{main approach} (a document-AI engine,
+Docling, driven in-process via PythonCall) and is an \textbf{optional} capability: the functions below gain
+their methods only after \texttt{using PythonCall}, with the Tier-2 virtual environment (where Docling is
+installed) on \texttt{JULIA\_PYTHONCALL\_EXE}. Without it they raise a message telling you to load it.
+
+\begin{lstlisting}[style=term]
+% point PythonCall at the Tier-2 venv (Docling installed), then launch Julia
+% export JULIA_CONDAPKG_BACKEND=Null
+% export JULIA_PYTHONCALL_EXE=~/EDGAR-tools/tier2-venv/bin/python
+\end{lstlisting}
+
+\subsection{\texttt{structured\_document}}
+
+\begin{center}
+\textbf{\sig{structured\_document(pdf\_path; pages=nothing, ocr=false, doc\_id=<stem>,
+jurisdiction=nothing, language=nothing, company=nothing, report\_type=nothing, fiscal\_year=nothing,
+currency=nothing, framework=nothing) -> StructuredDocument}}
+\end{center}
+
+\noindent Parse a born-digital PDF into a \texttt{StructuredDocument} --- an ordered set of
+\textbf{sections} (heading tree), \textbf{text blocks} (prose), \textbf{tables} (with their cells) and
+\textbf{figures}, each carrying \texttt{(page, bbox)} provenance and a global reading-order index, plus
+document metadata. The original language is stored verbatim. \texttt{pages} is an optional 1-based
+\texttt{(first, last)} range; \texttt{ocr} turns on OCR (needed only for a broken text layer, e.g.\
+Japanese EDINET); the metadata keywords seed fields a per-jurisdiction profile would otherwise fill.
+Statement classification (\emph{which} table is the balance sheet) is a later, separate step --- the parser
+emits structure only.
+
+\begin{lstlisting}
+julia> using EDGAR, PythonCall
+julia> sd = structured_document("UK-TescoFR2024.pdf"; jurisdiction = "GB", language = "en",
+                                framework = "IFRS", fiscal_year = 2024)
+StructuredDocument(UK-TescoFR2024: 9 sections, 25 text, 6 tables, 2 figures)
+\end{lstlisting}
+
+\subsection{\texttt{persist\_document}}
+
+\begin{center}
+\textbf{\sig{persist\_document(sd::StructuredDocument; root="\textasciitilde/RegulatoryReports") -> String}}
+\end{center}
+
+\noindent Write the document family to the filesystem under \texttt{root/derived/<doc\_id>/}:
+\texttt{structured.json} (the canonical record), \texttt{document.md} (a Markdown render), and
+\texttt{tables/<id>.csv} per table. Returns the derived-folder path. (Loading the repository DuckDB is a
+separate step; see the schema design in \texttt{docs/dev/pdf-repository-schema.md}.)
+
+\begin{lstlisting}
+julia> persist_document(sd)
+"/Users/you/RegulatoryReports/derived/UK-TescoFR2024"
+\end{lstlisting}
+
+\subsection{\texttt{markdown}, \texttt{write\_structured\_document}}
+
+\noindent \texttt{markdown(sd::StructuredDocument)} renders the document (headings, prose, pipe tables) in
+reading order --- the human/RAG view. \texttt{write\_structured\_document(sd, path)} writes just the
+canonical JSON to a chosen path, and \texttt{read\_structured\_document(path)} reads it back into a
+\texttt{StructuredDocument} (so the repository loader below can run from persisted JSON, without
+re-parsing the PDF and without PythonCall).
+
+\subsection{\texttt{to\_repository}}
+
+\begin{center}
+\textbf{\sig{to\_repository(sd\_or\_json\_path, db="\textasciitilde/RegulatoryReports/regulatory-reports.duckdb")
+-> NamedTuple}}
+\end{center}
+
+\noindent Load a \texttt{StructuredDocument} (or a \texttt{structured.json} path) into the DuckDB
+\textbf{document repository}: the tables \texttt{documents}, \texttt{sections}, \texttt{text\_blocks},
+\texttt{tables}, \texttt{table\_cells}, \texttt{figures} (plus \texttt{translations} and a \texttt{facts}
+stub), and the referencing \emph{views} \texttt{v\_cell\_context}, \texttt{v\_section\_path} and
+\texttt{v\_fact\_provenance}. The load is \textbf{idempotent} per \texttt{doc\_id} (re-loading replaces the
+document's rows), and returns the inserted row counts. One DuckDB file indexes every report, so SQL and
+full-text search (DuckDB's FTS over \texttt{text\_blocks}) work across the whole corpus. The full schema is
+in \texttt{docs/dev/pdf-repository-schema.md}. \textbf{Available only after \texttt{using DuckDB}} (package
+extension).
+
+\begin{lstlisting}
+julia> using EDGAR, DuckDB
+julia> to_repository(sd)                       # or: to_repository("…/structured.json", db)
+(sections = 9, text_blocks = 25, tables = 6, table_cells = 1121, figures = 2)
+\end{lstlisting}
+
+\noindent The views answer ``where does this number come from?'' directly --- every cell/fact traces to
+its table and section/subsection:
+
+\begin{lstlisting}
+julia> using DuckDB: DBInterface
+julia> con = DBInterface.connect(DuckDB.DB, expanduser("~/RegulatoryReports/regulatory-reports.duckdb"));
+julia> DBInterface.execute(con,
+           "SELECT section_id, page FROM v_cell_context WHERE text = '11,671'")
+# → ("UK-TescoFR2024:s7", 133)   -- the Group balance sheet
+\end{lstlisting}
+
 \section{Financial Data (XBRL)}
 \label{sec:api-xbrl}
 
@@ -2399,6 +2612,80 @@ produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and ste
 \bottomrule
 \end{tabular}
 \end{table}
+
+\section{Germany}
+\label{sec:esef-germany}
+
+German listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL,
+discoverable like any other ESEF filer (this chapter). But Germany is also the clearest case for the PDF
+route (Chapter~\ref{ch:pdf}): the \emph{Bundesanzeiger}'s XBRL is not openly retrievable, and a large
+share of German accounts --- single-entity statutory accounts in particular --- are published only as
+PDF. The notes below record the German particularities the extractor must handle; they were verified
+against real reports during testing.
+
+\subsection{Two accounting flavours: HGB and IFRS}
+
+\begin{itemize}
+  \item \textbf{HGB} (\emph{Handelsgesetzbuch}, the German commercial code) --- German GAAP, used for the
+    \emph{single-entity} statutory accounts (\emph{Jahresabschluss}). Structure: a two-sided \emph{Bilanz}
+    (\emph{Aktiva}\,/\,\emph{Passiva}), the \emph{Gewinn- und Verlustrechnung} (\emph{GuV}), the
+    \emph{Anhang} (notes) and \emph{Lagebericht} (management report). Filed at the \emph{Bundesanzeiger};
+    typically PDF.
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{Konzernabschluss}):
+    \emph{Konzernbilanz}, \emph{Konzern-Gewinn- und Verlustrechnung}, etc. For regulated-market issuers
+    this is the ESEF-tagged report, reachable as iXBRL via filings.xbrl.org; otherwise it too is often
+    only PDF.
+\end{itemize}
+
+\noindent A single German company can therefore present \emph{both}: a consolidated IFRS report (possibly
+ESEF) and a statutory HGB single-entity account (usually PDF).
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{German statement vocabulary (what to match in a German report).}
+\label{tab:de-vocab}
+\small
+\begin{tabular}{@{}p{0.46\textwidth}p{0.48\textwidth}@{}}
+\toprule
+\textbf{German} & \textbf{Meaning} \\
+\midrule
+\emph{Bilanz} & Balance sheet \\
+\emph{Aktiva} / \emph{Passiva} & Assets side / equity-and-liabilities side (HGB, two-sided) \\
+\emph{Vermögenswerte} / \emph{Eigenkapital und Schulden} & Assets / equity and liabilities (IFRS) \\
+\emph{Gewinn- und Verlustrechnung} (\emph{GuV}) & Income statement \\
+\emph{Kapitalflussrechnung} & Cash-flow statement \\
+\emph{Anhang} & Notes to the accounts \\
+\emph{Lagebericht} & Management report \\
+\emph{Bilanzsumme} & Balance-sheet total (equal on both sides) \\
+\emph{Summe Aktiva} / \emph{Summe Passiva} & Total assets / total equity \(+\) liabilities \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{Number locale.} The dot is the \emph{thousands} separator and the comma the \emph{decimal}:
+    \texttt{1.986.546} means 1{,}986{,}546 and \texttt{197,5} means 197.5. Scale markers: \emph{TEUR} /
+    \emph{T€} (thousand euro), \emph{Mio.\ €} / \emph{Mio EUR} (million euro). (Reuse the existing
+    decimal-comma logic from the XBRL extractor.)
+  \item \textbf{Unlabeled totals.} In IFRS German statements the balance-sheet total row is frequently
+    \emph{unlabeled} --- a bare sum line with no ``\emph{Summe}''/``\emph{Bilanzsumme}'' text. Detect it
+    structurally (sum of the sections), not by its label.
+  \item \textbf{Ambiguous ``Summe Aktiva/Passiva''.} The very same words also label the IFRS-9
+    financial-instrument category note (carrying amounts by \emph{AC}\,/\,\emph{FVtPL}\,/\,\emph{FLAC})
+    --- which is \emph{not} the balance sheet. Locate the statement by its heading/section, not by a bare
+    total label.
+  \item \textbf{Two-sided and multi-page.} The \emph{Aktiva} and \emph{Passiva} sides are often on
+    separate pages, so a balance sheet may span two pages and must be stitched. The \emph{Bilanzsumme}
+    appears equal on both sides --- a built-in cross-foot.
+\end{itemize}
+
+\noindent These were confirmed end-to-end from PDF, without OCR: a HGB \emph{Jahresabschluss}
+(\emph{Bilanzsumme} 197.754~Mio~€, \emph{Aktiva} = \emph{Passiva}) and an IFRS \emph{Konzernbilanz}
+(total 1.986.546~T€, assets = equity \(+\) liabilities) both extracted and cross-footed correctly.
 
 \chapter{UK filing systems}
 \label{sys:uk}

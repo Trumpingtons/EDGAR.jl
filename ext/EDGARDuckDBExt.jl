@@ -285,4 +285,144 @@ function EDGAR.statement_view(path::AbstractString; table::AbstractString="facts
     end
 end
 
+# ── Document repository (the document-first PDF pipeline) ───────────────────────────────────────
+# Loads a StructuredDocument into the repository DB (docs/dev/pdf-repository-schema.md): documents /
+# sections / text_blocks / tables / table_cells / figures (+ translations & facts stubs) and the
+# referencing views. `bbox` is stored as JSON text (VARCHAR); `"tables"`, `"row"`, `"col"` are quoted
+# (reserved-word-safe). SEPARATE DB file from the facts warehouse above (default
+# `~/RegulatoryReports/regulatory-reports.duckdb`), so the differently-shaped `documents` table never clashes.
+const _REPO_DDL = [
+  """CREATE TABLE IF NOT EXISTS documents (doc_id VARCHAR PRIMARY KEY, source_path VARCHAR,
+     jurisdiction VARCHAR, filing_system VARCHAR, language VARCHAR, company VARCHAR, report_type VARCHAR,
+     fiscal_year INTEGER, currency VARCHAR, framework VARCHAR, n_pages INTEGER, parser VARCHAR,
+     parser_version VARCHAR, ocr BOOLEAN, ingested_at TIMESTAMP)""",
+  """CREATE TABLE IF NOT EXISTS sections (section_id VARCHAR PRIMARY KEY, doc_id VARCHAR,
+     parent_id VARCHAR, level INTEGER, title VARCHAR, lang VARCHAR, ord INTEGER, page_start INTEGER,
+     page_end INTEGER, bbox VARCHAR)""",
+  """CREATE TABLE IF NOT EXISTS text_blocks (block_id VARCHAR PRIMARY KEY, doc_id VARCHAR,
+     section_id VARCHAR, ord INTEGER, kind VARCHAR, text VARCHAR, lang VARCHAR, page INTEGER,
+     bbox VARCHAR, char_len INTEGER)""",
+  """CREATE TABLE IF NOT EXISTS "tables" (table_id VARCHAR PRIMARY KEY, doc_id VARCHAR,
+     section_id VARCHAR, ord INTEGER, kind VARCHAR, statement_type VARCHAR, caption VARCHAR,
+     lang VARCHAR, page_start INTEGER, page_end INTEGER, bbox VARCHAR, n_rows INTEGER, n_cols INTEGER,
+     csv_path VARCHAR)""",
+  """CREATE TABLE IF NOT EXISTS table_cells (table_id VARCHAR, "row" INTEGER, "col" INTEGER,
+     rowspan INTEGER, colspan INTEGER, is_header BOOLEAN, text VARCHAR,
+     PRIMARY KEY (table_id, "row", "col"))""",
+  """CREATE TABLE IF NOT EXISTS figures (figure_id VARCHAR PRIMARY KEY, doc_id VARCHAR,
+     section_id VARCHAR, ord INTEGER, caption VARCHAR, page INTEGER, bbox VARCHAR, image_path VARCHAR,
+     image_format VARCHAR, width INTEGER, height INTEGER)""",
+  """CREATE TABLE IF NOT EXISTS translations (object_type VARCHAR, object_id VARCHAR,
+     target_lang VARCHAR, text VARCHAR, source VARCHAR, model VARCHAR, created_at TIMESTAMP,
+     PRIMARY KEY (object_type, object_id, target_lang))""",
+  """CREATE TABLE IF NOT EXISTS facts (fact_id VARCHAR PRIMARY KEY, doc_id VARCHAR, table_id VARCHAR,
+     "row" INTEGER, "col" INTEGER, section_id VARCHAR, statement_type VARCHAR, label VARCHAR,
+     concept VARCHAR, standard_concept VARCHAR, period_start DATE, period_end DATE, is_instant BOOLEAN,
+     value DOUBLE, unit VARCHAR, scale DOUBLE, sign INTEGER, decimals INTEGER, extractor VARCHAR,
+     confidence DOUBLE, bbox VARCHAR)""",
+]
+const _REPO_VIEWS = [
+  """CREATE OR REPLACE VIEW v_cell_context AS
+     SELECT c.table_id, c."row", c."col", c.is_header, c.text, t.doc_id, t.section_id,
+            t.kind AS table_kind, t.statement_type, t.page_start AS page
+     FROM table_cells c JOIN "tables" t USING (table_id)""",
+  """CREATE OR REPLACE VIEW v_section_path AS
+     WITH RECURSIVE p(section_id, doc_id, path) AS (
+       SELECT section_id, doc_id, title FROM sections WHERE parent_id IS NULL
+       UNION ALL
+       SELECT s.section_id, s.doc_id, p.path || ' > ' || s.title
+       FROM sections s JOIN p ON s.parent_id = p.section_id)
+     SELECT section_id, doc_id, path FROM p""",
+  """CREATE OR REPLACE VIEW v_fact_provenance AS
+     SELECT f.fact_id, f.doc_id, f.label, f.value, f.statement_type, f.table_id, f."row", f."col",
+            f.section_id, sp.path AS section_path, f.bbox
+     FROM facts f LEFT JOIN v_section_path sp USING (section_id)""",
+]
+
+_n(x) = x === nothing ? missing : x
+_bj(::Nothing) = missing
+_bj(b::EDGAR.BBox) = string("{\"page\":", b.page, ",\"x0\":", b.x0, ",\"y0\":", b.y0,
+                            ",\"x1\":", b.x1, ",\"y1\":", b.y1, "}")
+_csvpath(table_id) = string("tables/", split(table_id, ":")[end], ".csv")
+
+function _ensure_repo(con)
+    for ddl in _REPO_DDL
+        DBInterface.execute(con, ddl)
+    end
+    for v in _REPO_VIEWS
+        DBInterface.execute(con, v)
+    end
+end
+
+function _load_doc!(con, sd::EDGAR.StructuredDocument)
+    doc = sd.document.doc_id
+    DBInterface.execute(con, "BEGIN TRANSACTION")
+    try
+        DBInterface.execute(con,
+            "DELETE FROM table_cells WHERE table_id IN (SELECT table_id FROM \"tables\" WHERE doc_id = ?)", (doc,))
+        for t in ("facts", "figures", "\"tables\"", "text_blocks", "sections", "documents")
+            DBInterface.execute(con, "DELETE FROM $t WHERE doc_id = ?", (doc,))
+        end
+        m = sd.document
+        DBInterface.execute(con, "INSERT INTO documents VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (m.doc_id, m.source_path, _n(m.jurisdiction), _n(m.filing_system), _n(m.language),
+             _n(m.company), _n(m.report_type), _n(m.fiscal_year), _n(m.currency), _n(m.framework),
+             m.n_pages, m.parser, m.parser_version, m.ocr, Dates.now()))
+        ss = DBInterface.prepare(con, "INSERT INTO sections VALUES (?,?,?,?,?,?,?,?,?,?)")
+        for s in sd.sections
+            DBInterface.execute(ss, (s.section_id, doc, _n(s.parent_id), s.level, s.title, s.lang,
+                s.ord, s.page_start, s.page_end, _bj(s.bbox)))
+        end
+        DBInterface.close!(ss)
+        tx = DBInterface.prepare(con, "INSERT INTO text_blocks VALUES (?,?,?,?,?,?,?,?,?,?)")
+        for t in sd.text_blocks
+            DBInterface.execute(tx, (t.block_id, doc, _n(t.section_id), t.ord, t.kind, t.text, t.lang,
+                t.page, _bj(t.bbox), t.char_len))
+        end
+        DBInterface.close!(tx)
+        tb = DBInterface.prepare(con, "INSERT INTO \"tables\" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        cc = DBInterface.prepare(con, "INSERT INTO table_cells VALUES (?,?,?,?,?,?,?)")
+        ncells = 0
+        for t in sd.tables
+            DBInterface.execute(tb, (t.table_id, doc, _n(t.section_id), t.ord, t.kind,
+                _n(t.statement_type), _n(t.caption), t.lang, t.page_start, t.page_end, _bj(t.bbox),
+                t.n_rows, t.n_cols, _csvpath(t.table_id)))
+            for c in t.cells
+                DBInterface.execute(cc, (t.table_id, c.row, c.col, c.rowspan, c.colspan, c.is_header, c.text))
+                ncells += 1
+            end
+        end
+        DBInterface.close!(tb); DBInterface.close!(cc)
+        fg = DBInterface.prepare(con, "INSERT INTO figures VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        for f in sd.figures
+            DBInterface.execute(fg, (f.figure_id, doc, _n(f.section_id), f.ord, _n(f.caption), f.page,
+                _bj(f.bbox), _n(f.image_path), _n(f.image_format), _n(f.width), _n(f.height)))
+        end
+        DBInterface.close!(fg)
+        DBInterface.execute(con, "COMMIT")
+        return (sections = length(sd.sections), text_blocks = length(sd.text_blocks),
+                tables = length(sd.tables), table_cells = ncells, figures = length(sd.figures))
+    catch e
+        DBInterface.execute(con, "ROLLBACK")
+        rethrow(e)
+    end
+end
+
+EDGAR.to_repository(sd::EDGAR.StructuredDocument, con::DuckDB.DB) = (_ensure_repo(con); _load_doc!(con, sd))
+
+function EDGAR.to_repository(sd::EDGAR.StructuredDocument,
+        db::AbstractString = joinpath(expanduser("~/RegulatoryReports"), "regulatory-reports.duckdb"))
+    mkpath(dirname(db))
+    con = DBInterface.connect(DuckDB.DB, db)
+    try
+        return EDGAR.to_repository(sd, con)
+    finally
+        DBInterface.close!(con)
+    end
+end
+
+# Convenience: load straight from a persisted structured.json (no PythonCall needed).
+EDGAR.to_repository(path::AbstractString, db::AbstractString) =
+    EDGAR.to_repository(EDGAR.read_structured_document(path), db)
+
 end # module

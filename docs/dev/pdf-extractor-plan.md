@@ -1,215 +1,218 @@
-# Plan — a PDF extractor for EDGAR.jl ("CH II", and the Format/extraction axis)
+# Plan — PDF as a first-class Filing ("CH II", the Format/extraction axis)
 
 Status: **draft / living document** (expect iteration). This is the plan the Companies House plan
 ([companies-house-plan.md](companies-house-plan.md)) deferred as **"CH II"** — the second extractor on
-the **Format / extraction** axis. It follows the same governing principle:
+the **Format / extraction** axis (FilingSystem × Taxonomy × **Format**). It follows the same governing
+principle:
+
+> **STATUS (2026-06-29) — the parser is no longer a risk; reframe to document-first.**
+> **Parser settled:** Docling (no OCR) was validated across **EN** (Tesco) + **CN×3** (Moutai/Vanke/
+> Wuliangye) + **KR** (Samsung) + **RU** (Lukoil) + **DE×2** (Fielmann IFRS, VW HGB) — it recovers text,
+> section hierarchy, *and* statement tables that cross-foot. **OCR is only needed for Japan EDINET**
+> (broken/CID text layer). The toolchain question is closed.
+> **Reframe:** this is a **document** process. `FactRow` is at most **one later derivation**, not the lead
+> deliverable (and possibly not the right lens at all). The questions to settle *first* are **(a)** which
+> document **components** to separate & save, **(b)** whether the process is **general or
+> jurisdiction-specific**, and **(c)** the **DuckDB schema + filesystem persistence** for text segments,
+> tables and figures. These are worked in §1a below; the older FactRow-as-gate framing (Phase 1) is
+> demoted accordingly.
 
 > **Generalize the nouns, not the verbs.** The `Filing.kind == :pdf` outcome already exists as a typed,
 > non-fatal result; this plan makes that outcome *parseable*. PDF is a new **extractor**, not a new
-> system — it slots beside `extract_xbrl.jl` on the third axis (FilingSystem × Taxonomy × **Format**).
+> system — it slots beside `extract_xbrl.jl`.
 
 ### Why this is the highest-leverage next feature
 
-- It **unblocks work already built.** CH and the NSM source are done but cover only the machine-readable
-  minority of real filings: at CH the format is unpredictable and much of the registrar is PDF; on the
-  NSM most AFRs are PDF/xHTML and `discover` currently returns *empty* for them. PDF is what makes the UK
-  adapters cover the actual population.
-- It is the **only path to entire jurisdictions.** **Germany** has no openly retrievable XBRL
-  (absent from filings.xbrl.org; Bundesanzeiger OAM XBRL not open) — German annual reports are PDF. No
-  PDF extractor ⇒ no German firms (beyond a few Yahoo/AlphaVantage totals).
-- One extractor, **many consumers:** CH PDFs, NSM PDF + Untagged-xHTML, German filings, and SEC PDF
-  exhibits all reuse it.
-
-### Output contract (the invariant that keeps everything downstream working)
-
-The PDF extractor MUST emit the **same `FactRow` row table** (`core/types.jl`) that `facts()` returns
-for XBRL. The Format axis changes *how facts are recovered from the bytes*, not the `Fact` model. So a
-`:pdf` `Filing` becomes a first-class citizen: `facts(f)`, `select_statement`, `markdown`, the CSV/
-DuckDB export, and the validation oracles all work unchanged.
-
-Consequence — **the concept problem.** XBRL facts carry a taxonomy concept (`us-gaap:Assets`); PDF facts
-carry only a **line-item label** ("Total assets", "Bilanzsumme"). So:
-- `concept` is synthesized (e.g. a normalized label key), and **`standard_concept` (the W4 standardizer)
-  becomes the real cross-filing bridge** — classification/comparison key off the label, not a prefix.
-- The classify engine already has label/role-name patterns; PDF leans on those rather than concept
-  prefixes. This is the one place the extractor touches shared code — confirm the classify path works
-  label-first before scaling.
-- **`source_selector` carries `(page, bbox)` for PDF** (it holds an HTML/CSS selector for HTML filings) —
-  the coordinate provenance that lets the Pollis workbench back-link a fact to its source pixel (P1.5;
-  [pollis-workbench-vision.md](pollis-workbench-vision.md)).
+- It **unblocks work already built.** CH and the NSM source cover only the machine-readable minority of
+  real filings: at CH the format is unpredictable and much of the registrar is PDF; on the NSM most AFRs
+  are PDF/xHTML and `discover` currently returns *empty* for them. PDF is what makes the UK adapters
+  cover the actual population.
+- It is the **only path to entire jurisdictions.** **Germany** has no openly retrievable XBRL — German
+  annual reports are PDF. No PDF extractor ⇒ no German firms. China/India are the same shape (no open
+  XBRL, non-Latin) — the medium-term selling point.
+- One extractor, **many consumers:** CH PDFs, NSM PDF + Untagged-xHTML, German filings, SEC PDF exhibits.
 
 ---
 
-## 1. Architecture — a tiered extractor, deterministic-first
+## 1. Goal & principle — one substrate, several derivations
 
-> **STRATEGIC PIVOT (2026-06) — vision-LLM-primary; the 3-tier "deterministic-first" model below is
-> superseded.** The P3 twin-validation harness measured the hand-rolled deterministic extractor at only
-> ~44% recall on Tesco and ~16% on Vodafone, and *layout-fragile* (Vodafone's landscape, wide,
-> many-column, period-as-row, €-denominated statements collapse it; a parameter fix barely moved it).
-> Making born-digital geometry robust across portrait/landscape × few/many columns × period-as-row ×
-> multi-currency × multi-language is an open-ended rabbit hole that yields mediocre numbers — which would
-> *poison* the analysis EDGAR.jl exists for. PDF extraction is a **means, not the end**: use the best
-> available tool. For messy, multilingual, often-scanned financial PDFs that is a **vision LLM**, not a
-> rule-based library (Camelot/pdfplumber are Python+Conda+GPL, weak on borderless tables, and no help on
-> scanned/CJK). **The revised architecture is two paths + a gate:**
->
-> 1. **Primary — vision LLM** on the ~3–5 statement pages (found by heading search), as **images**, →
->    structured `{label, period, value}`. One path covers born-digital + **scanned** (OCR is implicit) +
->    messy + multilingual/CJK.
-> 2. **Cheap cross-check — deterministic pdf.js** (the extractor below), *only* where a text layer exists
->    (clean born-digital). Where it and the LLM agree, the fact is high-confidence for free.
-> 3. **Validation gate** — cross-footing + the iXBRL twin oracle + a **confidence/validation status on
->    every fact**, so nothing unverified reaches analysis (scanned facts are LLM-only + arithmetic-validated;
->    born-digital can be LLM+pdf.js-corroborated).
->
-> **OCR is no longer a primary tier** — the vision LLM reads scanned pages directly (OCR implicit) and does
-> it better than tesseract on tables/numbers/non-Latin. But `tesseract.js` is **not discarded**: it is
-> demoted to an **optional, later cross-check for *scanned* facts** — the scanned-page analog of the pdf.js
-> cross-check for born-digital. That makes the architecture symmetric: each LLM extraction can be
-> corroborated by a cheap independent second opinion (pdf.js when there's a text layer, tesseract OCR when
-> there isn't), raising confidence where they agree. The deterministic path described below survives as the
-> born-digital cross-check, not the primary.
+**Goal.** A `:pdf` `Filing` produces *both* output families EDGAR.jl already has — `Fact`/`FactRow`
+**and** the document family `Selection` / `SelectionTable` / `sections` — derived from one shared
+**Structured Document**. The `FactRow` derivation goes first and is measured against the dual-format AFR
+oracle.
+
+**Principle.** One substrate, several derivations. **Don't overload `FactRow`.** Reuse the existing
+document contracts; the only genuinely new type is `figure`.
+
+### Output contract (the invariant that keeps everything downstream working)
+
+The PDF extractor MUST emit the **same `FactRow` row table** (`core/types.jl`) that `facts()` returns for
+XBRL. The Format axis changes *how facts are recovered from the bytes*, not the `Fact` model. So a `:pdf`
+`Filing` becomes first-class: `facts(f)`, `select_statement`, `markdown`, CSV/DuckDB export, and the
+validation oracles all work unchanged.
+
+Consequence — **the concept problem.** XBRL facts carry a taxonomy concept (`us-gaap:Assets`); PDF facts
+carry only a **line-item label** ("Total assets", "Bilanzsumme"). So `concept` is synthesized (a
+normalized label key) and **`standard_concept` (the W4 standardizer) becomes the real cross-filing
+bridge**; the classify engine keys off the label, not a prefix (confirm label-first in Phase 1.4).
+**`source_selector` carries `(page, bbox)` for PDF** — the coordinate provenance that lets the Pollis
+workbench back-link a fact to its source pixel.
+
+---
+
+## 1a. Document-first design — components, generality, persistence
+
+> **The concrete schemas (StructuredDocument JSON + DuckDB DDL + filesystem layout) are drafted in
+> [pdf-repository-schema.md](pdf-repository-schema.md) — review there.** This section is the rationale.
+
+With the parser settled, the design to nail *before* writing extraction code is the **document** model,
+not facts. Three questions:
+
+**(a) Which components do we separate and save?** First-class objects (each with **page + bbox**
+provenance and reading order):
+- **document metadata** — source/jurisdiction, language, company, report type, fiscal year, currency,
+  accounting framework (HGB/IFRS/…);
+- **section/heading hierarchy** — the outline; the backbone that lets us locate "the balance sheet" / "the
+  auditor's report" / "MD&A";
+- **text segments (paragraphs)** — narrative prose under each section (feeds RAG, `find_paragraphs`,
+  `extract_section`);
+- **tables** — split into **statement** tables (BS/IS/CF/equity) vs **descriptive/note** tables; cells +
+  caption;
+- **figures** — image bytes + caption (the one genuinely new type);
+- (captions/footnotes attach to their table/figure/section).
+Facts are **not** a component — they are a *derived view* over statement tables, produced later if at all.
+
+**(b) General or jurisdiction-specific?** **General decomposition + persistence; jurisdiction-specific
+semantics.** Docling decomposes any report language-agnostically (proven over 6 languages). What varies is
+the *interpretation*: statement identification + vocabulary (Bilanz / Balance sheet / 资产负债表), number
+locale (decimal-comma, TEUR/Mio./千元), section taxonomy (Lagebericht ↔ MD&A ↔ 管理层讨论与分析),
+unlabeled-total detection. Put those in a small **per-jurisdiction profile** keyed off the `FilingSystem`
+(which already implies the language) — "generalize the nouns, not the verbs." The DuckDB schema stays
+**jurisdiction-agnostic**; jurisdiction is a column that *drives* the profile.
+
+**(c) Persistence — filesystem + DuckDB.** Filesystem under **`~/RegulatoryReports/`** (a fresh repository
+built from scratch; the legacy `~/EDGAR-Reports/` test stash is kept untouched and is *not* the repository):
+the original PDF at the root, and a per-document `derived/<doc_id>/` folder holding `structured.json` (the
+canonical StructuredDocument = system of record), `document.md` (render for reading/RAG), `tables/<id>.csv`,
+`figures/<id>.png`. One **repository `.duckdb`** indexes all documents relationally:
+- `documents`, `sections` (self-referential tree), `text_blocks`, `tables` (+ `kind`/`statement_type`),
+  `table_cells`, `figures` — the document family;
+- `facts` — *one more, later* table (the FactRow derivation), not the foundation.
+Reuse existing contracts: `sections`/text → `sections`/`Selection(:prose)`; tables → `SelectionTable`;
+figures → new `figure` type; facts → `Fact`/`FactRow`.
+
+**DECIDED (2026-06-29):** (a) save **all** of {sections, text, tables, figures}; (b) **general + profile**;
+(c) **one repository `.duckdb`** with **normalized `table_cells`**.
+
+**Build order (DECIDED 2026-06-29):**
+1. **Document repository** — components persisted (sections/text/tables/figures). **SQL queries and
+   full-text search come for free** here (it *is* a DuckDB DB; FTS over `text_blocks`) — an early win, not
+   a later phase.
+2. **Facts / numbers** — statement tables → `Fact`/`FactRow`, validated against the iXBRL twin oracle.
+3. **Semantic RAG/Q&A** — embeddings → vector search → an LLM query agent over prose *and* tables (local
+   LLM default, Claude opt-in). The heaviest/fuzziest piece; last.
+
+This **reorders the older phases**: the document family moves *ahead* of facts (was Phase 3 → now first;
+FactRow was Phase 1 → now second).
+
+**(d) Language — store the ORIGINAL, translate later (DECIDED).** The canonical store is the **original
+language** (Mandarin / Japanese / Russian / German), verbatim — `structured.json` + the DB are the source
+of truth, never lossy. **Translation is a separate derived layer**, never done at ingestion. Two distinct
+needs:
+- **Accounting labels** — (i) *semantic normalization* to a canonical concept (`Bilanzsumme` / `资产总计`
+  → concept) via the existing `standardize`/W4 + taxonomy vocabs, extended with multilingual label
+  synonyms in the per-jurisdiction profile; (ii) *display translation* via a precomputed dictionary. Both
+  **deterministic, no LLM, cheap.**
+- **Free text (prose)** — needs an **LLM**, so **deferred**: store original now; add translations later as
+  a pass defaulting to the **local LLM**, opt-in to a frontier model (**Claude**) for best quality.
+- *Schema:* a `lang` column on `sections`/`text_blocks`, plus a generic
+  `translations(object_type, object_id, target_lang, text, source[dict|local-llm|cloud-llm], model,
+  created_at)` — so the original always remains and translations layer on top, on demand.
+
+---
+
+## 2. Tiering — resolves the install tension (roadmap goal 4)
 
 PDF financial extraction = **table reconstruction + financial-number semantics**. The library is only
-the easier half (positioned glyphs); the **financial-semantics layer is the moat** and is written in
-Julia regardless of base library.
+the easier half (positioned glyphs / cells); the **financial-semantics layer is the moat** and is
+written in Julia regardless of the base tool. Two deployment targets bind the toolchain: EDGAR.jl must
+run **standalone (a plain Julia package)** *and* **embedded in Pollis (a TypeScript/Electron VS Code
+fork)**.
 
-- **Deterministic path (cross-check; built).** Born-digital text-layer → words-with-bboxes → cluster into
-  line-item rows × period columns → parse numbers. Explainable, reproducible, offline — but **layout-fragile**
-  (see the pivot above); kept as the cheap agreement check for clean born-digital pages, not the primary.
-- **Vision-LLM path (primary; next to build).** The statement pages as images → structured facts;
-  subsumes OCR (scanned) and handles arbitrary layouts and languages. Always routed through the
-  validation gate.
+- **Tier-2 — the MAIN approach** (heavier install, opt-in). Docling/MinerU + a local LLM: full document +
+  far better concept mapping. This is the primary path. Standalone-only (Python via
+  `PythonCall`+`CondaPkg`); **absent in Pollis by design**.
+- **Tier-1 — the FALLBACK** (light install, the graceful floor). The existing [../../src/extractors/pdf.jl](../../src/extractors/pdf.jl):
+  Node + pdf.js, deterministic, **statements-only**. Always available; no Python, no GPU, no model
+  downloads. When the document-AI stack is absent, this is what runs. (Empirical history in the Appendix.)
 
-### The moat: the financial-semantics layer (Julia)
+(The "Tier-1 / Tier-2" labels denote install weight, not priority — Tier-2 is the main approach, Tier-1
+the fallback.)
 
-Generic table extractors give cells, not financial meaning. This layer must handle:
-- **Number locale** — parentheses = negative; thousands separators; **decimal-comma** and German
-  thousands-dot (**reuse the existing decimal-comma logic** from the XBRL extractor); currency glyphs.
-- **Scale footers** — "in £m", "in € thousands", **"in TEUR" / "in Tausend Euro" / "in Mio. EUR"** —
-  multiply line items accordingly.
-- **Structure** — multi-period columns (year headers), indented hierarchy/subtotals, wrapped row labels,
-  footnote superscripts, mixed €/£/$.
-- **Statement identification** — locate Balance sheet / Income statement / Cash flow (multi-language:
-  Bilanz, Gewinn- und Verlustrechnung, Aktiva/Passiva, Kapitalflussrechnung) and tag `statement`.
+**Both tiers emit to the same contracts, so downstream never knows which ran.** Tier-2 reuses Tier-1's
+deterministic **number/sign/scale discipline** (`_pdf_num`: parentheses-negative, en-dash-nil, separator
+and decimal-comma rules, scale footers) — that logic survives even though Tier-1's geometric *clustering*
+is superseded by Docling/MinerU's table structure.
 
-## 2. Toolchain decision — base library
+### Install philosophy (cross-cutting)
 
-Two binding constraints: **non-GPL license**, and **minimal fragile dependency** — in particular **no
-Python/Conda** (and no JVM).
+Tier-1 (light) always available; Tier-2 (heavy local stack) opt-in with **graceful degradation** to
+Tier-1; a thin cloud mode stays possible later. The Structured-Document substrate (Phase 0) is the shared
+foundation for **both** output families — *not* "optional RAG plumbing": locating statements in a
+200-page report needs document structure first.
 
-*(Per the pivot above, the primary extractor is a vision LLM; the Node/pdf.js toolchain below is the
-born-digital **cross-check**. The bake-off that chose pdf.js-direct still stands for that role.)*
+---
 
-**Decision: a single Node/TypeScript toolchain** for the deterministic cross-check, driven via a Node
-subprocess that emits JSON; Julia reads the JSON and does the financial logic.
+## 3. Tier-2 backend evaluation — Docling vs MinerU (test both, select later)
 
-1. **Parse + table reconstruction** — **`pdfjs-dist` *directly*** (mozilla's official pdf.js, pinned to
-   current **6.x**), driven via the Node subprocess; **no third-party wrapper**. We do the row/column
-   clustering ourselves — ~15 lines on top of `getTextContent()` plus a small `dommatrix` polyfill.
-   *Resolved by the P0 bake-off (below): direct beat both wrappers.*
-2. **OCR cross-check (optional, later)** — **`tesseract.js`** (Apache-2.0), same Node runtime: an
-   independent OCR second opinion for *scanned* facts (the analog of pdf.js for born-digital). Not a
-   primary path — the vision LLM already OCRs scanned pages.
+**Decision: keep BOTH for the Phase-1.3 bake-off; select one after measurement.** Both work well for our
+purpose; the choice is empirical.
 
-No Python, no Conda, no JVM, no GPL/AGPL anywhere.
+### Installed versions & environment (pinned)
 
-**Tiers 2–3 are *mostly* independent — and the LLM interaction is deliberately kept OUT of the P0
-decision unless it has to break a tie.** OCR (`tesseract.js`) is genuinely independent (preprocessing).
-The LLM (Tier 3) is *mostly* independent, but the combined ranking is not only non-additive — **it is
-LLM-dependent**: a specialist that is worse standalone (A < B) can win combined with one model
-(A+LLM\_X > B+LLM\_X) yet lose with another (B+LLM\_Y > A+LLM\_Y). A fully-combined bake-off is therefore
-combinatorial (specialists × LLMs) *and* unstable as models change.
+Both are installed and importing, **pinned**: **`docling==2.107.0`**, **`mineru==3.4.0`** (Python 3.11).
+The dev environment is a stable uv venv **outside the repo** at **`~/EDGAR-tools/tier2-venv`** (~1.3 GB),
+reproducible from [`src/extractors/pdf/requirements-tier2.txt`](../../src/extractors/pdf/requirements-tier2.txt).
+Per **Option A**, the venv is the **sole copy** of the bytes — installed with `--no-cache` and the uv cache
+wiped, so the packages live in exactly one place outside `EDGAR.jl` (verified: the venv still imports after
+a full cache clean). A reboot or cache wipe is a non-event (re-create from the pins). The eventual
+standalone packaging path is `PythonCall`+`CondaPkg` against the same pins; **absent in Pollis by design**.
 
-**Decision policy:** compare the specialists **standalone** in P0; **if there is a clear winner, take
-it** — the LLM never enters the choice. **Only if the standalone result is ambiguous** do we run a
-combined specialist + LLM tiebreak, pinning the specific model and treating the outcome as an
-LLM-specific heuristic (it may not generalise to other models). We still measure **failure mode**
-(clean-fail vs confidently-wrong) standalone, because it is an **LLM-independent proxy** for how well a
-specialist composes with *any* fallback — a clean-failing specialist is preferable without having to test
-every LLM, since clean misses are recoverable by Tier 3 whereas confidently-wrong ones poison the data and
-never trigger it.
-So P0 measures failure *mode*, not just accuracy, and estimates **combined** performance for the
-front-runners (P0.5, P0.7) — it does not pick the winner on standalone accuracy alone.
+### Findings (the measurement the earlier draft only promised)
 
-### P0 bake-off — RESOLVED: `pdfjs-dist` directly (no wrapper)
+- **Docling works fine** out of the box for born-digital (UK / CH / ESEF / DART). **Only Japanese EDINET
+  needed the OCR path** — its text layer is broken/CID-garbled, and Docling's default ("OCR only where
+  text is *missing*") misjudges a *garbled-but-present* layer, so `--force-ocr` was required there.
+- **MinerU works less well and needs the correct language set.** Its `pipeline` backend routes
+  JP/TW/EN/Latin into the `ch` OCR model, so **non-`ch` scripts can silently drop** (Korean/Cyrillic
+  vanished, no warning). Its newer `vlm` backend (a 1.2B VLM) is natively multilingual and removes the
+  language hint — but needs a GPU.
+- **Mitigation that makes both manageable for us specifically:** EDGAR.jl knows the `FilingSystem` of
+  every filing → it largely knows the language (EDINET→ja, DART→ko, CH/NSM→en, ESEF→by country), so
+  MinerU's `-l` is nearly free. And text-layer garble is **cheaply detectable** (extract the text layer,
+  test mojibake / invalid-Unicode ratio; if bad → OCR), so Docling's flag can be chosen automatically.
+  So it's not a blocker — it's a **robustness cost**: a small "which path / which language" pre-classifier
+  plus a guard against the silent failure.
 
-**Decision (2026-06):** drop the wrappers; use **`pdfjs-dist` directly + our own clustering**. On three
-keyless NSM twins (Tesco, Vodafone + the structural same-row test), direct pdf.js **tied the wrappers on
-accuracy (4/4), ran faster, and removed a dependency** — for ~15 lines of our own code. It also gives the
-**best provenance**: we stand *on* mozilla/pdf.js (53k★, updated daily), pinned to a version we choose
-(verified on current **6.0.227**), rather than a wrapper's bundled or forked copy. `pdf.js-extract` and
-`pdfreader` are therefore **not adopted** (kept in `tools/pdf-bakeoff/` only for the ongoing
-multi-jurisdiction sweep). `pdfexcavator` is out as a base (v0.1.2: 0 tables on borderless, buffer crash),
-retained only as a *possible* borderless-table helper if a hard stratum ever needs one.
+### Comparison
 
-The candidates as evaluated (pdf.js *provenance* was the deciding axis once accuracy tied; verified from
-the npm tarballs, 2026-06; current upstream `pdfjs-dist` = **6.0.227**):
+| Axis | **Docling** (IBM/DS4SD) | **MinerU** (OpenDataLab) |
+|---|---|---|
+| Architecture | Pipeline: layout + TableFormer; OCR only when invoked | Two backends: `pipeline` (DocLayout-YOLO + UniMERNet + table + PaddleOCR) **or** `vlm` (MinerU2.5, 1.2B VLM) |
+| OCR | **Off by default** — text-layer first; OCR is a fallback | Always in the loop (PaddleOCR in `pipeline`; implicit in `vlm`) |
+| Default OCR engine | **EasyOCR** (Python, no binary); RapidOCR (ONNX); Tesseract (**external binary**); OcrMac (macOS) | PaddleOCR (PP-OCRv6, ~109 langs), bundled; `vlm` OCRs natively |
+| External OCR binary? | **No** on EasyOCR/RapidOCR; yes only if Tesseract chosen | **No** — built in |
+| Language hint | Only when OCR fires | `pipeline`: **matters** (silent script-drop); `vlm`: **none needed** |
+| GPU | **Not required** (CPU/PyTorch) | `pipeline`: CPU ok, ~4 GB VRAM accel; **`vlm`: GPU (Volta+)/Apple Silicon, ≥8 GB VRAM** |
+| Footprint | **Lighter** (~1–2 GB incl. torch; *estimate*) | **Heavier** (docs: **≥20 GB disk**; VLM weights ~2.5 GB fp16) |
 
-| Candidate | Role | pdf.js it ships | License · adoption | Strength / risk |
-|---|---|---|---|---|
-| **`pdfjs-dist` direct** ⭐ | **WINNER** — parse only; we cluster | **upstream pdf.js, our pin (6.0.227)** | Apache-2.0 · mozilla 53k★ | best provenance + fastest + leanest deps; ~15 lines of our own code |
-| **pdfexcavator** | Generic table finder ("JS pdfplumber"); **borderless** | **official `pdfjs-dist ^4.7.76`** — full, but the 4.x line (~2 majors behind) | MIT · v0.1.2 · ~620/wk | best table fit; but **immature package** (bus-factor risk à la PDFIO.jl) + lagging pdf.js |
-| **pdfreader** (→ pdf2json 3.1.4) | Column detection + rule-based | **a modified *fork* of pdf.js** — divergent, version not cleanly exposed, **does not track upstream** | MIT · v3.0.8 · ~90k/wk | mature *package*, but **forked parser = weakest provenance** (no upstream fixes) |
-| **pdf.js-extract** | Glyphs + x/y coords **only** | **full vendored pdf.js 5.5.207** — freshest (~1 major behind) | MIT · v1.0.1 · ~148k/wk | **best parser provenance + highest adoption**; but **not a table-finder** → represents the *build-our-own-clustering* baseline (most work for us) |
+*Source pages: Docling installation + OCR-models docs; MinerU GitHub + MinerU2.5-2509-1.2B (HF) + PyPI.
+The ~1–2 GB Docling figure is an estimate (its install page states no total); pin exact sizes from the
+download manifests during Phase 1.3 if hard numbers are needed.*
 
-**Provenance takeaway:** on parser quality the order is **pdf.js-extract (fresh full) > pdfexcavator
-(official full, lagging) > pdfreader (fork)**. So the *build-our-own-clustering* baseline rides the best
-parser, and pdfreader's package-maturity is offset by its forked pdf.js. Net: it's really
-**"adopt pdfexcavator's table finder" vs "build clustering on pdf.js-extract's fresher full parser"** —
-which is exactly what P0 measures.
-
-Ruled out (not in the bake-off): **pdfplumber** (Python + Conda; less robust parser than pdf.js);
-**Poppler / MuPDF / Ghostscript-lattice** (GPL/AGPL); **PDFIO.jl** (pure-Julia but core untouched ~7
-years); **pdf-parse** (huge adoption but pulls a native `@napi-rs/canvas` binary and its table support is
-the least proven for our case) — keep as a distant backup only.
-
-Rationale for the toolchain shape:
-- **License:** MIT/Apache throughout; no GPL/AGPL.
-- **Boundary:** subprocess + JSON is **more decoupled than in-process FFI**, and one runtime covers
-  parse + table + OCR — no Python/Conda env to manage.
-- **Host fit:** EDGAR.jl is being embedded in **Pollis** (a TypeScript-based VS Code fork), so a Node/TS
-  toolchain is **native to the host**. (Stand-alone Julia use vendors it via `NodeJS_jll` + the pinned JS
-  bundle.) Project precedent for shipping JS already exists (the browser picker, `PICKER_JS`).
-
-**The financial-semantics layer (§1) is ours regardless** — pdf.js (or any finder) gives cells, not
-financial meaning. When direct pdf.js struggles on a layout, escalation stays inside the toolchain:
-improve our own clustering, or hand that filing to Tier 3 (LLM). We do **not** add a Python/Conda parser,
-nor a wrapper, as a fallback. (Stars footnote: the *wrappers* are low-star thin shells — pdf.js-extract
-255★, pdfreader 703★ — and even disagree with downloads; the trust that matters attaches to the parser,
-mozilla/pdf.js at 53k★, which direct pdf.js rides without an intermediary.)
-
-## 3. Where it plugs into the existing seam
-
-- `fetch_filing` already returns `Filing(:pdf, …)` with the content/URL retained — **no discovery
-  change.** This plan adds an extractor that consumes such a `Filing`.
-- Mirror the XBRL forwarder: a generic `_extract_pdf(f::Filing)` (analogous to `extract_xbrl.jl`) that
-  produces `Fact`s → the existing `facts()` assembly → `FactRow`. `facts(f)` dispatches on
-  `f.kind` (`:ixbrl`/`:xbrl` → XBRL extractor; `:pdf` → PDF extractor).
-- The Node helper lives under (proposed) `src/extractors/pdf/` with its pinned JS bundle; the Julia side
-  is `src/extractors/pdf.jl` (subprocess driver + financial-semantics layer). Naming TBD in P1.
-
-## 4. Validation — the beachhead makes PDF uniquely testable *now*
-
-PDF normally has no ground truth. The recent CH/NSM work created one: **dual-format AFRs** — the *same*
-annual report as **both a PDF and an iXBRL package** (verified for Tesco on the NSM; CH metadata offers
-both; CH-PDF ↔ NSM-iXBRL cross-source pairs also exist). So:
-
-1. **Twin oracle (primary):** parse the iXBRL twin → exact ground-truth facts → diff the PDF extractor's
-   output against them. This is a labeled test set that exists *because* of the NSM/CH work — use it
-   while fresh. Gates Tiers 1–3.
-2. **Cross-footing (always-on):** Assets = Liabilities + Equity; subtotals foot; period columns
-   internally consistent. Cheap arithmetic guard that also catches Tier-3 (LLM) hallucination.
-3. **Totals oracle (no-twin case, incl. Germany):** Yahoo / AlphaVantage headline totals (the existing
-   oracles) for filers with no XBRL twin.
-
-## 5. Scope boundaries (CH II, v1)
-
-- **In:** born-digital PDF **financial statements** (BS/IS/CF) → `FactRow`. Tier 1 + semantics + twin
-  validation. UK first (dual-format), then German.
-- **Later:** scanned PDFs (Tier 2 OCR); narrative/section text (MD&A-equivalent) → the prose/text layer,
-  not facts; the optional LLM tier.
-- **Out (separate concerns):** non-financial SEC PDF exhibits; image/figure extraction.
+**Net:** Docling is the light, CPU-friendly default; MinerU is the heavier, GPU-leaning option whose
+`vlm` backend is the multilingual one. Carry both into Phase 1.3 and let cell fidelity + section recovery
+decide.
 
 ---
 
@@ -217,168 +220,177 @@ both; CH-PDF ↔ NSM-iXBRL cross-source pairs also exist). So:
 
 Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
 
-### P0 — Table-specialist bake-off (the competition)  🚦 (dependency choice)
+### Phase 0 — The Structured Document substrate (foundation)
 
-**Goal:** pick ONE Tier-1 specialist by measuring **pdfexcavator** (borderless table finder), **pdfreader**
-(column detection), and **pdf.js-extract + our clustering** (build-our-own baseline) on a *large,
-stratified, multi-jurisdiction, multi-form* PDF corpus against ground truth. OCR and LLM are out of scope
-here (§2). The labelled corpus this phase builds is **reused by P3** (the end-to-end twin harness), so the
-effort isn't throwaway.
+Ingestion produces **one** Structured Document; every output family and every persistence target derives
+from it (the "one substrate, several derivations" principle, §1):
 
-- ☐ **P0.1 Define the corpus & strata.** Target **~200 born-digital PDFs**, stratified so the result
-  generalises rather than overfitting one layout:
-  - **Jurisdiction:** UK Companies House (~60), UK NSM PDF AFRs (~50), **Germany / Bundesanzeiger** (~50),
-    US SEC PDF exhibits + misc (~20). (Germany is the highest-value unlock — no XBRL exists for it.)
-  - **Form / layout type:** full IFRS statements; UK FRS-102 full; FRS-105 micro-entity & **filleted /
-    balance-sheet-only**; dormant; multi-period (2–5 cols); **borderless vs ruled**; multi-currency;
-    German HGB; English vs German language; 1-page vs long.
-  - **Ground-truth tier per PDF:** **A** = dual-format twin (PDF + iXBRL ⇒ exact facts), **B** = no twin,
-    hand-labelled, **C** = no twin, totals-only oracle (Yahoo/AlphaVantage, where the filer is listed).
-  - **Flag scanned PDFs separately** — they belong to the OCR tier and are *excluded* from this comparison,
-    but record the scanned fraction (it sizes Tier-2 priority later).
-  - *Deliverable:* `test/data/pdf/manifest.csv` — one row per PDF: id, jurisdiction, form/layout type,
-    source, language, born-digital|scanned, ground-truth tier, twin LEI/accession (if A).
+```
+                              PDF Document
+                                   │
+                    Document Parser: Docling / MinerU      (Tier-2; Tier-1 pdf.js as the fallback)
+                                   │
+                                   ▼
+                          Structured Document
+              ┌──────────────────────────────────────────┐
+              │ headings hierarchy                         │
+              │ paragraphs                                 │
+              │ tables                                     │
+              │ figures                                    │
+              │ captions                                   │
+              │ page numbers / reading order               │
+              │ extracted document metadata                │
+              └─────────────────────┬──────────────────────┘
+                                 Persist
+              ┌──────────────────────┴──────────────────────┐
+              │                                              │
+        Filesystem                              DuckDB Repository
+   (PDF / JSON / Markdown / CSV)        (metadata · sections · tables ·
+              │                            facts · relationships)
+              └──────────────────────┬──────────────────────┘
+                                     ▼
+                       Derivations: FactRow  +  Selection / SelectionTable / sections / figure
 
-- ☐ **P0.2 Assemble & store the corpus.** Fetch raw PDFs (CH Document API, NSM artefacts, Bundesanzeiger,
-  SEC) into `test/data/pdf/raw/` (gitignored; note keyless vs keyed sources). For every **tier-A** PDF
-  also fetch its iXBRL twin.
+  Extracted document metadata
+      ├─ source            (FilingSystem / URL)
+      ├─ language
+      ├─ company
+      ├─ report type
+      ├─ fiscal year
+      └─ additional document metadata
+```
 
-- ☐ **P0.3 Build the ground-truth store.** Tier A: run EDGAR's existing XBRL extractor on each twin →
-  canonical expected facts (label/concept, period, value, sign, scale) for the three statements. Tier B:
-  hand-label the 3 statements for the no-twin subset (start with headline lines, extend if cheap). Tier C:
-  capture Yahoo/AlphaVantage headline totals. *Deliverable:* `test/data/pdf/truth/<id>.json` per PDF.
+- ☐ **0.1 Define the `StructuredDocument` type.** An ordered tree of blocks with `kind ∈
+  {heading(level), paragraph, table, figure, caption}`, each carrying **reading order + page + bbox
+  provenance**, plus document metadata (source · language · company · report-type · fiscal-year). It's
+  the PDF analogue of the rendered DOM the HTML path consumes.
+- ☐ **0.2 Map it onto contracts that already exist** (so derivations are cheap):
+  - `table` → `SelectionTable` (header+rows) + a `statement?` classification flag,
+  - `heading`/`paragraph` → `sections` / `Selection(kind=:prose)`, feeding `extract_section`/`find_paragraphs`,
+  - `figure` → **new type** (image bytes + caption + bbox) — the one new contract,
+  - statement tables → the `Fact`→`FactRow` path.
+- ✅ **0.3 The parser seam — DONE (PythonCall, not subprocess).** Docling is driven **in-process via
+  PythonCall** in the `EDGARDoclingExt` package extension (PythonCall is an optional weakdep → core stays
+  Python-free for Pollis; points at the existing `~/EDGAR-tools/tier2-venv`, no second env). `EDGAR.
+  structured_document(pdf; …)` returns a `StructuredDocument`; `persist_document` writes
+  `structured.json` + `document.md` + `tables/*.csv`. Verified on Tesco. (Tier-1 pdf.js remains the
+  fallback when PythonCall/Docling absent.)
+- ☐ **0.4 Reconcile with Tier-1.** `pdf.jl`'s geometric clustering is superseded by Docling/MinerU, but
+  its **number/sign/scale rules** (`_pdf_num`, parentheses-negative, en-dash-nil, scale footers) are
+  **reused** as the Tier-2 deterministic discipline layer.
+- ☐ **0.5 Persistence design (the committed target).** The Structured Document is the system of record;
+  it persists to **two** targets, both derived from it, so re-derivation never re-parses the PDF:
+  - **Filesystem** — the human-/tool-facing artefacts: the original **PDF**, the Structured Document as
+    **JSON**, **Markdown** (the document family rendered, reusing the existing `markdown` path), and
+    **CSV** (the `FactRow` table). The document root is **`~/RegulatoryReports/`** (a fresh repository;
+    the legacy `~/EDGAR-Reports/` validation-PDF stash is kept untouched and is *not* the repository);
+    naming convention `<CC>-<Company>FR<year>.pdf` (e.g. `UK-TescoFR2024.pdf`, `JP-SonyFR.pdf`). The cache policy
+    (`set_cache_policy`) still governs the derived artefacts.
+  - **DuckDB Repository** — the queryable store, extending today's facts-only `to_duckdb`/`statement_view`
+    into a small relational schema: **`documents`** (one row per filing: the metadata below + provenance),
+    **`sections`** (headings/paragraphs, reading order), **`tables`** (descriptive `SelectionTable`s with
+    a `statement?` flag), **`facts`** (the `FactRow`s, with `extractor`/`confidence` from Phase 2), and
+    **`relationships`** (the foreign keys that tie a fact/section/table back to its `document` + `(page,
+    bbox)`). One DB per corpus; this is what Track B (RAG/Q&A) and cross-filing analysis query.
+  - **Document metadata** (carried on the Structured Document, stored on `documents`): `source`
+    (FilingSystem / URL), `language`, `company`, `report type`, `fiscal year`, + additional fields.
+- **Acceptance:** a `StructuredDocument` JSON schema; the parser subprocess producing it for a real
+  annual report; confirmed mappings to `SelectionTable` / `sections` / `Fact`; and the DuckDB schema
+  (`documents`/`sections`/`tables`/`facts`/`relationships`) defined, with one annual report round-tripped
+  filesystem + repository.
 
-- ☐ **P0.4 Build the common harness.** One **Node CLI per candidate** (`pdf → JSON`) emitting that
-  candidate's native output (pdfexcavator: tables; pdfreader: rows/columns; pdf.js-extract: words+bboxes).
-  A **shared Julia adapter** normalises each into one *extracted-table* structure (rows × columns of cells
-  with text+bbox); for pdf.js-extract this step includes *our own clustering* (that's the baseline's
-  "finder"). Then a **single, shared, minimal financial-semantics pass** (number parse incl.
-  parentheses/decimal-comma/scale, period-column mapping) turns the table into facts. **Hold the semantics
-  layer identical across candidates** so the bake-off measures the *table the candidate produced*, not our
-  parsing. Same pinned pdf.js per candidate; record the resolved version.
+### Phase 1 — FactRow derivation: prove local-first on the statements (THE GATE)
 
-- ☐ **P0.5 Define metrics & scorecard shape.** Per candidate, aggregated over the corpus **and sliced by
-  jurisdiction × form type**:
-  - *Parse-success rate* (PDF opened, text layer present).
-  - *Statement-table detection rate* (found the BS/IS/CF region at all).
-  - *Cell/number accuracy vs ground truth* — precision/recall on (line-item × period) → value within
-    tolerance; the headline metric. (Tier A exact; B manual; C totals-only.)
-  - *Label-capture accuracy* and *structural correctness* (# periods/columns, row alignment).
-  - *Borderless-vs-ruled* breakdown (decisive for financial statements, which are mostly borderless).
-  - **Failure *mode* (first-class, not just rate)** — classify every miss as **clean-fail** (empty / flagged
-    low-confidence ⇒ the LLM fallback can recover it) vs **confidently-wrong** (plausible-but-wrong table ⇒
-    the fallback never fires and the data is poisoned). This is what makes the LLM tier *mostly* — not
-    fully — independent (§2): a candidate that fails clean composes far better with Tier 3, so weight
-    confidently-wrong heavily and track it per candidate.
-  - *Robustness* — crash/empty rate; wall-time per page.
-  - *Static axes* (not per-PDF): **pdf.js provenance** (pdf.js-extract full+fresh > pdfexcavator full+lagging
-    > pdfreader fork), **package maturity/adoption**, license (all MIT — neutral).
+- ☐ **1.0 Thin vertical slice.** One filer, balance sheet, EN, born-digital, dual-format — the whole
+  loop: parser → `StructuredDocument` → locate the statement table via headings → local-model
+  concept-map → `Fact` → `FactRow` → oracle → accuracy %.
+- ☐ **1.1 Dual-format gold set.** Filers with both a tagged instance and a PDF for one period — UK NSM /
+  ESEF (EN), EDINET (JA), DART (KO); ~8–12 filings; XBRL `FactRow`s = ground truth, stored as fixtures.
+- ☐ **1.2 Oracle harness** (`src/sources/pdf_oracle.jl`). Same DIY pattern as `arelle_local`/`yahoo`.
+  **Value-anchored matching** (sidesteps "PDF label ≠ concept"): per ground-truth fact, did extraction
+  recover that value in the right statement + period? → recall; of emitted rows, how many hit a real
+  value? → precision. Reports per statement: value-match, sign, scale, period error rates.
+- ☐ **1.3 Parser bake-off — Docling vs MinerU** (§3). Judged on **both** jobs the substrate serves:
+  statement-table **cell fidelity** *and* **heading/section recovery** (locating statements depends on
+  it). Test both, then select one (or keep both behind the seam if neither dominates).
+- ☐ **1.4 Statement classifier + table→FactRow mapper.** On the structured doc: (a) classify which
+  tables are BS/IS/CF/SCE vs descriptive (**descriptive tables stay `SelectionTable`s, never
+  `FactRow`s**); (b) local model maps rows→concepts; (c) **deterministic rules fix sign/scale/period/
+  statement** (Tier-1's logic reused). *Local proposes, rules discipline.* Confirm classify works
+  **label-first**.
+- ☐ **1.5 Measure local vs frontier ceiling** — accuracy table per statement × language ×
+  born-digital/scanned.
+- ☐ **1.6 🚦 Green-light gate** — is local-first usable now, and where does it fail? Gates Phase 2.
+- **Acceptance:** a committed accuracy table + a written green-light decision with the failure map.
 
-- ☐ **P0.6 Run the bake-off.** Execute all three across the full corpus; emit the scorecard
-  (candidate × metric, with the jurisdiction/form slices) as `docs/dev/pdf-bakeoff-results.md`.
+### Phase 2 — Productionize the FactRow track (lighter)
 
-- ☐ **P0.7 Decide — standalone first.** Rank the candidates on the **standalone, LLM-independent** metrics:
-  accuracy on borderless financial tables × **failure-mode safety** (clean-fail ≫ confidently-wrong) ×
-  pdf.js provenance × package maturity. Then:
-  - **If a clear winner emerges → choose it.** The LLM does not enter the decision. Adopt a generic finder
-    (pdfexcavator/pdfreader) over the build-our-own baseline only if it wins by a margin that justifies its
-    dependency + provenance trade-off.
-  - **Only if the result is ambiguous (no clear winner) → run a combined tiebreak:** for the front-runners,
-    run the Tier-3 LLM over their residual misses and recompute combined accuracy — but **pin the specific
-    LLM** and treat the outcome as an LLM-specific heuristic (the combined ranking can flip with a different
-    model, §2), not a stable truth.
-  - Catalogue what each handles/misses (German HGB, filleted balance sheets, 5-column tables) — that list
-    seeds Tier-3 scope regardless of which specialist wins.
+- ☐ Wrap behind the Phase-0 seam; subprocess-host management + Tier-1 fallback; add **extractor/
+  confidence fields** (the `facts` table + exports gain these columns); **confidence-gated emission** ("a
+  wrong number is worse than none"); populate the Phase-0.5 persistence targets (filesystem artefacts +
+  the DuckDB repository) via the per-system cache policy; the oracle becomes a standing fixture test.
 
-- ☐ **P0.8 🚦 GATE:** recommend the winner; **pin the resolved bundled pdf.js version** and confirm it is
-  full + reasonably current (not a stale fork); lock the Node/Pollis runtime story (`NodeJS_jll` + pinned
-  bundle). Report the scorecard + recommendation; commit the corpus manifest, harness, and results.
+### Phase 3 — The second family: sections, descriptive tables, figures (sketch)
 
-### P1 — Tier-1 scaffold: PDF → words → cells (one filing)
-- ☐ P1.1 Node helper: PDF path → JSON (page → text items with x/y/w/h/font). Pin the JS bundle.
-- ☐ P1.2 Julia subprocess driver + JSON ingest; `Filing(:pdf)` → positioned words.
-- ☐ P1.3 Geometric reconstruction: cluster words → rows × columns for ONE clean dual-format UK BS.
-- ☐ P1.4 🚦 **GATE:** show the reconstructed Balance-sheet grid for one filer; agree the row/column model.
-- ☑ P1.5 **Coordinate provenance (design in now, don't retrofit):** carry each fact's source `(page, bbox)`
-  through to the `Fact` — the PDF analogue of `FactRow.source_selector` — so the Pollis workbench can
-  back-link a number to its source pixel (see [pollis-workbench-vision.md](pollis-workbench-vision.md)).
-  pdf.js already returns the bbox per item, so this is cheap if threaded through from P1.2.
+- ☐ Populate `Selection` / `SelectionTable` / `sections` for PDFs from the **same** `StructuredDocument`,
+  so `find_paragraphs` / `extract_section` / Markdown export work on PDFs; add the `figure` type. The
+  "annual report as a document" capability — narrative, descriptive tables, images become first-class,
+  reusing the substrate Phase 0 built.
 
-**P1 prototype DONE (2026-06)** — `tools/pdf-bakeoff/pdf_words.mjs` (pdfjs-dist→positioned words JSON,
-top-down y) + `cluster.jl` (rows by y-bin, period columns by numeric right-edge bands, label = left text,
-values→nearest column, parentheses/en-dash semantics, each cell coordinate-anchored). On Tesco's Group
-balance sheet it reconstructs the **whole statement**, and `Equity attributable to owners` = **11,671 /
-12,236** — an *exact* match to the iXBRL twin (current/prior). Generalisation finding: the **geometry is
-robust** (income statement reconstructs cleanly too) but **column *meaning* is statement-specific** — the
-BS's 3 columns are periods; the income statement's are a before-exceptional/exceptional/total split, and
-the twin's `Revenue 68,187` (total incl. discontinued) needs *semantic* line/column resolution. → that
-(column→period mapping, statement ID, twin-anchored line resolution) is exactly **P2**. Prototype lives in
-`tools/`; graduation into `src/` + `Fact`/`FactRow` is P2.4.
+### Phase 4 — Track B + new jurisdictions (sketch)
 
-### P2 — Financial-semantics layer (the moat)
-- ☐ P2.1 Number parser: parentheses-negative, separators, **decimal-comma (reuse existing)**, currency.
-- ☐ P2.2 Scale-footer detection (£m / €k / **TEUR / Tausend / Mio.**); period-column headers; hierarchy.
-- ☐ P2.3 Statement identification (BS/IS/CF), multi-language headings; emit `Fact`s → `FactRow`.
-- ☐ P2.4 Wire `facts(f)` dispatch on `f.kind == :pdf`; confirm classify works **label-first** (see §Output
-  contract — the concept problem).
-- ☐ P2.5 🚦 **GATE:** `facts(pdf)` for one UK filer round-trips into `select_statement`.
-
-### P3 — Twin-validation harness  🚦 (checkpoint)
-- ☐ P3.1 Promote the P0 ground-truth store into the end-to-end oracle: for a dual-format filer, diff the
-  full PDF-extractor output vs the iXBRL twin's facts (within tolerance); plus always-on cross-footing.
-- ☐ P3.2 Run across the P0 corpus (tier A); tune Tier 1 + the full semantics layer to the twin.
-- ☐ P3.3 🚦 **GATE (run tests + commit):** report twin-parity numbers; commit Tier-1 + semantics + harness.
-
-### P4 — German (no twin) + breadth
-- ☐ P4.1 German Bundesanzeiger PDFs through Tier 1 + locale semantics; validate vs Yahoo/AlphaVantage
-  totals (no XBRL twin).
-- ☐ P4.2 Manual chapter: a German PDF workflow + a CH/NSM PDF workflow.
-- ☐ P4.3 🚦 **GATE:** decide whether to start **Tier 2 (OCR, tesseract.js)** and/or the optional **Tier 3
-  (LLM, arithmetic-validated)** — separate sub-plans.
+- ☐ Track B (RAG/Q&A) builds on Phase 3's records: chunking → BGE-M3 → LanceDB → the query agent (local
+  models via `llama.cpp`, Claude Code as the complex-case escape hatch). **China/India** ride the whole
+  stack — the FactRow track for statements, the document family for narrative.
 
 ---
 
-## P0 progress (2026-06)
+## Validation — the beachhead makes PDF uniquely testable *now*
 
-Harness at `tools/pdf-bakeoff/` (Node, evaluation-only; `node_modules` gitignored, lockfile committed):
-`extract.mjs` runs one candidate → JSON; `match.mjs` scores one candidate vs an iXBRL-twin's figures.
-Results log: [pdf-bakeoff-results.md](pdf-bakeoff-results.md).
+PDF normally has no ground truth. The CH/NSM work created one: **dual-format AFRs** — the *same* annual
+report as **both a PDF and an iXBRL package** (Tesco verified on the NSM; CH metadata offers both;
+CH-PDF ↔ NSM-iXBRL cross-source pairs exist; ESEF via filings.xbrl.org; EDINET CSV).
 
-**Milestone 1 — single-twin end-to-end proof DONE** (Tesco FY2024, NSM dual-format twin). Ground truth =
-EDGAR's extractor on the iXBRL `.zip` (752 facts). All three candidates recover the headline figures from
-the PDF (presence-in-text floor, 4/4 each). Findings: **run one candidate per process** (mixed pdf.js
-versions crash in one process); **pdfexcavator v0.1.2** default `extractTables()` → 0 on borderless +
-interleave crash → needs the `extractTablesEnhanced(chars,lines,rects,…)` path.
+1. **Twin oracle (primary):** parse the iXBRL twin → exact ground-truth facts → diff the PDF extractor's
+   output (value-anchored, §1.2). The labeled test set that exists *because* of the NSM/CH work.
+2. **Cross-footing (always-on):** Assets = Liabilities + Equity; subtotals foot; period columns
+   internally consistent. Cheap arithmetic guard that also catches LLM hallucination.
+3. **Totals oracle (no-twin, incl. Germany):** Yahoo / AlphaVantage headline totals.
 
-**Milestone 2 — structured (same-row) matcher** (`match2.mjs`, +Vodafone/Diageo twins, current+prior
-periods): on clean IFRS headline rows the coordinate candidates **tie** (pdf.js-extract & pdfreader both
-same-row 4/4). Diageo truth came out implausible → twin-oracle quality varies by filer (P3).
-
-**Milestone 3 — DECISION: `pdfjs-dist` direct (no wrapper) — LOCKED.** A direct pdf.js path (~15 lines,
-`getTextContent()` + `dommatrix` polyfill) matched the wrappers' 4/4, ran faster, and removed the
-dependency; re-verified on **current upstream pdfjs-dist 6.0.227**. Harness pinned `pdfjs-dist ^6`. The
-wrappers are not adopted (kept only for the ongoing sweep).
-
-**Reframe — the broad multi-jurisdiction sweep is now failure-boundary mapping, not candidate ranking.**
-With the base decided, running SEC/CH/NSM + DE/FR/IT/ES/NL ESEF + EDINET PDFs serves to find **where
-born-digital pdf.js breaks** (scanned, non-Latin, dense layouts) → which defines **Tier-2 (OCR)** and
-**Tier-3 (LLM)** scope. Oracle = the **iXBRL twin** where it exists (NSM, ESEF via filings.xbrl.org,
-EDINET CSV — exact), Yahoo only as a secondary cross-check for listed filers; CH small-co (private) has no
-twin → cross-footing only; SEC is a weak PDF target (primary filings are iXBRL). This is the dress
-rehearsal for the **China/India** markets (no open XBRL, non-Latin) — the medium-term selling point.
-
-Earlier toolchain spike on a 57-page born-digital PDF confirmed all three execute and the runtime facts:
-- **Runtime:** dev shell uses **nvm node v25.0.0** (non-LTS, transient) + **npm 11.6.2**; `package-lock.json`
-  is **v3**. npm is build-time only; the runtime in **Pollis is Electron's bundled Node** and stand-alone
-  Julia would use `NodeJS_jll` — three contexts. All candidates resolve to **pure-JS** deps (pdfjs-dist
-  4.10.38 via pdfexcavator; pdf.js-extract vendors full 5.5.207; pdfreader→pdf2json fork), so **no native
-  ABI** → portable across all three node contexts (this is why pdf-parse's native `@napi-rs/canvas` was
-  avoided). `engines: node>=20` pinned; reproducibility rides the committed lockfile, not the npm version.
+---
 
 ## Open questions / risks
-- **Tier-1 fidelity on messy layouts** — multi-column, merged cells, wrapped labels. The twin oracle
-  bounds this empirically; P3 decides how far Tier 1 reaches before Tier 3 is needed.
-- **Label→concept bridge** — does the classify engine classify reliably from labels alone across UK FRS,
-  IFRS and German GAAP wording? Confirm in P2.4; may need a label-vocabulary akin to the taxonomy vocabs.
-- **OCR numeric reliability** (Tier 2) — defer; flag confidence; never silently accept.
-- **LLM determinism/cost** (Tier 3) — opt-in only, arithmetic-gated, never the default source.
+
+- **Label→concept bridge** — does classify work from labels alone across UK FRS, IFRS, German GAAP, JP/KR
+  wording? Confirm in 1.4; may need a label-vocabulary akin to the taxonomy vocabs.
+- **Tier-2 install weight & GPU** — MinerU's `vlm` needs a GPU; standalone-only. Graceful degradation to
+  Tier-1 must be real, not theoretical.
+- **Confidence-gated emission** — never silently accept; a wrong number is worse than none.
+- **Twin-oracle quality varies by filer** (Diageo's came out implausible) — curate the gold set.
+
+---
+
+## Appendix — Tier-1 empirical history (pdf.js path, 2026-06)
+
+Tier-1 is **built and proven**; this records the work so it isn't re-litigated.
+
+**P0 bake-off — RESOLVED: `pdfjs-dist` directly (no wrapper).** On keyless NSM twins, direct pdf.js
+(~15 lines: `getTextContent()` + a `dommatrix` polyfill + our own clustering) **tied the wrappers on
+accuracy, ran faster, and removed a dependency**, with the best provenance (mozilla/pdf.js 53k★, our pin
+**6.0.227**). Wrappers (`pdf.js-extract`, `pdfreader`, `pdfexcavator`) not adopted; kept only in
+`tools/pdf-bakeoff/` for the multi-jurisdiction sweep. Ruled out: pdfplumber (Python+Conda), Poppler/
+MuPDF/Ghostscript (GPL/AGPL), PDFIO.jl (stale), pdf-parse (native `@napi-rs/canvas`). Harness pinned
+`pdfjs-dist ^6`; lockfile committed, `node_modules` gitignored.
+
+**P1 prototype — DONE.** `tools/pdf-bakeoff/pdf_words.mjs` (pdfjs-dist → positioned words JSON, top-down
+y) + `cluster.jl` (rows by y-bin; period columns by numeric right-edge bands; parentheses/en-dash
+semantics; each cell coordinate-anchored). On Tesco's Group balance sheet it reconstructs the **whole
+statement**, and `Equity attributable to owners` = **11,671 / 12,236** — an *exact* match to the iXBRL
+twin. Graduated into `src/extractors/pdf.jl` (`extract_pdf`, coordinate provenance in `source_selector`).
+**Finding:** geometry is robust but **column *meaning* is statement-specific** (the BS's columns are
+periods; the income statement's are a before-exceptional/exceptional/total split) — the layout-fragility
+that demotes geometric clustering to the Tier-1 floor and motivates Tier-2.
+
+**Runtime facts.** Dev shell: nvm node v25 + npm 11.x; `package-lock.json` v3. npm is build-time only;
+runtime is Electron's bundled Node (Pollis) or `NodeJS_jll` (standalone) — three contexts. All candidates
+resolve to **pure-JS** deps (no native ABI) → portable across all three. `engines: node>=20`.
