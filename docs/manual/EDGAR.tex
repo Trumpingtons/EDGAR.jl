@@ -2005,6 +2005,52 @@ julia> DBInterface.execute(con,
 # → ("UK-TescoFR2024:s7", 133)   -- the Group balance sheet
 \end{lstlisting}
 
+\subsection{Repository schema}
+\label{sec:pdf-repo-schema}
+
+The repository is a plain DuckDB database, so you query it with SQL (and DuckDB's full-text search over
+\texttt{text\_blocks}). Tables~\ref{tab:repo-tables} and \ref{tab:repo-views} are the query contract --- the
+names and the columns you will actually use; the full DDL (types, keys, idempotency) is in
+\texttt{docs/dev/pdf-repository-schema.md}. Text and labels are stored in the \textbf{original language};
+translations, when added, live in \texttt{translations} (the source tables are never overwritten).
+
+\begin{table}[h]
+\centering
+\caption{Repository tables.}
+\label{tab:repo-tables}
+\small
+\begin{tabular}{@{}p{0.15\textwidth}p{0.33\textwidth}p{0.46\textwidth}@{}}
+\toprule
+\textbf{Table} & \textbf{Holds} & \textbf{Key columns} \\
+\midrule
+\texttt{documents}   & one row per report   & \texttt{doc\_id}, \texttt{jurisdiction}, \texttt{language}, \texttt{company}, \texttt{fiscal\_year}, \texttt{framework}, \texttt{currency}, \texttt{n\_pages} \\
+\texttt{sections}    & heading tree         & \texttt{section\_id}, \texttt{parent\_id}, \texttt{level}, \texttt{title}, \texttt{ord}, \texttt{page\_start} \\
+\texttt{text\_blocks}& narrative prose (the FTS unit) & \texttt{block\_id}, \texttt{section\_id}, \texttt{text}, \texttt{lang}, \texttt{page}, \texttt{ord} \\
+\texttt{tables}      & one row per table    & \texttt{table\_id}, \texttt{section\_id}, \texttt{kind}, \texttt{statement\_type}, \texttt{caption}, \texttt{page\_start}, \texttt{n\_rows}, \texttt{n\_cols} \\
+\texttt{table\_cells}& cells (normalised)   & \texttt{table\_id}, \texttt{"row"}, \texttt{"col"}, \texttt{is\_header}, \texttt{text} \\
+\texttt{figures}     & images               & \texttt{figure\_id}, \texttt{section\_id}, \texttt{caption}, \texttt{page}, \texttt{image\_path} \\
+\texttt{translations}& derived translations & \texttt{object\_type}, \texttt{object\_id}, \texttt{target\_lang}, \texttt{text}, \texttt{source} \\
+\texttt{facts}       & statement values \emph{(later)} & \texttt{fact\_id}, \texttt{table\_id}, \texttt{"row"}, \texttt{"col"}, \texttt{section\_id}, \texttt{statement\_type}, \texttt{label}, \texttt{value}, \texttt{period\_end} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Referencing views --- trace any number to where it appears.}
+\label{tab:repo-views}
+\small
+\begin{tabular}{@{}p{0.22\textwidth}p{0.72\textwidth}@{}}
+\toprule
+\textbf{View} & \textbf{Answers} \\
+\midrule
+\texttt{v\_cell\_context}    & a cell with its table + section context (\texttt{doc\_id}, \texttt{section\_id}, \texttt{table\_kind}, \texttt{statement\_type}, \texttt{page}, \texttt{text}) \\
+\texttt{v\_section\_path}    & the section breadcrumb, e.g.\ ``\emph{Konzernabschluss > Konzernbilanz}'' \\
+\texttt{v\_fact\_provenance} & a fact with its exact source cell, section path and \texttt{bbox} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \section{Financial Data (XBRL)}
 \label{sec:api-xbrl}
 
