@@ -318,6 +318,7 @@ const _REPO_DDL = [
   """CREATE TABLE IF NOT EXISTS facts (fact_id VARCHAR PRIMARY KEY, doc_id VARCHAR, table_id VARCHAR,
      "row" INTEGER, "col" INTEGER, section_id VARCHAR, statement_type VARCHAR, label VARCHAR,
      concept VARCHAR, standard_concept VARCHAR, period_start DATE, period_end DATE, is_instant BOOLEAN,
+     fiscal_year INTEGER, period_precision VARCHAR,
      value DOUBLE, unit VARCHAR, scale DOUBLE, sign INTEGER, decimals INTEGER, extractor VARCHAR,
      confidence DOUBLE, bbox VARCHAR)""",
   """CREATE TABLE IF NOT EXISTS toc (doc_id VARCHAR, seq INTEGER, level INTEGER, title VARCHAR,
@@ -350,6 +351,10 @@ _csvpath(table_id) = string("tables/", split(table_id, ":")[end], ".csv")
 function _ensure_repo(con)
     for ddl in _REPO_DDL
         DBInterface.execute(con, ddl)
+    end
+    # migrations for DBs created before a column existed (idempotent)
+    for col in ("fiscal_year INTEGER", "period_precision VARCHAR")
+        DBInterface.execute(con, "ALTER TABLE facts ADD COLUMN IF NOT EXISTS $col")
     end
     for v in _REPO_VIEWS
         DBInterface.execute(con, v)
@@ -516,6 +521,150 @@ function EDGAR.classify_tables!(
     con = DBInterface.connect(DuckDB.DB, db)
     try
         return EDGAR.classify_tables!(con; doc_id = doc_id)
+    finally
+        DBInterface.close!(con)
+    end
+end
+
+# ── Facts derivation (statement tables → facts rows) ─────────────────────────────────────────────
+# For every classified statement table (kind='statement'), infer the value-column axis with the
+# locale-aware core (EDGAR.infer_columns / parse_amount, src/extractors/facts_derive.jl), keyed off the
+# document's jurisdiction, then emit one fact per (body label-row × value column). Notes/empty columns are
+# excluded. PERIOD dates are resolved precisely (two-pass): pass 1 reads any full period-end date in a
+# column header (`parse_period_end`, e.g. "31 March 2023") and builds a per-document year→date map; pass 2
+# emits, using that date for year-only columns of the same year and falling back to the calendar year-end
+# only when the document offers nothing better. Duration `period_start = end − 1 year + 1 day`. Entity/
+# dimension columns (combined funds, "of which") carry no period; their header is recoverable via the
+# (table_id, col) provenance. Idempotent per doc: replaces only this extractor's own rows.
+const _INSTANT_ST = ("balance_sheet",)
+
+# Resolve a period column to (period_start, period_end, is_instant, fiscal_year, precision). Stay TRUE to
+# the filing — never fabricate a day the document didn't state:
+#   • full date(s) in THIS column's header → period_end = the LATEST (current = T), period_start = the
+#     EARLIEST. We have both dates, so we just assign them — order-independent, so an OCR-scrambled range
+#     still resolves. A single date on a duration → period_start = end − 1 year + 1 day. An instant column
+#     never pairs dates. (3+ mangled dates in one cell, and reconstructing a missing date, are separate
+#     problems — out of scope here.)
+#   • else a same-year full date elsewhere in the SAME report → that exact date (precision "day").
+#   • else only the year is known → period_start/end NULL, precision "year".
+# `fiscal_year` is the year the header itself labels (e.g. Japanese "2024年度" ending 2025-03-31 → 2024),
+# falling back to the year of the resolved end date.
+function _derive_period(col, st, docdates::Dict{Int,Date}, loc::Symbol)
+    is_instant = st in _INSTANT_ST
+    col.kind === :period || return (missing, missing, is_instant, missing, missing)
+    y = tryparse(Int, col.key)
+    fy = (y !== nothing && 1900 <= y <= 2100) ? y : missing
+    dates = EDGAR.period_dates(col.hdr; locale = loc)             # all full dates stated in this header
+    if isempty(dates) && fy !== missing                          # else a same-year date elsewhere in the doc
+        d = get(docdates, fy, nothing)
+        d === nothing || (dates = [d])
+    end
+    isempty(dates) && return (missing, missing, is_instant, fy, fy === missing ? missing : "year")
+    pe = maximum(dates)
+    fy === missing && (fy = Dates.year(pe))
+    is_instant && return (missing, pe, true, fy, "day")          # snapshot — never pair dates
+    ps = length(dates) >= 2 ? minimum(dates) : pe - Year(1) + Day(1)  # have both → use them; else compute
+    return (ps, pe, false, fy, "day")
+end
+
+function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
+    _ensure_repo(con)
+    tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.section_id AS section_id, " *
+           "t.statement_type AS statement_type, t.n_rows AS n_rows, t.n_cols AS n_cols, " *
+           "d.jurisdiction AS jurisdiction FROM \"tables\" t JOIN documents d USING (doc_id) " *
+           "WHERE t.kind = 'statement' AND t.statement_type IS NOT NULL" *
+           (doc_id === nothing ? "" : " AND t.doc_id = ?")
+    trows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, tsql) :
+                                                        DBInterface.execute(con, tsql, (doc_id,)))
+    isempty(trows) && return (facts = 0, tables = 0)
+    nfacts = 0; ntables = 0
+    DBInterface.execute(con, "BEGIN TRANSACTION")
+    try
+        for d in unique(t.doc_id for t in trows)
+            DBInterface.execute(con, "DELETE FROM facts WHERE doc_id = ? AND extractor = 'derive_facts'", (d,))
+        end
+        # Pass 1 — grid + column inference per table; collect each document's year→period-end map from
+        # whichever column headers carry a full date (first full date wins for a given year).
+        prepared = NamedTuple[]
+        docdates = Dict{String,Dict{Int,Date}}()
+        for t in trows
+            loc = EDGAR.amount_locale(t.jurisdiction === missing ? "" : t.jurisdiction)
+            grid = Dict{Tuple{Int,Int},String}()
+            cellrows = DuckDB.Tables.rowtable(DBInterface.execute(con,
+                "SELECT \"row\" r, \"col\" c, rowspan rs, colspan cs, is_header h, text " *
+                "FROM table_cells WHERE table_id = ? AND text IS NOT NULL", (t.table_id,)))
+            for cc in cellrows
+                grid[(cc.r, cc.c)] = strip(String(cc.text))
+            end
+            # Expand spanning HEADER cells into the cells they cover (without overwriting a real cell):
+            # a colspan'd period header (e.g. Tesco's "24 February 2024" over Notes+£m) otherwise hides its
+            # date from the value column beneath it, leaving that column dateless.
+            for cc in cellrows
+                rs = cc.rs === missing ? 1 : Int(cc.rs)
+                cs = cc.cs === missing ? 1 : Int(cc.cs)
+                (cc.h === true && (rs > 1 || cs > 1)) || continue
+                txt = strip(String(cc.text)); isempty(txt) && continue
+                for dr in 0:rs-1, dc in 0:cs-1
+                    (dr == 0 && dc == 0) && continue
+                    get!(grid, (cc.r + dr, cc.c + dc), txt)
+                end
+            end
+            isempty(grid) && continue
+            inf = EDGAR.infer_columns(grid, t.n_rows, t.n_cols; locale = loc)
+            valcols = [col for col in inf.columns if col.kind in (:period, :entity, :value, :dimension)]
+            isempty(valcols) && continue
+            dd = get!(docdates, t.doc_id, Dict{Int,Date}())
+            for col in valcols
+                col.kind === :period || continue
+                d = EDGAR.parse_period_end(col.hdr; locale = loc)
+                y = tryparse(Int, col.key)
+                (d === nothing || y === nothing) && continue
+                get!(dd, y, d)
+            end
+            push!(prepared, (t = t, grid = grid, data_start = inf.data_start, valcols = valcols, loc = loc))
+        end
+        # Pass 2 — emit one fact per (body label-row × value column), with document-aware period dates.
+        ins = DBInterface.prepare(con,
+            "INSERT INTO facts (fact_id, doc_id, table_id, \"row\", \"col\", section_id, statement_type, " *
+            "label, period_start, period_end, is_instant, fiscal_year, period_precision, " *
+            "value, extractor, confidence) " *
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        try
+            for pr in prepared
+                t = pr.t; ntables += 1
+                dd = get(docdates, t.doc_id, Dict{Int,Date}())
+                for r in pr.data_start:t.n_rows-1
+                    lbl = get(pr.grid, (r, 0), "")
+                    (!isempty(lbl) && EDGAR.parse_amount(lbl; locale = pr.loc) === nothing) || continue
+                    for col in pr.valcols
+                        p = EDGAR.parse_amount(get(pr.grid, (r, col.col), ""); locale = pr.loc)
+                        (p === nothing || p.nil) && continue
+                        ps, pe, inst, fy, prec = _derive_period(col, t.statement_type, dd, pr.loc)
+                        fid = string(t.table_id, ":f", r, "_", col.col)
+                        DBInterface.execute(ins, (fid, t.doc_id, t.table_id, r, col.col, _n(t.section_id),
+                            t.statement_type, lbl, _n(ps), _n(pe), inst, _n(fy), _n(prec),
+                            p.val, "derive_facts", 1.0))
+                        nfacts += 1
+                    end
+                end
+            end
+        finally
+            DBInterface.close!(ins)
+        end
+        DBInterface.execute(con, "COMMIT")
+    catch e
+        DBInterface.execute(con, "ROLLBACK")
+        rethrow(e)
+    end
+    return (facts = nfacts, tables = ntables)
+end
+
+function EDGAR.derive_facts!(
+        db::AbstractString = joinpath(expanduser("~/RegulatoryReports"), "regulatory-reports.duckdb");
+        doc_id = nothing)
+    con = DBInterface.connect(DuckDB.DB, db)
+    try
+        return EDGAR.derive_facts!(con; doc_id = doc_id)
     finally
         DBInterface.close!(con)
     end

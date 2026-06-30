@@ -54,8 +54,16 @@ function _docling_progress(run, npages::Integer, name; per_page = 2.0)
     return r
 end
 
+# Jurisdictions whose PDFs carry a garbled-but-present (CID) text layer that Docling's
+# "OCR only where text is MISSING" heuristic mis-trusts — so full-page OCR must be FORCED. Japan/EDINET
+# is the documented case (see pdf-extractor-plan); add others here as they're found.
+_force_ocr_default(jurisdiction, language) =
+    uppercase(strip(String(something(jurisdiction, "")))) == "JP" ||
+    lowercase(strip(String(something(language, "")))) in ("ja", "jp", "japanese")
+
 function EDGAR.structured_document(path::AbstractString;
         pages::Union{Nothing,Tuple{Integer,Integer}} = nothing, ocr::Bool = false,
+        force_ocr::Union{Nothing,Bool} = nothing,
         doc_id::AbstractString = first(splitext(basename(path))),
         jurisdiction = nothing, language = nothing, company = nothing,
         report_type = nothing, fiscal_year = nothing, currency = nothing, framework = nothing,
@@ -76,8 +84,13 @@ function EDGAR.structured_document(path::AbstractString;
         runconv = () -> conv.convert(path)
         npages = 0
     else
+        # Force full-page OCR when asked, or by default for jurisdictions with a garbled CID text layer
+        # (Japan/EDINET). Forcing implies OCR on. NOTE: full-page OCR adds real per-page compute — it is
+        # NOT free; selective OCR was fast only because it skipped most pages.
+        fforce = force_ocr === nothing ? _force_ocr_default(jurisdiction, language) : force_ocr
         opts = po.PdfPipelineOptions()
-        opts.do_ocr = ocr
+        opts.do_ocr = ocr || fforce
+        fforce && (opts.ocr_options.force_full_page_ocr = true)
         opts.do_table_structure = true
         if with_images
             opts.generate_picture_images = true

@@ -123,17 +123,20 @@ Base.show(io::IO, sd::StructuredDocument) = print(io,
     length(sd.text_blocks), " text, ", length(sd.tables), " tables, ", length(sd.figures), " figures)")
 
 """
-    structured_document(pdf_path; pages=nothing, ocr=false, doc_id=..., jurisdiction=nothing,
-                        language=nothing, company=nothing, report_type=nothing,
+    structured_document(pdf_path; pages=nothing, ocr=false, force_ocr=nothing, doc_id=...,
+                        jurisdiction=nothing, language=nothing, company=nothing, report_type=nothing,
                         fiscal_year=nothing, currency=nothing, framework=nothing) -> StructuredDocument
 
 Parse a born-digital PDF into a [`StructuredDocument`](@ref) — sections, text blocks, tables (with cells)
 and figures, each with page+bbox provenance. The main (document-AI) path; requires the Tier-2 Python stack
 (Docling) reached via PythonCall. **Available only after `using PythonCall`** (package extension).
 
-`pages` is an optional 1-based `(first, last)` range; `ocr` turns on OCR (needed only for broken text
-layers, e.g. Japanese EDINET). The jurisdiction/language/etc. keywords seed metadata the per-jurisdiction
-profile would otherwise fill. See `docs/dev/pdf-repository-schema.md`.
+`pages` is an optional 1-based `(first, last)` range; `ocr` turns on OCR where Docling judges the text layer
+missing. `force_ocr` runs **full-page** OCR on every page (overriding Docling's heuristic) — required where
+the text layer is *garbled-but-present* (CID fonts), e.g. **Japanese EDINET**, which would otherwise yield
+mojibake. It defaults (`nothing`) to auto-on for Japan and off elsewhere; pass `true`/`false` to override.
+Forcing implies `ocr`, and adds real per-page OCR compute. The jurisdiction/language/etc. keywords seed
+metadata the per-jurisdiction profile would otherwise fill. See `docs/dev/pdf-repository-schema.md`.
 """
 function structured_document(args...; kwargs...)
     error("`structured_document` requires the Docling Tier-2 stack via PythonCall.jl. Run `using " *
@@ -321,4 +324,22 @@ title against [`TABLE_CLASSES`](@ref) (via [`classify_table_class`](@ref)). Opti
 """
 function classify_tables!(args...; kwargs...)
     error("`classify_tables!` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl repository loader.")
+end
+
+"""
+    derive_facts!(db; doc_id=nothing) -> NamedTuple
+
+Derive numeric `facts` rows from the repository's statement tables. For every table with `kind='statement'`,
+infer the value-column axis (period/entity/notes/…) with the locale-aware core ([`infer_columns`](@ref),
+[`parse_amount`](@ref)) and emit one fact per (body label-row × value column); notes/empty columns are
+excluded. Each fact keeps `(table_id, row, col)` + `section_id` provenance. Period columns are recorded
+**faithfully, never fabricating a day the filing didn't state**: `period_end`/`period_start` are filled only
+from a full date in the column header ([`parse_period_end`](@ref)) or a same-year full date elsewhere in the
+report, and left `NULL` otherwise; `fiscal_year` always carries the stated year and `period_precision` is
+`"day"` or `"year"` accordingly. Idempotent per `doc_id`
+(replaces this extractor's rows). Optionally restrict to one `doc_id`. Returns `(facts, tables)` counts.
+**Available only after `using DuckDB`** (package extension).
+"""
+function derive_facts!(args...; kwargs...)
+    error("`derive_facts!` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl repository loader.")
 end

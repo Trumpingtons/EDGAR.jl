@@ -29,24 +29,28 @@ const TABLE_CLASSES = TableClass[
         r"statements? of assets (?:and|&) liabilities"i, r"statements? of net assets"i,   # registered funds (sing./plur.)
         r"\bbilanz\b"i, r"\bbilan\b"i,
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
-        r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표"]),
+        r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표",
+        r"отч[её]т о финансовом положении"i, r"бухгалтерский баланс"i]),
     TableClass("income_statement", "statement", "Income statement / profit or loss / comprehensive income", [
         r"income statement"i, r"statement of profit (?:or|and) loss"i, r"profit and loss account"i,
         r"statement of comprehensive income"i, r"statements? of operations"i,   # registered funds (sing./plur.)
         r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
         r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i,
         r"conto economico"i, r"(?:utile|reddito|redditività) complessiv[ao]"i,   # IT: P&L + comprehensive income (utile complessivo)
-        r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서"]),
+        r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서",
+        r"отч[её]т о (?:прибыл|совокупном доходе|финансовых результатах)"i, r"о прибыли или убытке"i]),
     TableClass("cash_flow", "statement", "Cash-flow statement", [
         r"cash ?flows?"i, r"statement of cash flow"i, r"kapitalflussrechnung"i,
         r"(?:flux|variation) de (?:la )?trésorerie"i, r"estado de flujos de efectivo"i, r"rendiconto finanziario"i,
-        r"现金流量表", r"キャッシュ・?フロー計算書", r"현금흐름표"]),
+        r"现金流量表", r"キャッシュ・?フロー計算書", r"현금흐름표",
+        r"отч[её]т о движении денежных средств"i]),
     TableClass("equity_changes", "statement", "Statement of changes in equity", [
         r"changes in equity"i, r"changes in net assets"i,   # registered funds
         r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
         r"variation des capitaux propres"i, r"estado de cambios en el patrimonio"i,
         r"variazioni.{0,25}patrimonio netto"i,   # IT: (prospetto delle) variazioni (nelle voci) del/di patrimonio netto
-        r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표"]),
+        r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표",
+        r"отч[её]т об изменени.{0,15}капитал"i]),
     # Non-statement quantitative table — its own kind ("portfolio"), demonstrating the open registry.
     TableClass("fund_portfolio", "portfolio", "Fund portfolio holdings (schedule of investments)", [
         r"schedule of investments"i, r"portfolio of investments"i, r"portfolio holdings"i,
