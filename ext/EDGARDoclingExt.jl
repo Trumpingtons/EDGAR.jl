@@ -90,7 +90,14 @@ function EDGAR.structured_document(path::AbstractString;
             (try pyconvert(Int, pybuiltins.len(pyimport("pypdfium2").PdfDocument(path))) catch; 0 end) :
             (Int(pages[2]) - Int(pages[1]) + 1)
     end
-    res = progress ? _docling_progress(runconv, npages, basename(path)) : runconv()
+    if progress
+        # load the models first (the noisy, one-time part) so the forecast prints right as the
+        # genuinely-silent page processing begins — not before model loading.
+        conv.initialize_pipeline(ishtml ? bm.InputFormat.HTML : bm.InputFormat.PDF)
+        res = _docling_progress(runconv, npages, basename(path))
+    else
+        res = runconv()
+    end
     doc = res.document
 
     npages = try pyconvert(Int, doc.num_pages()) catch; 0 end
