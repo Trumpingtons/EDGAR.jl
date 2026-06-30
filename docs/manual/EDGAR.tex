@@ -2037,7 +2037,13 @@ julia> persist_document(sd)
 "/Users/you/RegulatoryReports/derived/UK-TescoFR2024"
 \end{lstlisting}
 
-\subsection{\texttt{markdown}, \texttt{write\_structured\_document}}
+\subsection{\texttt{markdown}, \texttt{write\_structured\_document}, \texttt{read\_structured\_document}}
+
+\begin{center}
+\textbf{\sig{markdown(sd::StructuredDocument) -> String}}
+\textbf{\sig{write\_structured\_document(sd::StructuredDocument, path)}}
+\textbf{\sig{read\_structured\_document(path) -> StructuredDocument}}
+\end{center}
 
 \noindent \texttt{markdown(sd::StructuredDocument)} renders the document (headings, prose, pipe tables) in
 reading order --- the human/RAG view. \texttt{write\_structured\_document(sd, path)} writes just the
@@ -2098,18 +2104,39 @@ julia> classify_tables!(; doc_id = "FR-TotalEnergiesFR2023")
 Dict("balance_sheet"=>2, "income_statement"=>1, "cash_flow"=>1, "equity_changes"=>1, "descriptive"=>3)
 \end{lstlisting}
 
-\noindent The starter taxonomy (\texttt{TABLE\_CLASSES}) is the four core statements ---
-\texttt{balance\_sheet}, \texttt{income\_statement}, \texttt{cash\_flow}, \texttt{equity\_changes} --- but
-it is deliberately \textbf{not} financial-statement-locked. Add other periodic quantitative tables (a
-fund's portfolio holdings, a loan book, production volumes) with \texttt{register\_table\_class!}; no
-change to the classifier or the schema is needed. \texttt{classify\_table\_class(heading)} is the
-underlying pure matcher (returns the \texttt{statement\_type} key or \texttt{nothing}).
+\noindent The built-in taxonomy (\texttt{TABLE\_CLASSES}) covers the four core statements ---
+\texttt{balance\_sheet}, \texttt{income\_statement}, \texttt{cash\_flow}, \texttt{equity\_changes} ---
+\emph{plus} \texttt{fund\_portfolio} (a fund's \emph{schedule of investments} / portfolio holdings),
+included precisely to show the registry is \textbf{not} financial-statement-locked. So fund portfolio
+holdings classify out of the box --- and not only from PDFs: it is validated on a Vanguard~500 annual
+report, a RiverNorth multi-fund report, and a Fidelity \emph{Contrafund} N-CSR (HTML). Other periodic
+quantitative tables (a loan book, production volumes, \dots) are added the same way, with
+\texttt{register\_table\_class!} and no change to the classifier or the schema.
+\texttt{classify\_table\_class(heading)} is the underlying pure matcher (returns the
+\texttt{statement\_type} key or \texttt{nothing}).
 
 \begin{lstlisting}
-julia> register_table_class!("fund_portfolio", "Fund portfolio holdings",
-           [r"schedule of investments"i, r"inventaire du portefeuille"i, r"portfolio"i])
-julia> classify_tables!(; doc_id = "US-RiverNorthFR")   # holdings now tag as fund_portfolio
+julia> classify_tables!(; doc_id = "US-Vanguard500FR2023")   # the Schedule of Investments
+Dict("fund_portfolio" => 9, "descriptive" => 24)
+
+julia> register_table_class!("loan_book", "Loan portfolio",   # add a further class, no schema change
+                             [r"loan portfolio"i, r"portefeuille de prêts"i])
 \end{lstlisting}
+
+\noindent (This is the document-first \emph{PDF/HTML} path. The XBRL/structured-data fund disclosures ---
+N-PORT, 13F --- noted elsewhere as ``not yet implemented'' are a separate route; the path here extracts the
+holdings \emph{tables} from the report document.)
+
+\paragraph{Taxonomy helpers.}
+\begin{center}
+\textbf{\sig{register\_table\_class!(key, description, patterns::Vector\{Regex\}) -> TableClass}}
+\textbf{\sig{classify\_table\_class(heading) -> Union\{String, Nothing\}}}
+\end{center}
+
+\noindent \texttt{register\_table\_class!} prepends a new class to the registry \texttt{TABLE\_CLASSES}
+(so it takes precedence) and returns it. \texttt{classify\_table\_class} is the pure matcher used by
+\texttt{classify\_tables!}: it returns the \texttt{statement\_type} key of the first class whose patterns
+match \texttt{heading}, or \texttt{nothing} (a descriptive table).
 
 \subsection{Repository schema}
 \label{sec:pdf-repo-schema}
