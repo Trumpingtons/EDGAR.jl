@@ -501,7 +501,7 @@ Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row
 of which extractor produced it.
 
 % ===========================================================================
-\chapter{PDF Reports}
+\chapter{PDF and HTML reports}
 \label{ch:pdf}
 
 Many regulatory filings are PDF, not XBRL --- at Companies House the format is unpredictable and much of
@@ -629,6 +629,46 @@ fields.}
 \label{fig:pdf-ingestion}
 \end{figure}
 
+\section{Statement classification and the PDF outline}
+\label{sec:pdf-classification}
+
+Once a report is in the repository, each table is tagged with a \emph{class}: \texttt{kind}
+(\texttt{statement} vs \texttt{descriptive}) and, for statements, a \texttt{statement\_type}. The starter
+taxonomy is the four core statements --- \texttt{balance\_sheet}, \texttt{income\_statement},
+\texttt{cash\_flow}, \texttt{equity\_changes} --- but the registry is \textbf{open}: other periodic
+quantitative tables (e.g.\ a fund's portfolio holdings) are added with \texttt{register\_table\_class!}
+and need no schema change. Classification is multi-language: each class carries heading patterns in
+English, French, German, Spanish, Italian and CJK. Run it with \texttt{classify\_tables!(db)}.
+
+\paragraph{The problem: the heading is not always where you expect.} A table is classified by matching a
+\emph{heading} against the patterns --- but which text is the heading? The obvious choice, the table's
+enclosing section title, is fragile: some issuers print a brand band (e.g.\ ``TotalEnergies'') at the top
+of every statement page, and the parser mistakes \emph{that} for the section heading, masking the real
+title (``Bilan consolidé''). Others vary the wording (\texttt{Bilan} instead of \texttt{État de la
+situation financière}; \texttt{Variation des capitaux propres} without the \texttt{État de} prefix), which
+defeats over-literal patterns.
+
+\paragraph{The strategy: layered heading sources, with the PDF outline as the authority.} The classifier
+considers, in order, several candidate headings for each table:
+\begin{enumerate}
+  \item the table's own \textbf{caption};
+  \item its \textbf{enclosing section title};
+  \item the nearest preceding \textbf{heading-like text block on the same page} (recovers a title the
+    brand band masked);
+  \item the entry of the \textbf{PDF outline (bookmarks)} that covers the table's page.
+\end{enumerate}
+The fourth is the robust one. A PDF's outline is an \textbf{authoritative} table of contents --- exact
+titles with page ranges, immune to page-header noise --- so mapping a table's page to its covering outline
+entry recovers the true heading even when the on-page text is unreliable. \texttt{EDGAR.jl} captures the
+outline at ingestion into the \texttt{toc} table (it also serves navigation), and the classifier maps each
+table's page to the nearest preceding \texttt{toc} entry.
+
+For example, TotalEnergies' consolidated statements carry the brand ``TotalEnergies'' as their on-page
+heading, so section-title matching tags nothing; but the outline entries
+(\texttt{8.4~Bilan~consolidé}~$\rightarrow$~p423, \texttt{8.2~Compte~de~résultat~consolidé}~$\rightarrow$~p421,
+\dots) classify every statement correctly --- including \emph{both} halves (ACTIF and PASSIF) of the
+two-part French \emph{Bilan}. Where a PDF has no outline, the earlier sources still apply.
+
 \section{The deterministic fallback}
 \label{sec:pdf-fallback}
 
@@ -647,6 +687,40 @@ exactly like \texttt{facts(f)}:
 rows = extract_pdf("annual_report.pdf"; page = 133)      # a Vector{FactRow}, like facts(f)
 select_statement(rows, "BalanceSheet")                   # every fact coordinate-anchored
 \end{lstlisting}
+
+\section{HTML input (e.g.\ SEC N-CSR)}
+\label{sec:html-input}
+
+The pipeline is not PDF-only. \texttt{structured\_document} also accepts \textbf{HTML} (\texttt{.htm} /
+\texttt{.html}) --- useful for filings published as HTML rather than PDF, such as a US fund's SEC
+\emph{N-CSR}. Detection is by extension: an HTML file is routed through Docling's HTML pipeline (the
+\texttt{pages} and \texttt{ocr} options do not apply), and from there it is the \emph{same} flow ---
+\texttt{StructuredDocument} $\rightarrow$ \texttt{persist\_document} / \texttt{to\_repository}
+$\rightarrow$ \texttt{classify\_tables!} --- so nothing downstream changes.
+
+\begin{lstlisting}
+julia> using EDGAR, PythonCall, DuckDB
+julia> sd = structured_document("US-FidelityContrafundNCSR.htm";
+                                jurisdiction = "US", language = "en", report_type = "N-CSR")
+julia> to_repository(sd)
+\end{lstlisting}
+
+\paragraph{Caveats versus PDF.} HTML carries less layout signal, so two heading sources are weaker or
+absent:
+\begin{itemize}
+  \item \textbf{No page coordinates.} HTML has no pages, so \texttt{(page, bbox)} provenance comes through
+    empty (page~0). The pixel back-link is therefore unavailable for HTML-sourced facts.
+  \item \textbf{No PDF outline, and often no sections.} Docling's HTML backend may emit \emph{no} section
+    headers (headings arrive as ordinary text blocks) and there is no bookmark outline. Classification
+    (\S\ref{sec:pdf-classification}) then falls back to the table caption and the nearest preceding
+    heading text block, rather than the section title / outline.
+  \item \textbf{SEC SGML wrapper tolerated.} A raw SEC submission document begins with an SGML
+    \texttt{<DOCUMENT>} wrapper around the HTML; Docling parses it regardless.
+\end{itemize}
+
+\noindent Validated on a Fidelity \emph{Contrafund} N-CSR: Docling recovered \textasciitilde1{,}690 text
+blocks, 194 tables and 12 figures into the repository --- the same contracts as a PDF, minus page/outline
+provenance.
 
 % ===========================================================================
 \chapter{Common API}
@@ -2005,6 +2079,38 @@ julia> DBInterface.execute(con,
 # → ("UK-TescoFR2024:s7", 133)   -- the Group balance sheet
 \end{lstlisting}
 
+\subsection{\texttt{classify\_tables!} and the table-class taxonomy}
+
+\begin{center}
+\textbf{\sig{classify\_tables!(db; doc\_id=nothing) -> Dict\{String,Int\}}}
+\end{center}
+
+\noindent Tag every repository table with a class: set \texttt{kind} (\texttt{statement} /
+\texttt{descriptive}) and, for statements, \texttt{statement\_type}. It matches each table's heading ---
+trying, in order, its caption, its section title, the nearest same-page heading block, and the
+\textbf{PDF-outline entry} covering its page (§\ref{sec:pdf-classification}) --- against an \emph{open},
+multilingual registry of table classes. Optionally restrict to one \texttt{doc\_id}; returns counts per
+class. \textbf{Available only after \texttt{using DuckDB}.}
+
+\begin{lstlisting}
+julia> using EDGAR, DuckDB
+julia> classify_tables!(; doc_id = "FR-TotalEnergiesFR2023")
+Dict("balance_sheet"=>2, "income_statement"=>1, "cash_flow"=>1, "equity_changes"=>1, "descriptive"=>3)
+\end{lstlisting}
+
+\noindent The starter taxonomy (\texttt{TABLE\_CLASSES}) is the four core statements ---
+\texttt{balance\_sheet}, \texttt{income\_statement}, \texttt{cash\_flow}, \texttt{equity\_changes} --- but
+it is deliberately \textbf{not} financial-statement-locked. Add other periodic quantitative tables (a
+fund's portfolio holdings, a loan book, production volumes) with \texttt{register\_table\_class!}; no
+change to the classifier or the schema is needed. \texttt{classify\_table\_class(heading)} is the
+underlying pure matcher (returns the \texttt{statement\_type} key or \texttt{nothing}).
+
+\begin{lstlisting}
+julia> register_table_class!("fund_portfolio", "Fund portfolio holdings",
+           [r"schedule of investments"i, r"inventaire du portefeuille"i, r"portfolio"i])
+julia> classify_tables!(; doc_id = "US-RiverNorthFR")   # holdings now tag as fund_portfolio
+\end{lstlisting}
+
 \subsection{Repository schema}
 \label{sec:pdf-repo-schema}
 
@@ -2732,6 +2838,73 @@ ESEF) and a statutory HGB single-entity account (usually PDF).
 \noindent These were confirmed end-to-end from PDF, without OCR: a HGB \emph{Jahresabschluss}
 (\emph{Bilanzsumme} 197.754~Mio~€, \emph{Aktiva} = \emph{Passiva}) and an IFRS \emph{Konzernbilanz}
 (total 1.986.546~T€, assets = equity \(+\) liabilities) both extracted and cross-footed correctly.
+
+\section{France}
+\label{sec:esef-france}
+
+French listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL,
+usually inside the \emph{Document d'enregistrement universel} (DEU / URD) filed with the \textbf{AMF}
+(\emph{Autorité des marchés financiers}). As with Germany, France also has a French-GAAP layer that is
+typically PDF-only, so the particularities below matter for the PDF route (Chapter~\ref{ch:pdf}); they were
+verified against real filings during testing.
+
+\subsection{Two accounting flavours: PCG and IFRS}
+
+\begin{itemize}
+  \item \textbf{French GAAP --- the PCG} (\emph{Plan Comptable Général}) --- the \emph{single-entity}
+    statutory accounts (\emph{comptes sociaux} / \emph{comptes annuels}): a two-sided \emph{Bilan}
+    (\emph{Actif} / \emph{Passif}), the \emph{Compte de résultat}, and the \emph{Annexe} (notes). Filed
+    with the registries (\emph{greffe}); typically PDF.
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{comptes consolidés}): \emph{Bilan
+    consolidé}, \emph{Compte de résultat consolidé}, \emph{Résultat global}, \emph{Tableau de flux de
+    trésorerie}, \emph{Variation des capitaux propres}. For regulated-market issuers this is the
+    ESEF-tagged report inside the URD.
+\end{itemize}
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{French statement vocabulary.}
+\label{tab:fr-vocab}
+\small
+\begin{tabular}{@{}p{0.46\textwidth}p{0.48\textwidth}@{}}
+\toprule
+\textbf{French} & \textbf{Meaning} \\
+\midrule
+\emph{Bilan} (\emph{consolidé}) & Balance sheet \\
+\emph{Actif} / \emph{Passif} & Assets side / equity-and-liabilities side \\
+\emph{Compte de résultat} (\emph{consolidé}) & Income statement \\
+\emph{Résultat global} & Statement of comprehensive income \\
+\emph{Tableau de(s) flux de trésorerie} / \emph{de variation de la trésorerie} & Cash-flow statement \\
+\emph{(Tableau de) variation des capitaux propres} & Statement of changes in equity \\
+\emph{Annexe} & Notes to the accounts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{``Bilan'', not ``État de la situation financière''.} French IFRS filers overwhelmingly keep
+    the traditional \emph{Bilan consolidé} (both LVMH and TotalEnergies do) rather than the literal IFRS
+    title. Match on \emph{bilan}, and keep phrase patterns loose (\emph{situation financière};
+    \emph{variation des capitaux propres} \emph{without} an \emph{État de} prefix), because headings insert
+    words --- \emph{Bilan} \textbf{consolidé}, \emph{état} \textbf{consolidé} \emph{de la situation
+    financière}.
+  \item \textbf{Number locale.} The thousands separator is a \textbf{space} (often a non-breaking/thin
+    space): \texttt{1 234 567,89} = 1{,}234{,}567.89 --- distinct from Germany's dot. The decimal mark is a
+    comma. Amounts are usually \emph{en millions d'euros}.
+  \item \textbf{The URD is one big combined document} (300--700 pp) and the consolidated statements are a
+    short sub-section. Locate them via the \textbf{PDF outline} (§\ref{sec:pdf-classification}) rather than
+    by scanning headings: issuers print a brand band atop each statement page that otherwise masks the real
+    title.
+\end{itemize}
+
+\noindent Confirmed end-to-end from PDF, without OCR, on two filers --- \textbf{LVMH} and
+\textbf{TotalEnergies}: \emph{Bilan consolidé}, \emph{Compte de résultat consolidé}, cash-flow and
+\emph{Variation des capitaux propres} all extracted and classified (TotalEnergies via its outline; both
+halves --- \emph{Actif} and \emph{Passif} --- of the two-part French \emph{Bilan} tag as the balance sheet).
 
 \chapter{UK filing systems}
 \label{sys:uk}

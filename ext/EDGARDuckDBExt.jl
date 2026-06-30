@@ -320,6 +320,8 @@ const _REPO_DDL = [
      concept VARCHAR, standard_concept VARCHAR, period_start DATE, period_end DATE, is_instant BOOLEAN,
      value DOUBLE, unit VARCHAR, scale DOUBLE, sign INTEGER, decimals INTEGER, extractor VARCHAR,
      confidence DOUBLE, bbox VARCHAR)""",
+  """CREATE TABLE IF NOT EXISTS toc (doc_id VARCHAR, seq INTEGER, level INTEGER, title VARCHAR,
+     page INTEGER, PRIMARY KEY (doc_id, seq))""",
 ]
 const _REPO_VIEWS = [
   """CREATE OR REPLACE VIEW v_cell_context AS
@@ -360,7 +362,7 @@ function _load_doc!(con, sd::EDGAR.StructuredDocument)
     try
         DBInterface.execute(con,
             "DELETE FROM table_cells WHERE table_id IN (SELECT table_id FROM \"tables\" WHERE doc_id = ?)", (doc,))
-        for t in ("facts", "figures", "\"tables\"", "text_blocks", "sections", "documents")
+        for t in ("facts", "figures", "\"tables\"", "text_blocks", "sections", "toc", "documents")
             DBInterface.execute(con, "DELETE FROM $t WHERE doc_id = ?", (doc,))
         end
         m = sd.document
@@ -399,9 +401,15 @@ function _load_doc!(con, sd::EDGAR.StructuredDocument)
                 _bj(f.bbox), _n(f.image_path), _n(f.image_format), _n(f.width), _n(f.height)))
         end
         DBInterface.close!(fg)
+        tc = DBInterface.prepare(con, "INSERT INTO toc VALUES (?,?,?,?,?)")
+        for (i, e) in enumerate(sd.toc)
+            DBInterface.execute(tc, (doc, i, e.level, e.title, e.page))
+        end
+        DBInterface.close!(tc)
         DBInterface.execute(con, "COMMIT")
         return (sections = length(sd.sections), text_blocks = length(sd.text_blocks),
-                tables = length(sd.tables), table_cells = ncells, figures = length(sd.figures))
+                tables = length(sd.tables), table_cells = ncells, figures = length(sd.figures),
+                toc = length(sd.toc))
     catch e
         DBInterface.execute(con, "ROLLBACK")
         rethrow(e)
@@ -424,5 +432,79 @@ end
 # Convenience: load straight from a persisted structured.json (no PythonCall needed).
 EDGAR.to_repository(path::AbstractString, db::AbstractString) =
     EDGAR.to_repository(EDGAR.read_structured_document(path), db)
+
+# ── Table classification pass (set tables.kind / statement_type) ─────────────────────────────────
+# Match each table's caption (falling back to its enclosing section title) against the open TABLE_CLASSES
+# registry. A first cut on heading text; numeric-density / largest-table-in-section refinement is a later step.
+function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
+    tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.page_start AS page, t.ord AS ord, " *
+           "t.caption AS caption, s.title AS title FROM \"tables\" t " *
+           "LEFT JOIN sections s ON t.section_id = s.section_id" *
+           (doc_id === nothing ? "" : " WHERE t.doc_id = ?")
+    trows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, tsql) :
+                                                        DBInterface.execute(con, tsql, (doc_id,)))
+    # heading-ish (short) text blocks, to recover a statement title the page-header may have masked
+    bsql = "SELECT doc_id, page, ord, text FROM text_blocks WHERE char_len < 140" *
+           (doc_id === nothing ? "" : " AND doc_id = ?")
+    brows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, bsql) :
+                                                        DBInterface.execute(con, bsql, (doc_id,)))
+    csql = "SELECT doc_id, page, title FROM toc" * (doc_id === nothing ? "" : " WHERE doc_id = ?")
+    crows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, csql) :
+                                                        DBInterface.execute(con, csql, (doc_id,)))
+    byp = Dict{Tuple{String,Int},Vector{Tuple{Int,String}}}()
+    for b in brows
+        (b.text === missing || b.page === missing) && continue
+        push!(get!(byp, (b.doc_id, b.page), Tuple{Int,String}[]), (b.ord, String(b.text)))
+    end
+    toc = Dict{String,Vector{Tuple{Int,String}}}()         # doc_id -> sorted (page, title)
+    for c in crows
+        (c.title === missing || c.page === missing) && continue
+        push!(get!(toc, c.doc_id, Tuple{Int,String}[]), (c.page, String(c.title)))
+    end
+    for v in values(toc); sort!(v; by = first); end
+    function nearest_toc(d, page)                            # the outline entry covering this page
+        best = nothing
+        for (p, ttl) in get(toc, d, Tuple{Int,String}[])
+            p <= page ? (best = ttl) : break
+        end
+        return best
+    end
+    upd = DBInterface.prepare(con, "UPDATE \"tables\" SET kind = ?, statement_type = ? WHERE table_id = ?")
+    counts = Dict{String,Int}()
+    try
+        for t in trows
+            cand = String[]
+            t.caption === missing || push!(cand, String(t.caption))
+            t.title   === missing || push!(cand, String(t.title))
+            # the nearest 2 preceding short blocks on the same page (the visual heading)
+            blks = get(byp, (t.doc_id, t.page), Tuple{Int,String}[])
+            prec = sort([b for b in blks if b[1] < t.ord]; by = first, rev = true)
+            for b in first(prec, 2)
+                push!(cand, b[2])
+            end
+            # the PDF-outline entry covering this page (authoritative; immune to page-header noise)
+            tt = nearest_toc(t.doc_id, t.page); tt === nothing || push!(cand, tt)
+            st = EDGAR.classify_table_class(join(cand, " | "))
+            kind = st === nothing ? "descriptive" : "statement"
+            DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
+            k = st === nothing ? "descriptive" : st
+            counts[k] = get(counts, k, 0) + 1
+        end
+    finally
+        DBInterface.close!(upd)
+    end
+    return counts
+end
+
+function EDGAR.classify_tables!(
+        db::AbstractString = joinpath(expanduser("~/RegulatoryReports"), "regulatory-reports.duckdb");
+        doc_id = nothing)
+    con = DBInterface.connect(DuckDB.DB, db)
+    try
+        return EDGAR.classify_tables!(con; doc_id = doc_id)
+    finally
+        DBInterface.close!(con)
+    end
+end
 
 end # module

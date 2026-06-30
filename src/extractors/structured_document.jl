@@ -99,6 +99,12 @@ struct DocMeta
     ocr::Bool
 end
 
+struct TocEntry          # an entry from the PDF outline/bookmarks — authoritative heading + page
+    title::String
+    level::Int
+    page::Int
+end
+
 struct StructuredDocument
     schema_version::String
     document::DocMeta
@@ -106,6 +112,7 @@ struct StructuredDocument
     text_blocks::Vector{TextBlock}
     tables::Vector{DocTable}
     figures::Vector{DocFigure}
+    toc::Vector{TocEntry}
 end
 
 Base.show(io::IO, sd::StructuredDocument) = print(io,
@@ -154,10 +161,11 @@ _jd(m::DocMeta) = OrderedDict("doc_id" => m.doc_id, "source_path" => m.source_pa
     "company" => m.company, "report_type" => m.report_type, "fiscal_year" => m.fiscal_year,
     "currency" => m.currency, "framework" => m.framework, "n_pages" => m.n_pages,
     "parser" => m.parser, "parser_version" => m.parser_version, "ocr" => m.ocr)
+_jd(e::TocEntry) = OrderedDict("title" => e.title, "level" => e.level, "page" => e.page)
 _jd(sd::StructuredDocument) = OrderedDict("schema_version" => sd.schema_version,
     "document" => _jd(sd.document), "sections" => [_jd(s) for s in sd.sections],
     "text_blocks" => [_jd(t) for t in sd.text_blocks], "tables" => [_jd(t) for t in sd.tables],
-    "figures" => [_jd(f) for f in sd.figures])
+    "figures" => [_jd(f) for f in sd.figures], "toc" => [_jd(e) for e in sd.toc])
 
 # --- Markdown render (Python-free; headings, prose, pipe tables in reading order) ----------------
 function _md_table(t::DocTable)
@@ -274,7 +282,9 @@ function read_structured_document(path::AbstractString)
             String(c.text)) for c in t.cells]) for t in j.tables]
     figures = [DocFigure(String(f.figure_id), _rs(f.section_id), Int(f.ord), _rs(f.caption), Int(f.page),
         _rbb(f.bbox), _rs(f.image_path), _rs(f.image_format), _ri(f.width), _ri(f.height)) for f in j.figures]
-    return StructuredDocument(String(j.schema_version), meta, sections, texts, tables, figures)
+    jt = get(j, :toc, nothing)
+    toc = jt === nothing ? TocEntry[] : [TocEntry(String(e.title), Int(e.level), Int(e.page)) for e in jt]
+    return StructuredDocument(String(j.schema_version), meta, sections, texts, tables, figures, toc)
 end
 
 """
@@ -287,4 +297,16 @@ Returns row counts. **Available only after `using DuckDB`** (package extension).
 """
 function to_repository(args...; kwargs...)
     error("`to_repository` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl repository loader.")
+end
+
+"""
+    classify_tables!(db; doc_id=nothing) -> Dict{String,Int}
+
+Tag every repository table by class: set `tables.kind` (`"statement"`/`"descriptive"`) and
+`tables.statement_type` (e.g. `"balance_sheet"`) by matching each table's caption or enclosing section
+title against [`TABLE_CLASSES`](@ref) (via [`classify_table_class`](@ref)). Optionally restrict to one
+`doc_id`. Returns counts per class. **Available only after `using DuckDB`** (package extension).
+"""
+function classify_tables!(args...; kwargs...)
+    error("`classify_tables!` requires DuckDB.jl. Run `using DuckDB` to load the EDGAR.jl repository loader.")
 end

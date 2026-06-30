@@ -12,7 +12,7 @@ module EDGARDoclingExt
 
 using EDGAR
 using PythonCall
-using EDGAR: BBox, DocSection, TextBlock, TableCell, DocTable, DocFigure, DocMeta, StructuredDocument
+using EDGAR: BBox, DocSection, TextBlock, TableCell, DocTable, DocFigure, DocMeta, StructuredDocument, TocEntry
 
 const _NONE = pybuiltins.None
 _optstr(x) = pyis(x, _NONE) ? nothing : (s = strip(pyconvert(String, x)); isempty(s) ? nothing : String(s))
@@ -20,14 +20,18 @@ _optstr(::Nothing) = nothing
 
 # bbox: docling is BOTTOMLEFT (y from page bottom); convert to TOP-LEFT (y from top) using page height.
 function _bbox(prov, pageH::Dict{Int,Float64})
-    pyconvert(Int, pybuiltins.len(prov)) == 0 && return nothing
-    p0 = prov[0]
-    page = pyconvert(Int, p0.page_no)
-    bb = p0.bbox
-    l = pyconvert(Float64, bb.l); t = pyconvert(Float64, bb.t)
-    r = pyconvert(Float64, bb.r); b = pyconvert(Float64, bb.b)
-    H = get(pageH, page, 0.0)
-    return H > 0 ? BBox(page, l, H - t, r, H - b) : BBox(page, l, t, r, b)
+    try
+        pyconvert(Int, pybuiltins.len(prov)) == 0 && return nothing
+        p0 = prov[0]
+        page = pyconvert(Int, p0.page_no)
+        bb = p0.bbox
+        l = pyconvert(Float64, bb.l); t = pyconvert(Float64, bb.t)
+        r = pyconvert(Float64, bb.r); b = pyconvert(Float64, bb.b)
+        H = get(pageH, page, 0.0)
+        return H > 0 ? BBox(page, l, H - t, r, H - b) : BBox(page, l, t, r, b)
+    catch
+        return nothing   # HTML / no page coordinates
+    end
 end
 
 function EDGAR.structured_document(path::AbstractString;
@@ -36,21 +40,29 @@ function EDGAR.structured_document(path::AbstractString;
         jurisdiction = nothing, language = nothing, company = nothing,
         report_type = nothing, fiscal_year = nothing, currency = nothing, framework = nothing)
 
-    isfile(path) || throw(ArgumentError("PDF not found: $(repr(path))"))
+    isfile(path) || throw(ArgumentError("file not found: $(repr(path))"))
     bm  = pyimport("docling.datamodel.base_models")
     po  = pyimport("docling.datamodel.pipeline_options")
     dc  = pyimport("docling.document_converter")
     ilm = pyimport("importlib.metadata")
 
-    opts = po.PdfPipelineOptions()
-    opts.do_ocr = ocr
-    opts.do_table_structure = true
-    fo = pydict(); fo[bm.InputFormat.PDF] = dc.PdfFormatOption(pipeline_options = opts)
-    conv = dc.DocumentConverter(format_options = fo)
-    res  = pages === nothing ? conv.convert(path) : conv.convert(path; page_range = pages)
-    doc  = res.document
+    ishtml = lowercase(last(splitext(path))) in (".htm", ".html")
+    if ishtml
+        # HTML input (e.g. a SEC N-CSR): Docling's HTML pipeline. `pages`/`ocr` do not apply, and the
+        # document has no page coordinates, so bbox/page come through empty (handled below).
+        conv = dc.DocumentConverter(allowed_formats = pylist([bm.InputFormat.HTML]))
+        res  = conv.convert(path)
+    else
+        opts = po.PdfPipelineOptions()
+        opts.do_ocr = ocr
+        opts.do_table_structure = true
+        fo = pydict(); fo[bm.InputFormat.PDF] = dc.PdfFormatOption(pipeline_options = opts)
+        conv = dc.DocumentConverter(format_options = fo)
+        res  = pages === nothing ? conv.convert(path) : conv.convert(path; page_range = pages)
+    end
+    doc = res.document
 
-    npages = pyconvert(Int, doc.num_pages())
+    npages = try pyconvert(Int, doc.num_pages()) catch; 0 end
     pver   = pyconvert(String, ilm.version("docling"))
     lang   = language === nothing ? "und" : String(language)
 
@@ -118,7 +130,24 @@ function EDGAR.structured_document(path::AbstractString;
         fiscal_year === nothing ? nothing : Int(fiscal_year),
         _optstr(currency), _optstr(framework), npages, "docling", pver, ocr)
 
-    return StructuredDocument("1.0", meta, sections, texts, tables, figures)
+    # PDF outline / bookmarks — an authoritative heading+page source (immune to page-header noise),
+    # read with pypdfium2 (same venv). Empty for HTML or PDFs without an outline.
+    toc = TocEntry[]
+    if !ishtml
+        try
+            pdoc = pyimport("pypdfium2").PdfDocument(path)
+            for it in pdoc.get_toc()
+                pyis(it.title, _NONE) && continue
+                lvl = try pyconvert(Int, it.level) catch; 0 end
+                pg  = try (pi = it.page_index; pyis(pi, _NONE) ? 0 : pyconvert(Int, pi) + 1) catch; 0 end
+                push!(toc, TocEntry(pyconvert(String, it.title), lvl, pg))
+            end
+            pdoc.close()
+        catch
+        end
+    end
+
+    return StructuredDocument("1.0", meta, sections, texts, tables, figures, toc)
 end
 
 end # module
