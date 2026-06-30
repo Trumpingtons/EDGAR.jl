@@ -40,6 +40,10 @@ const TABLE_CLASSES = TableClass[
         r"changes in equity"i, r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
         r"variation des capitaux propres"i, r"estado de cambios en el patrimonio"i,
         r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표"]),
+    # Non-statement quantitative table — demonstrates the open registry (funds, not financial statements).
+    TableClass("fund_portfolio", "Fund portfolio holdings (schedule of investments)", [
+        r"schedule of investments"i, r"portfolio of investments"i, r"portfolio holdings"i,
+        r"consolidated schedule of investments"i, r"inventaire du portefeuille"i]),
 ]
 
 """
