@@ -305,7 +305,7 @@ const _REPO_DDL = [
   """CREATE TABLE IF NOT EXISTS "tables" (table_id VARCHAR PRIMARY KEY, doc_id VARCHAR,
      section_id VARCHAR, ord INTEGER, kind VARCHAR, statement_type VARCHAR, caption VARCHAR,
      lang VARCHAR, page_start INTEGER, page_end INTEGER, bbox VARCHAR, n_rows INTEGER, n_cols INTEGER,
-     csv_path VARCHAR)""",
+     csv_path VARCHAR, currency VARCHAR, scale DOUBLE)""",   # currency/scale are table-invariant; facts inherit
   """CREATE TABLE IF NOT EXISTS table_cells (table_id VARCHAR, "row" INTEGER, "col" INTEGER,
      rowspan INTEGER, colspan INTEGER, is_header BOOLEAN, text VARCHAR,
      PRIMARY KEY (table_id, "row", "col"))""",
@@ -356,6 +356,9 @@ function _ensure_repo(con)
     for col in ("fiscal_year INTEGER", "period_precision VARCHAR")
         DBInterface.execute(con, "ALTER TABLE facts ADD COLUMN IF NOT EXISTS $col")
     end
+    for col in ("currency VARCHAR", "scale DOUBLE")
+        DBInterface.execute(con, "ALTER TABLE \"tables\" ADD COLUMN IF NOT EXISTS $col")
+    end
     for v in _REPO_VIEWS
         DBInterface.execute(con, v)
     end
@@ -387,7 +390,9 @@ function _load_doc!(con, sd::EDGAR.StructuredDocument)
                 t.page, _bj(t.bbox), t.char_len))
         end
         DBInterface.close!(tx)
-        tb = DBInterface.prepare(con, "INSERT INTO \"tables\" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        tb = DBInterface.prepare(con, "INSERT INTO \"tables\" (table_id, doc_id, section_id, ord, kind, " *
+            "statement_type, caption, lang, page_start, page_end, bbox, n_rows, n_cols, csv_path) " *
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")   # currency/scale left NULL (detection deferred)
         cc = DBInterface.prepare(con, "INSERT INTO table_cells VALUES (?,?,?,?,?,?,?)")
         ncells = 0
         for t in sd.tables

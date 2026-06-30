@@ -89,7 +89,7 @@ feeding `extract_section`/`find_paragraphs`. Reuses the substrate Phase 0 built.
 
 ## Consolidated *deferred* list (in scope, pushed later)
 
-1. **Scale detection** (百万円 / TEUR / Mio. / 千元 footers) — "step 3 / scale"; `scale` column unfilled.
+1. **Scale & currency detection** (百万円 / TEUR / Mio. / 千元 footers; £/€/¥/₩/₹). Storage is ready — `tables.scale` + `tables.currency` columns exist (table-invariant; facts inherit, per-fact `unit`/`scale` only for exceptions like per-share/%); the *detection* of these from headers/footers is deferred.
 2. **Row→concept mapping** (1.4b, `standard_concept`) — labels stored raw.
 3. **Translation layer** — original verbatim now; translate as a later derived layer.
 4. **Entity/dimension column header storage** — no schema column; provenance-recoverable only.
