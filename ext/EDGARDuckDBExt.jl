@@ -443,10 +443,50 @@ end
 EDGAR.to_repository(path::AbstractString, db::AbstractString) =
     EDGAR.to_repository(EDGAR.read_structured_document(path), db)
 
+# Financial-statements SECTION headings in the bookmark TOC, multilingual (consolidated + parent/company
+# accounts). Used to confine primary-statement detection to those page ranges — the structural discriminator
+# that separates a real statement from its echo elsewhere (e.g. a German management report's `Ertragslage`).
+const _FS_SECTION = r"financial statements|konzernabschluss|jahresabschluss|comptes consolid|comptes annuels|états financiers|bilancio consolidato|bilancio d.esercizio|bilancio separato|estados financ|cuentas anuales|demonstrações financ|财务报表|連結財務諸表|財務諸表|計算書類|재무제표|финансов[ао][яй] отч"i
+const _FS_NOTNOTE = r"\bnotes?\b|anhang|附注|주석|примечани"i
+
+# Page ranges of the financial-statements section(s) per doc, from the bookmark TOC: each FS-matching entry
+# spans until the next bookmark at the same-or-higher level. Overlapping/adjacent ranges are merged. Empty
+# for docs without bookmarks (→ no confinement, the classifier falls back to caption/heading alone).
+function _fs_ranges(con, doc_id)
+    sql = "SELECT doc_id, level, title, page FROM toc" *
+          (doc_id === nothing ? "" : " WHERE doc_id = ?") * " ORDER BY doc_id, seq"
+    rows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, sql) :
+                                                       DBInterface.execute(con, sql, (doc_id,)))
+    bydoc = Dict{String,Vector{Any}}()
+    for r in rows; push!(get!(bydoc, r.doc_id, []), r); end
+    out = Dict{String,Vector{Tuple{Int,Int}}}()
+    for (doc, toc) in bydoc
+        rng = Tuple{Int,Int}[]
+        for (i, e) in enumerate(toc)
+            (e.title === missing || e.page === missing) && continue
+            (occursin(_FS_SECTION, String(e.title)) && !occursin(_FS_NOTNOTE, String(e.title))) || continue
+            endp = typemax(Int)
+            for j in i+1:length(toc)
+                (toc[j].page !== missing && toc[j].level <= e.level) && (endp = toc[j].page - 1; break)
+            end
+            push!(rng, (e.page, endp))
+        end
+        sort!(rng)
+        merged = Tuple{Int,Int}[]
+        for r in rng
+            (!isempty(merged) && r[1] <= merged[end][2] + 1) ?
+                (merged[end] = (merged[end][1], max(merged[end][2], r[2]))) : push!(merged, r)
+        end
+        isempty(merged) || (out[doc] = merged)
+    end
+    return out
+end
+
 # ── Table classification pass (set tables.kind / statement_type) ─────────────────────────────────
 # Match each table's caption (falling back to its enclosing section title) against the open TABLE_CLASSES
-# registry. A first cut on heading text; numeric-density / largest-table-in-section refinement is a later step.
+# registry, confined — when the bookmark TOC marks them — to the financial-statements section(s).
 function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
+    fsr = _fs_ranges(con, doc_id)
     tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.page_start AS page, t.ord AS ord, " *
            "t.caption AS caption, s.title AS title FROM \"tables\" t " *
            "LEFT JOIN sections s ON t.section_id = s.section_id" *
@@ -513,9 +553,19 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             # "30. Notes to the cash flow statement"). Primary statements are titled, never numbered, so this
             # only filters notes — and stops them polluting the statement facts (e.g. CF note rows). The note
             # reference per line item is still captured on each fact via `note_ref`.
+            rng = get(fsr, t.doc_id, Tuple{Int,Int}[])
+            has_fs = !isempty(rng)
+            in_fs = has_fs && t.page !== missing && any(r -> r[1] <= t.page <= r[2], rng)
             own = String[String(x) for x in (t.caption, t.title) if x !== missing]
-            isnote = any(s -> occursin(r"\bnotes?\s+to\b"i, s) || occursin(r"^\s*\d{1,3}\s*[.\)]", s), own)
+            # "notes to …" is always a note; a leading note-number ("24. Lease liabilities") marks a note ONLY
+            # OUTSIDE the FS section — inside it the statements are numbered too (Siemens' "1. Konzern-Gewinn-
+            # und Verlustrechnung", "2. Bilanz"), so there we trust the class match instead.
+            isnote = any(s -> occursin(r"\bnotes?\s+to\b"i, s) ||
+                              (!in_fs && occursin(r"^\s*\d{1,3}\s*[.\)]", s)), own)
             st = isnote ? nothing : EDGAR.classify_table_class(join(cand, " | "))
+            # TOC confinement: when the bookmarks mark the FS section(s), a table outside every FS range
+            # cannot be a primary statement (excludes management-report / front-half echoes).
+            (st !== nothing && has_fs && !in_fs) && (st = nothing)
             kind = st === nothing ? "descriptive" : something(EDGAR.table_class_kind(st), "statement")
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
             k = st === nothing ? "descriptive" : st
