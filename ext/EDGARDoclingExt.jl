@@ -34,12 +34,32 @@ function _bbox(prov, pageH::Dict{Int,Float64})
     end
 end
 
+# Self-emitted progress. Docling's convert() is a single silent blocking call that emits no intermediate
+# signal AND starves a background printer thread (so a live ticking bar is impractical here). Instead we
+# print a reliable, zero-dep FORECAST up front (page count × ~2 s/page measured) and the ACTUAL time on
+# completion — which is what removes the "long silent wait" surprise. `npages<=0` (e.g. HTML) → no ETA.
+function _docling_progress(run, npages::Integer, name; per_page = 2.0)
+    if npages > 0
+        est = round(Int, npages * per_page)
+        println("  ", name, ": ", npages, " pages — est ~", est, "s (~", round(Int, 60 / per_page),
+                " pages/min). Docling runs silently; please wait…")
+    else
+        println("  ", name, ": converting (page count unknown)…")
+    end
+    flush(stdout)
+    t0 = time()
+    r = run()
+    println("  ", name, ": done in ", round(Int, time() - t0), "s")
+    flush(stdout)
+    return r
+end
+
 function EDGAR.structured_document(path::AbstractString;
         pages::Union{Nothing,Tuple{Integer,Integer}} = nothing, ocr::Bool = false,
         doc_id::AbstractString = first(splitext(basename(path))),
         jurisdiction = nothing, language = nothing, company = nothing,
         report_type = nothing, fiscal_year = nothing, currency = nothing, framework = nothing,
-        with_images::Bool = false)
+        with_images::Bool = true, progress::Bool = false)
 
     isfile(path) || throw(ArgumentError("file not found: $(repr(path))"))
     bm  = pyimport("docling.datamodel.base_models")
@@ -53,7 +73,8 @@ function EDGAR.structured_document(path::AbstractString;
         # HTML input (e.g. a SEC N-CSR): Docling's HTML pipeline. `pages`/`ocr` do not apply, and the
         # document has no page coordinates, so bbox/page come through empty (handled below).
         conv = dc.DocumentConverter(allowed_formats = pylist([bm.InputFormat.HTML]))
-        res  = conv.convert(path)
+        runconv = () -> conv.convert(path)
+        npages = 0
     else
         opts = po.PdfPipelineOptions()
         opts.do_ocr = ocr
@@ -64,8 +85,12 @@ function EDGAR.structured_document(path::AbstractString;
         end
         fo = pydict(); fo[bm.InputFormat.PDF] = dc.PdfFormatOption(pipeline_options = opts)
         conv = dc.DocumentConverter(format_options = fo)
-        res  = pages === nothing ? conv.convert(path) : conv.convert(path; page_range = pages)
+        runconv = pages === nothing ? (() -> conv.convert(path)) : (() -> conv.convert(path; page_range = pages))
+        npages = pages === nothing ?
+            (try pyconvert(Int, pybuiltins.len(pyimport("pypdfium2").PdfDocument(path))) catch; 0 end) :
+            (Int(pages[2]) - Int(pages[1]) + 1)
     end
+    res = progress ? _docling_progress(runconv, npages, basename(path)) : runconv()
     doc = res.document
 
     npages = try pyconvert(Int, doc.num_pages()) catch; 0 end

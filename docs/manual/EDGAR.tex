@@ -2012,7 +2012,7 @@ installed) on \texttt{JULIA\_PYTHONCALL\_EXE}. Without it they raise a message t
 \subsection{\texttt{structured\_document}}
 
 \begin{center}
-\textbf{\sig{structured\_document(pdf\_path; pages=nothing, ocr=false, with\_images=false, doc\_id=<stem>,
+\textbf{\sig{structured\_document(pdf\_path; pages=nothing, ocr=false, with\_images=true, progress=false, doc\_id=<stem>,
 jurisdiction=nothing, language=nothing, company=nothing, report\_type=nothing, fiscal\_year=nothing,
 currency=nothing, framework=nothing) -> StructuredDocument}}
 \end{center}
@@ -2026,14 +2026,22 @@ Japanese EDINET); the metadata keywords seed fields a per-jurisdiction profile w
 Statement classification (\emph{which} table is the balance sheet) is a later, separate step --- the parser
 emits structure only.
 
-\paragraph{Figure images.} With \texttt{with\_images=true}, Docling also renders each figure to a PNG. The
-image \textbf{bytes are held on the returned \texttt{StructuredDocument}} (deliberately \emph{out} of
-\texttt{structured.json} and the DB); \texttt{persist\_document} then writes them to
+\paragraph{Figure images.} With \texttt{with\_images} (\textbf{on by default}), Docling renders each figure
+to a PNG. The image \textbf{bytes are held on the returned \texttt{StructuredDocument}} (deliberately
+\emph{out} of \texttt{structured.json} and the DB); \texttt{persist\_document} then writes them to
 \texttt{figures/<id>.png} and sets each figure's \texttt{image\_path} / \texttt{image\_format} /
-\texttt{width} / \texttt{height}. It is \textbf{off by default} --- capturing images makes Docling render
-page bitmaps, which is heavier. Validated on real charts (a fund's growth-of-\$10{,}000 performance graph)
-and on company figures. HTML inputs have no page render, so their figures usually come through \emph{without}
-image bytes (\S\ref{sec:html-input}).
+\texttt{width} / \texttt{height}. Capturing images is \textbf{essentially time-free} --- Docling already
+renders each page bitmap to run its layout/table models, so this just \emph{retains and crops} them
+(measured: a 230-page report took the same $\sim$7\,min with or without). The real cost is \textbf{disk},
+when a report has many large images; set \texttt{with\_images=false} to skip writing them. Validated on real
+charts (a fund's growth-of-\$10{,}000 performance graph) and company diagrams. HTML inputs have no page
+render, so their figures usually come through \emph{without} image bytes (\S\ref{sec:html-input}).
+
+\paragraph{Progress.} Docling's \texttt{convert()} is a single silent call (it logs only start and
+``finished in \emph{N}\,s''), so long reports look frozen. Pass \texttt{progress=true} to print an upfront
+forecast --- page count and an ETA at $\sim$30 pages/min --- and the actual time on completion. (A live
+ticking bar isn't practical: one opaque blocking convert starves a background printer, so the forecast plus
+completion line is the reliable, dependency-free signal.)
 
 \begin{lstlisting}
 julia> using EDGAR, PythonCall
