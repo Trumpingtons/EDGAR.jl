@@ -469,6 +469,16 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
         end
         return best
     end
+    # a table's own leading cells — fund statements carry their title in cell (0,0) rather than a heading
+    hsql = "SELECT c.table_id AS table_id, c.text AS text FROM table_cells c JOIN \"tables\" t USING (table_id) " *
+           "WHERE c.\"row\" <= 1 AND c.\"col\" = 0" * (doc_id === nothing ? "" : " AND t.doc_id = ?")
+    hrows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, hsql) :
+                                                        DBInterface.execute(con, hsql, (doc_id,)))
+    firstcell = Dict{String,Vector{String}}()
+    for h in hrows
+        h.text === missing && continue
+        push!(get!(firstcell, h.table_id, String[]), String(h.text))
+    end
     upd = DBInterface.prepare(con, "UPDATE \"tables\" SET kind = ?, statement_type = ? WHERE table_id = ?")
     counts = Dict{String,Int}()
     try
@@ -484,6 +494,10 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             end
             # the PDF-outline entry covering this page (authoritative; immune to page-header noise)
             tt = nearest_toc(t.doc_id, t.page); tt === nothing || push!(cand, tt)
+            # the table's own leading cells (fund statements put their title in cell (0,0))
+            for x in get(firstcell, t.table_id, String[])
+                push!(cand, x)
+            end
             st = EDGAR.classify_table_class(join(cand, " | "))
             kind = st === nothing ? "descriptive" : "statement"
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))

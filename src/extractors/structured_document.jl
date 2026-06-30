@@ -113,6 +113,9 @@ struct StructuredDocument
     tables::Vector{DocTable}
     figures::Vector{DocFigure}
     toc::Vector{TocEntry}
+    # figure image bytes keyed by figure_id — NOT serialised to JSON (persist_document writes the PNGs;
+    # only image_path lands in structured.json / the DB). Empty unless extracted with `with_images`.
+    figure_images::Dict{String,Vector{UInt8}}
 end
 
 Base.show(io::IO, sd::StructuredDocument) = print(io,
@@ -247,6 +250,14 @@ function persist_document(sd::StructuredDocument; root::AbstractString = "~/Regu
             _write_table_csv(t, joinpath(dir, "tables", string(split(t.table_id, ":")[end], ".csv")))
         end
     end
+    if !isempty(sd.figure_images)
+        mkpath(joinpath(dir, "figures"))
+        for f in sd.figures
+            bytes = get(sd.figure_images, f.figure_id, nothing)
+            (bytes === nothing || f.image_path === nothing) && continue
+            write(joinpath(dir, f.image_path), bytes)   # image_path is e.g. "figures/fig1.png"
+        end
+    end
     return dir
 end
 
@@ -284,7 +295,8 @@ function read_structured_document(path::AbstractString)
         _rbb(f.bbox), _rs(f.image_path), _rs(f.image_format), _ri(f.width), _ri(f.height)) for f in j.figures]
     jt = get(j, :toc, nothing)
     toc = jt === nothing ? TocEntry[] : [TocEntry(String(e.title), Int(e.level), Int(e.page)) for e in jt]
-    return StructuredDocument(String(j.schema_version), meta, sections, texts, tables, figures, toc)
+    return StructuredDocument(String(j.schema_version), meta, sections, texts, tables, figures, toc,
+                              Dict{String,Vector{UInt8}}())
 end
 
 """

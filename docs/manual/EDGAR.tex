@@ -655,19 +655,25 @@ considers, in order, several candidate headings for each table:
   \item its \textbf{enclosing section title};
   \item the nearest preceding \textbf{heading-like text block on the same page} (recovers a title the
     brand band masked);
-  \item the entry of the \textbf{PDF outline (bookmarks)} that covers the table's page.
+  \item the entry of the \textbf{PDF outline (bookmarks)} that covers the table's page;
+  \item the table's own \textbf{leading cell} (row~0, col~0).
 \end{enumerate}
-The fourth is the robust one. A PDF's outline is an \textbf{authoritative} table of contents --- exact
-titles with page ranges, immune to page-header noise --- so mapping a table's page to its covering outline
-entry recovers the true heading even when the on-page text is unreliable. \texttt{EDGAR.jl} captures the
-outline at ingestion into the \texttt{toc} table (it also serves navigation), and the classifier maps each
-table's page to the nearest preceding \texttt{toc} entry.
+Two of these matter most. The \textbf{PDF outline} (fourth) is an \textbf{authoritative} table of contents
+--- exact titles with page ranges, immune to page-header noise --- so mapping a table's page to its
+covering outline entry recovers the true heading even when the on-page text is unreliable.
+\texttt{EDGAR.jl} captures the outline at ingestion into the \texttt{toc} table (it also serves navigation)
+and the classifier maps each table's page to the nearest preceding \texttt{toc} entry. The table's
+\textbf{leading cell} (fifth) covers a different layout: \textbf{registered funds} (and some HTML filings)
+print the statement title \emph{inside} the table --- cell (0,0) reads ``Statement of Assets and
+Liabilities'', ``Statement of Operations'' --- rather than as any heading, so reading the first cell is
+what classifies those.
 
 For example, TotalEnergies' consolidated statements carry the brand ``TotalEnergies'' as their on-page
 heading, so section-title matching tags nothing; but the outline entries
 (\texttt{8.4~Bilan~consolidé}~$\rightarrow$~p423, \texttt{8.2~Compte~de~résultat~consolidé}~$\rightarrow$~p421,
 \dots) classify every statement correctly --- including \emph{both} halves (ACTIF and PASSIF) of the
-two-part French \emph{Bilan}. Where a PDF has no outline, the earlier sources still apply.
+two-part French \emph{Bilan}. A fund's \emph{Statement of Assets and Liabilities}, by contrast, is tagged
+from its first cell. Where a PDF has no outline, the earlier sources still apply.
 
 \section{The deterministic fallback}
 \label{sec:pdf-fallback}
@@ -712,15 +718,21 @@ absent:
     empty (page~0). The pixel back-link is therefore unavailable for HTML-sourced facts.
   \item \textbf{No PDF outline, and often no sections.} Docling's HTML backend may emit \emph{no} section
     headers (headings arrive as ordinary text blocks) and there is no bookmark outline. Classification
-    (\S\ref{sec:pdf-classification}) then falls back to the table caption and the nearest preceding
-    heading text block, rather than the section title / outline.
+    (\S\ref{sec:pdf-classification}) then relies on the table caption, the nearest preceding heading text
+    block, and --- crucially for funds --- the \textbf{table's leading cell}: fund statements classify fine
+    \emph{when they are real HTML tables} (their title sits in cell (0,0)).
+  \item \textbf{Some filings render statements as images.} A few HTML reports (observed on a T.~Rowe~Price
+    N-CSR: 13 tables but 31 figures) lay out their financial statements / holdings as \textbf{images}
+    rather than tables --- so there is no tabular text to extract or classify at all. That is a content
+    limitation (it would need OCR), not a classifier gap.
   \item \textbf{SEC SGML wrapper tolerated.} A raw SEC submission document begins with an SGML
     \texttt{<DOCUMENT>} wrapper around the HTML; Docling parses it regardless.
 \end{itemize}
 
-\noindent Validated on a Fidelity \emph{Contrafund} N-CSR: Docling recovered \textasciitilde1{,}690 text
-blocks, 194 tables and 12 figures into the repository --- the same contracts as a PDF, minus page/outline
-provenance.
+\noindent Validated across three fund families' N-CSRs: \textbf{Fidelity} and \textbf{PIMCO} classify their
+fund statements (BS / IS / EC, and 10 and 50 \texttt{fund\_portfolio} tables respectively) via the
+first-cell mechanism; \textbf{T.~Rowe~Price} is the image-rendered case above. So HTML works the same as
+PDF \emph{where the content is tabular}, minus page/outline provenance.
 
 % ===========================================================================
 \chapter{Common API}
@@ -2000,7 +2012,7 @@ installed) on \texttt{JULIA\_PYTHONCALL\_EXE}. Without it they raise a message t
 \subsection{\texttt{structured\_document}}
 
 \begin{center}
-\textbf{\sig{structured\_document(pdf\_path; pages=nothing, ocr=false, doc\_id=<stem>,
+\textbf{\sig{structured\_document(pdf\_path; pages=nothing, ocr=false, with\_images=false, doc\_id=<stem>,
 jurisdiction=nothing, language=nothing, company=nothing, report\_type=nothing, fiscal\_year=nothing,
 currency=nothing, framework=nothing) -> StructuredDocument}}
 \end{center}
@@ -2013,6 +2025,15 @@ document metadata. The original language is stored verbatim. \texttt{pages} is a
 Japanese EDINET); the metadata keywords seed fields a per-jurisdiction profile would otherwise fill.
 Statement classification (\emph{which} table is the balance sheet) is a later, separate step --- the parser
 emits structure only.
+
+\paragraph{Figure images.} With \texttt{with\_images=true}, Docling also renders each figure to a PNG. The
+image \textbf{bytes are held on the returned \texttt{StructuredDocument}} (deliberately \emph{out} of
+\texttt{structured.json} and the DB); \texttt{persist\_document} then writes them to
+\texttt{figures/<id>.png} and sets each figure's \texttt{image\_path} / \texttt{image\_format} /
+\texttt{width} / \texttt{height}. It is \textbf{off by default} --- capturing images makes Docling render
+page bitmaps, which is heavier. Validated on real charts (a fund's growth-of-\$10{,}000 performance graph)
+and on company figures. HTML inputs have no page render, so their figures usually come through \emph{without}
+image bytes (\S\ref{sec:html-input}).
 
 \begin{lstlisting}
 julia> using EDGAR, PythonCall
@@ -2028,9 +2049,10 @@ StructuredDocument(UK-TescoFR2024: 9 sections, 25 text, 6 tables, 2 figures)
 \end{center}
 
 \noindent Write the document family to the filesystem under \texttt{root/derived/<doc\_id>/}:
-\texttt{structured.json} (the canonical record), \texttt{document.md} (a Markdown render), and
-\texttt{tables/<id>.csv} per table. Returns the derived-folder path. (Loading the repository DuckDB is a
-separate step; see the schema design in \texttt{docs/dev/pdf-repository-schema.md}.)
+\texttt{structured.json} (the canonical record), \texttt{document.md} (a Markdown render),
+\texttt{tables/<id>.csv} per table, and --- when the document was extracted with \texttt{with\_images} ---
+\texttt{figures/<id>.png} per captured figure. Returns the derived-folder path. (Loading the repository
+DuckDB is a separate step; see the schema design in \texttt{docs/dev/pdf-repository-schema.md}.)
 
 \begin{lstlisting}
 julia> persist_document(sd)

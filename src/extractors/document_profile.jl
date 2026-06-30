@@ -24,12 +24,15 @@ end
 # looser ones. Append new classes with `register_table_class!` — financial or not.
 const TABLE_CLASSES = TableClass[
     TableClass("balance_sheet", "Balance sheet / statement of financial position", [
-        r"balance sheet"i, r"statement of financial position"i, r"\bbilanz\b"i, r"\bbilan\b"i,
+        r"balance sheet"i, r"statement of financial position"i,
+        r"statements? of assets (?:and|&) liabilities"i, r"statements? of net assets"i,   # registered funds (sing./plur.)
+        r"\bbilanz\b"i, r"\bbilan\b"i,
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표"]),
     TableClass("income_statement", "Income statement / profit or loss / comprehensive income", [
         r"income statement"i, r"statement of profit (?:or|and) loss"i, r"profit and loss account"i,
-        r"statement of comprehensive income"i, r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
+        r"statement of comprehensive income"i, r"statements? of operations"i,   # registered funds (sing./plur.)
+        r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
         r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i, r"conto economico"i,
         r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서"]),
     TableClass("cash_flow", "Cash-flow statement", [
@@ -37,7 +40,8 @@ const TABLE_CLASSES = TableClass[
         r"(?:flux|variation) de (?:la )?trésorerie"i, r"estado de flujos de efectivo"i, r"rendiconto finanziario"i,
         r"现金流量表", r"キャッシュ・?フロー計算書", r"현금흐름표"]),
     TableClass("equity_changes", "Statement of changes in equity", [
-        r"changes in equity"i, r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
+        r"changes in equity"i, r"changes in net assets"i,   # registered funds
+        r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
         r"variation des capitaux propres"i, r"estado de cambios en el patrimonio"i,
         r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표"]),
     # Non-statement quantitative table — demonstrates the open registry (funds, not financial statements).

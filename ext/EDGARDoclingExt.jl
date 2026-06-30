@@ -38,13 +38,15 @@ function EDGAR.structured_document(path::AbstractString;
         pages::Union{Nothing,Tuple{Integer,Integer}} = nothing, ocr::Bool = false,
         doc_id::AbstractString = first(splitext(basename(path))),
         jurisdiction = nothing, language = nothing, company = nothing,
-        report_type = nothing, fiscal_year = nothing, currency = nothing, framework = nothing)
+        report_type = nothing, fiscal_year = nothing, currency = nothing, framework = nothing,
+        with_images::Bool = false)
 
     isfile(path) || throw(ArgumentError("file not found: $(repr(path))"))
     bm  = pyimport("docling.datamodel.base_models")
     po  = pyimport("docling.datamodel.pipeline_options")
     dc  = pyimport("docling.document_converter")
     ilm = pyimport("importlib.metadata")
+    io  = pyimport("io")
 
     ishtml = lowercase(last(splitext(path))) in (".htm", ".html")
     if ishtml
@@ -56,6 +58,10 @@ function EDGAR.structured_document(path::AbstractString;
         opts = po.PdfPipelineOptions()
         opts.do_ocr = ocr
         opts.do_table_structure = true
+        if with_images
+            opts.generate_picture_images = true
+            opts.images_scale = 2.0
+        end
         fo = pydict(); fo[bm.InputFormat.PDF] = dc.PdfFormatOption(pipeline_options = opts)
         conv = dc.DocumentConverter(format_options = fo)
         res  = pages === nothing ? conv.convert(path) : conv.convert(path; page_range = pages)
@@ -75,6 +81,7 @@ function EDGAR.structured_document(path::AbstractString;
     end
 
     sections = DocSection[]; texts = TextBlock[]; tables = DocTable[]; figures = DocFigure[]
+    figbytes = Dict{String,Vector{UInt8}}()      # figure_id -> PNG bytes (when with_images)
     secstack = Tuple{Int,String}[]               # (level, section_id)
     ord = 0
     cursec() = isempty(secstack) ? nothing : secstack[end][2]
@@ -119,9 +126,23 @@ function EDGAR.structured_document(path::AbstractString;
                   "unknown", nothing, _optstr(item.caption_text(doc)), lang, pg, pg, bx, nr, nc, cells))
         elseif cls == "PictureItem"
             bx = _bbox(item.prov, pageH)
-            push!(figures, DocFigure(string(doc_id, ":fig", length(figures) + 1), cursec(), ord,
-                  _optstr(item.caption_text(doc)), bx === nothing ? 0 : bx.page, bx,
-                  nothing, nothing, nothing, nothing))
+            n = length(figures) + 1
+            fid = string(doc_id, ":fig", n)
+            ipath = nothing; ifmt = nothing; iw = nothing; ih = nothing
+            if with_images
+                try
+                    img = item.get_image(doc)
+                    if !pyis(img, _NONE)
+                        buf = io.BytesIO(); img.save(buf, "PNG")
+                        figbytes[fid] = pyconvert(Vector{UInt8}, buf.getvalue())
+                        ipath = string("figures/fig", n, ".png"); ifmt = "png"
+                        iw = pyconvert(Int, img.width); ih = pyconvert(Int, img.height)
+                    end
+                catch
+                end
+            end
+            push!(figures, DocFigure(fid, cursec(), ord, _optstr(item.caption_text(doc)),
+                  bx === nothing ? 0 : bx.page, bx, ipath, ifmt, iw, ih))
         end
     end
 
@@ -147,7 +168,7 @@ function EDGAR.structured_document(path::AbstractString;
         end
     end
 
-    return StructuredDocument("1.0", meta, sections, texts, tables, figures, toc)
+    return StructuredDocument("1.0", meta, sections, texts, tables, figures, toc, figbytes)
 end
 
 end # module
