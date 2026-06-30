@@ -538,33 +538,70 @@ end
 # (table_id, col) provenance. Idempotent per doc: replaces only this extractor's own rows.
 const _INSTANT_ST = ("balance_sheet",)
 
-# Resolve a period column to (period_start, period_end, is_instant, fiscal_year, precision). Stay TRUE to
-# the filing — never fabricate a day the document didn't state:
-#   • full date(s) in THIS column's header → period_end = the LATEST (current = T), period_start = the
-#     EARLIEST. We have both dates, so we just assign them — order-independent, so an OCR-scrambled range
-#     still resolves. A single date on a duration → period_start = end − 1 year + 1 day. An instant column
-#     never pairs dates. (3+ mangled dates in one cell, and reconstructing a missing date, are separate
-#     problems — out of scope here.)
-#   • else a same-year full date elsewhere in the SAME report → that exact date (precision "day").
-#   • else only the year is known → period_start/end NULL, precision "year".
-# `fiscal_year` is the year the header itself labels (e.g. Japanese "2024年度" ending 2025-03-31 → 2024),
-# falling back to the year of the resolved end date.
-function _derive_period(col, st, docdates::Dict{Int,Date}, loc::Symbol)
+# Resolve ALL period columns of one table together → Dict{col => (period_start, period_end, fiscal_year,
+# precision)}. Stay TRUE to the filing — never fabricate a day it didn't state.
+#
+# Per column, from its OWN header: period_end = the LATEST date (current = T), period_start = the EARLIEST
+# (we have both → assign them; order-independent, so an OCR-scrambled range resolves). A single date on a
+# duration → start = end − 1 year + 1 day. An instant column never pairs dates. No date but the year is
+# stated, or a same-year date exists elsewhere in the report → that year/date. `fiscal_year` is the year the
+# header labels (Japanese "2024年度" ending 2025-03-31 → 2024), falling back to the end date's year.
+#
+# COLUMN-LEVEL repair (for mangled tables): if a column lost its date but the table's period columns carry,
+# in total, exactly one distinct date per column, the dates are reassigned to columns by their monotonic
+# display order — direction (newest left vs right) read from the columns whose date survived. Conservative:
+# fires only when the distinct-date count matches the column count, the direction is known, and the result
+# is consistent with every surviving date. A non-monotonic date sequence is logged and left unrepaired.
+function _resolve_period_columns(pcols, loc::Symbol, st, docdates::Dict{Int,Date}, table_id)
     is_instant = st in _INSTANT_ST
-    col.kind === :period || return (missing, missing, is_instant, missing, missing)
-    y = tryparse(Int, col.key)
-    fy = (y !== nothing && 1900 <= y <= 2100) ? y : missing
-    dates = EDGAR.period_dates(col.hdr; locale = loc)             # all full dates stated in this header
-    if isempty(dates) && fy !== missing                          # else a same-year date elsewhere in the doc
-        d = get(docdates, fy, nothing)
-        d === nothing || (dates = [d])
+    cols = sort(collect(pcols); by = c -> c.col)        # left-to-right
+    n = length(cols)
+    dsets = Vector{Vector{Date}}(undef, n)
+    fys   = Vector{Union{Missing,Int}}(undef, n)
+    for (i, c) in enumerate(cols)
+        ds = EDGAR.period_dates(c.hdr; locale = loc)
+        y = tryparse(Int, c.key); fy = (y !== nothing && 1900 <= y <= 2100) ? y : missing
+        (isempty(ds) && fy !== missing) && ((d = get(docdates, fy, nothing)) === nothing || (ds = [d]))
+        dsets[i] = ds; fys[i] = fy
     end
-    isempty(dates) && return (missing, missing, is_instant, fy, fy === missing ? missing : "year")
-    pe = maximum(dates)
-    fy === missing && (fy = Dates.year(pe))
-    is_instant && return (missing, pe, true, fy, "day")          # snapshot — never pair dates
-    ps = length(dates) >= 2 ? minimum(dates) : pe - Year(1) + Day(1)  # have both → use them; else compute
-    return (ps, pe, false, fy, "day")
+    ends = Union{Missing,Date}[isempty(dsets[i]) ? missing : maximum(dsets[i]) for i in 1:n]
+
+    # monotonicity + direction from the columns whose end date is known
+    known = [(i, ends[i]) for i in 1:n if ends[i] !== missing]
+    direction = 0                                        # +1 = dates ascend with col index (newest right)
+    if length(known) >= 2
+        d = [known[j+1][2] - known[j][2] for j in 1:length(known)-1]
+        nondec = all(>=(Day(0)), d); noninc = all(<=(Day(0)), d)   # ties are fine; only a reversal is a bug
+        direction = (nondec && !noninc) ? 1 : (noninc && !nondec) ? -1 : 0
+        (nondec || noninc) ||
+            @warn "period dates not monotonic across columns; using per-column dates" table=table_id ends=ends
+    end
+
+    # column-level repair: dates mangled (a column is dateless) yet exactly one distinct date per column
+    pool = sort(unique(reduce(vcat, dsets; init = Date[])))
+    if any(e -> e === missing, ends) && direction != 0 && length(pool) == n
+        desc = sort(pool; rev = true)                    # newest first
+        assign(i) = direction == 1 ? desc[n-i+1] : desc[i]
+        if all(ends[i] === missing || ends[i] == assign(i) for i in 1:n)
+            ends = Union{Missing,Date}[assign(i) for i in 1:n]
+        else
+            @warn "column date repair inconsistent with surviving dates; skipped" table=table_id pool=pool
+        end
+    end
+
+    out = Dict{Int,NTuple{4,Any}}()
+    for (i, c) in enumerate(cols)
+        pe = ends[i]; fy = fys[i]
+        if pe === missing
+            out[c.col] = (missing, missing, fy, fy === missing ? missing : "year")
+        else
+            fy === missing && (fy = Dates.year(pe))
+            ps = is_instant ? missing :
+                 (length(dsets[i]) >= 2 ? minimum(dsets[i]) : pe - Year(1) + Day(1))
+            out[c.col] = (ps, pe, fy, "day")
+        end
+    end
+    return out
 end
 
 function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
@@ -633,13 +670,18 @@ function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
             for pr in prepared
                 t = pr.t; ntables += 1
                 dd = get(docdates, t.doc_id, Dict{Int,Date}())
+                inst = t.statement_type in _INSTANT_ST
+                pcols = [c for c in pr.valcols if c.kind === :period]
+                colmap = isempty(pcols) ? Dict{Int,NTuple{4,Any}}() :
+                         _resolve_period_columns(pcols, pr.loc, t.statement_type, dd, t.table_id)
                 for r in pr.data_start:t.n_rows-1
                     lbl = get(pr.grid, (r, 0), "")
                     (!isempty(lbl) && EDGAR.parse_amount(lbl; locale = pr.loc) === nothing) || continue
                     for col in pr.valcols
                         p = EDGAR.parse_amount(get(pr.grid, (r, col.col), ""); locale = pr.loc)
                         (p === nothing || p.nil) && continue
-                        ps, pe, inst, fy, prec = _derive_period(col, t.statement_type, dd, pr.loc)
+                        ps, pe, fy, prec = col.kind === :period ? colmap[col.col] :
+                                           (missing, missing, missing, missing)
                         fid = string(t.table_id, ":f", r, "_", col.col)
                         DBInterface.execute(ins, (fid, t.doc_id, t.table_id, r, col.col, _n(t.section_id),
                             t.statement_type, lbl, _n(ps), _n(pe), inst, _n(fy), _n(prec),

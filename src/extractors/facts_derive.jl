@@ -84,7 +84,7 @@ function data_start_row(grid, nr, nc; locale::Symbol = :en)
     return min(1, nr - 1)
 end
 
-const _NOTES_HDR = r"\bnotes?\b|\bnota\b|\banhang\b|注記"i
+const _NOTES_HDR = r"\bnotes?\b|\bnota\b|\banhang\b|注記|附注|注释|주석|примечани"i
 const _OFWHICH   = r"\bdi cui\b|\bof which\b|\bdavon\b|\bdont\b"i
 # A 4-digit year, bounded by non-digits (NOT `\b` — a word boundary fails between a digit and a CJK
 # ideograph like 年, which Unicode also classes as a "word" char, so `2024年` would never match).
