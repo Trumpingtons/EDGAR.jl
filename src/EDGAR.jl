@@ -70,7 +70,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!,
-       classify_table_class, register_table_class!, TableClass, TABLE_CLASSES,
+       classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, set_credentials, set_cache_policy, persist_user_agent, unpersist_user_agent,

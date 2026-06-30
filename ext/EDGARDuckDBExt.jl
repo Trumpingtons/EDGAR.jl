@@ -499,7 +499,7 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
                 push!(cand, x)
             end
             st = EDGAR.classify_table_class(join(cand, " | "))
-            kind = st === nothing ? "descriptive" : "statement"
+            kind = st === nothing ? "descriptive" : something(EDGAR.table_class_kind(st), "statement")
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
             k = st === nothing ? "descriptive" : st
             counts[k] = get(counts, k, 0) + 1

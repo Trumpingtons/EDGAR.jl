@@ -16,6 +16,7 @@ One class of quantitative table. `key` is the canonical tag stored in `tables.st
 """
 struct TableClass
     key::String
+    kind::String          # category written to tables.kind: "statement" (BS/IS/CF/EC), "portfolio", …
     description::String
     patterns::Vector{Regex}
 end
@@ -23,44 +24,57 @@ end
 # The open registry. Order matters: the first matching class wins, so more specific classes precede
 # looser ones. Append new classes with `register_table_class!` — financial or not.
 const TABLE_CLASSES = TableClass[
-    TableClass("balance_sheet", "Balance sheet / statement of financial position", [
+    TableClass("balance_sheet", "statement", "Balance sheet / statement of financial position", [
         r"balance sheet"i, r"statement of financial position"i,
         r"statements? of assets (?:and|&) liabilities"i, r"statements? of net assets"i,   # registered funds (sing./plur.)
         r"\bbilanz\b"i, r"\bbilan\b"i,
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표"]),
-    TableClass("income_statement", "Income statement / profit or loss / comprehensive income", [
+    TableClass("income_statement", "statement", "Income statement / profit or loss / comprehensive income", [
         r"income statement"i, r"statement of profit (?:or|and) loss"i, r"profit and loss account"i,
         r"statement of comprehensive income"i, r"statements? of operations"i,   # registered funds (sing./plur.)
         r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
         r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i, r"conto economico"i,
         r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서"]),
-    TableClass("cash_flow", "Cash-flow statement", [
+    TableClass("cash_flow", "statement", "Cash-flow statement", [
         r"cash ?flows?"i, r"statement of cash flow"i, r"kapitalflussrechnung"i,
         r"(?:flux|variation) de (?:la )?trésorerie"i, r"estado de flujos de efectivo"i, r"rendiconto finanziario"i,
         r"现金流量表", r"キャッシュ・?フロー計算書", r"현금흐름표"]),
-    TableClass("equity_changes", "Statement of changes in equity", [
+    TableClass("equity_changes", "statement", "Statement of changes in equity", [
         r"changes in equity"i, r"changes in net assets"i,   # registered funds
         r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
         r"variation des capitaux propres"i, r"estado de cambios en el patrimonio"i,
         r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표"]),
-    # Non-statement quantitative table — demonstrates the open registry (funds, not financial statements).
-    TableClass("fund_portfolio", "Fund portfolio holdings (schedule of investments)", [
+    # Non-statement quantitative table — its own kind ("portfolio"), demonstrating the open registry.
+    TableClass("fund_portfolio", "portfolio", "Fund portfolio holdings (schedule of investments)", [
         r"schedule of investments"i, r"portfolio of investments"i, r"portfolio holdings"i,
         r"consolidated schedule of investments"i, r"inventaire du portefeuille"i]),
 ]
 
 """
-    register_table_class!(key, description, patterns) -> TableClass
+    register_table_class!(key, kind, description, patterns) -> TableClass
 
-Add a new table class to [`TABLE_CLASSES`](@ref) (e.g. a fund-portfolio holdings table). Inserted at the
-front so it takes precedence; returns the class. The classifier and DuckDB schema need no other change.
+Add a new table class to [`TABLE_CLASSES`](@ref) (e.g. a loan book or production-volumes table). `kind` is
+the category stored in `tables.kind` (`"statement"`, `"portfolio"`, or your own, e.g. `"schedule"`).
+Inserted at the front so it takes precedence; returns the class. The classifier and DuckDB schema need no
+other change.
 """
-function register_table_class!(key::AbstractString, description::AbstractString, patterns::Vector{Regex})
-    tc = TableClass(String(key), String(description), patterns)
+function register_table_class!(key::AbstractString, kind::AbstractString, description::AbstractString,
+                               patterns::Vector{Regex})
+    tc = TableClass(String(key), String(kind), String(description), patterns)
     pushfirst!(TABLE_CLASSES, tc)
     return tc
 end
+
+"""
+    table_class_kind(key) -> Union{String,Nothing}
+
+The `kind` category (e.g. `"statement"`, `"portfolio"`) for a `statement_type` key, or `nothing` if the key
+is not registered. Used by `classify_tables!` to set `tables.kind`.
+"""
+table_class_kind(key::AbstractString) = (for tc in TABLE_CLASSES
+        tc.key == key && return tc.kind
+    end; nothing)
 
 """
     classify_table_class(heading) -> Union{String,Nothing}

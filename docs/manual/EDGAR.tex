@@ -632,12 +632,13 @@ fields.}
 \section{Statement classification and the PDF outline}
 \label{sec:pdf-classification}
 
-Once a report is in the repository, each table is tagged with a \emph{class}: \texttt{kind}
-(\texttt{statement} vs \texttt{descriptive}) and, for statements, a \texttt{statement\_type}. The starter
-taxonomy is the four core statements --- \texttt{balance\_sheet}, \texttt{income\_statement},
-\texttt{cash\_flow}, \texttt{equity\_changes} --- but the registry is \textbf{open}: other periodic
-quantitative tables (e.g.\ a fund's portfolio holdings) are added with \texttt{register\_table\_class!}
-and need no schema change. Classification is multi-language: each class carries heading patterns in
+Once a report is in the repository, each table is tagged with a \emph{class}: a \texttt{kind} category
+(\texttt{statement}, \texttt{portfolio}, …, or \texttt{descriptive} if unmatched) and a
+\texttt{statement\_type}. The starter taxonomy is the four core statements --- \texttt{balance\_sheet},
+\texttt{income\_statement}, \texttt{cash\_flow}, \texttt{equity\_changes} (\texttt{kind="statement"}) ---
+plus \texttt{fund\_portfolio} (\texttt{kind="portfolio"}); the registry is \textbf{open}, so other periodic
+quantitative tables (a loan book, production volumes, …) are added with \texttt{register\_table\_class!} ---
+each declaring its own \texttt{kind} --- and need no schema change. Classification is multi-language: each class carries heading patterns in
 English, French, German, Spanish, Italian and CJK. Run it with \texttt{classify\_tables!(db)}.
 
 \paragraph{The problem: the heading is not always where you expect.} A table is classified by matching a
@@ -2038,9 +2039,11 @@ charts (a fund's growth-of-\$10{,}000 performance graph) and company diagrams. H
 render, so their figures usually come through \emph{without} image bytes (\S\ref{sec:html-input}).
 
 \paragraph{Progress.} Docling's \texttt{convert()} is a single silent call (it logs only start and
-``finished in \emph{N}\,s''), so long reports look frozen. Pass \texttt{progress=true} to print an upfront
-forecast --- page count and an ETA at $\sim$30 pages/min --- and the actual time on completion. (A live
-ticking bar isn't practical: one opaque blocking convert starves a background printer, so the forecast plus
+``finished in \emph{N}\,s''), so long reports look frozen. Pass \texttt{progress=true} to print a forecast
+--- page count and an ETA at $\sim$30 pages/min --- and the actual time on completion. The models are
+\textbf{loaded first} (the noisy, one-time part), and the forecast prints \emph{after} that, right as the
+genuinely silent page-processing begins; the reported time is convert-only (init excluded). (A live ticking
+bar isn't practical: one opaque blocking convert starves a background printer, so the forecast plus
 completion line is the reliable, dependency-free signal.)
 
 \begin{lstlisting}
@@ -2121,8 +2124,9 @@ julia> DBInterface.execute(con,
 \textbf{\sig{classify\_tables!(db; doc\_id=nothing) -> Dict\{String,Int\}}}
 \end{center}
 
-\noindent Tag every repository table with a class: set \texttt{kind} (\texttt{statement} /
-\texttt{descriptive}) and, for statements, \texttt{statement\_type}. It matches each table's heading ---
+\noindent Tag every repository table with a class: set \texttt{kind} (the class's category ---
+\texttt{statement}, \texttt{portfolio}, …, or \texttt{descriptive} if unmatched) and \texttt{statement\_type}.
+It matches each table's heading ---
 trying, in order, its caption, its section title, the nearest same-page heading block, and the
 \textbf{PDF-outline entry} covering its page (§\ref{sec:pdf-classification}) --- against an \emph{open},
 multilingual registry of table classes. Optionally restrict to one \texttt{doc\_id}; returns counts per
@@ -2149,7 +2153,7 @@ quantitative tables (a loan book, production volumes, \dots) are added the same 
 julia> classify_tables!(; doc_id = "US-Vanguard500FR2023")   # the Schedule of Investments
 Dict("fund_portfolio" => 9, "descriptive" => 24)
 
-julia> register_table_class!("loan_book", "Loan portfolio",   # add a further class, no schema change
+julia> register_table_class!("loan_book", "schedule", "Loan portfolio",   # key, kind, description, patterns
                              [r"loan portfolio"i, r"portefeuille de prêts"i])
 \end{lstlisting}
 
@@ -2159,14 +2163,16 @@ holdings \emph{tables} from the report document.)
 
 \paragraph{Taxonomy helpers.}
 \begin{center}
-\textbf{\sig{register\_table\_class!(key, description, patterns::Vector\{Regex\}) -> TableClass}}
+\textbf{\sig{register\_table\_class!(key, kind, description, patterns::Vector\{Regex\}) -> TableClass}}
 \textbf{\sig{classify\_table\_class(heading) -> Union\{String, Nothing\}}}
 \end{center}
 
-\noindent \texttt{register\_table\_class!} prepends a new class to the registry \texttt{TABLE\_CLASSES}
-(so it takes precedence) and returns it. \texttt{classify\_table\_class} is the pure matcher used by
-\texttt{classify\_tables!}: it returns the \texttt{statement\_type} key of the first class whose patterns
-match \texttt{heading}, or \texttt{nothing} (a descriptive table).
+\noindent \texttt{register\_table\_class!} prepends a new class --- with its own \texttt{kind} category ---
+to the registry \texttt{TABLE\_CLASSES} (so it takes precedence) and returns it. \texttt{classify\_table\_class}
+is the pure matcher used by \texttt{classify\_tables!}: it returns the \texttt{statement\_type} key of the
+first class whose patterns match \texttt{heading}, or \texttt{nothing} (a descriptive table);
+\texttt{table\_class\_kind(key)} maps that key to its \texttt{kind} (so \texttt{fund\_portfolio} tables are
+tagged \texttt{kind="portfolio"}, not \texttt{"statement"}).
 
 \subsection{Repository schema}
 \label{sec:pdf-repo-schema}

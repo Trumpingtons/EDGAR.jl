@@ -186,7 +186,7 @@ CREATE TABLE tables (
   doc_id         TEXT NOT NULL REFERENCES documents(doc_id),
   section_id     TEXT REFERENCES sections(section_id),
   ord            INTEGER,
-  kind           TEXT,             -- statement|descriptive|unknown  (semantic layer)
+  kind           TEXT,             -- statement|portfolio|…|descriptive|unknown  (the class's kind; semantic layer)
   statement_type TEXT,             -- balance_sheet|income_statement|cash_flow|equity_changes|null
   caption        TEXT,
   lang           TEXT,
