@@ -317,8 +317,8 @@ const _REPO_DDL = [
      PRIMARY KEY (object_type, object_id, target_lang))""",
   """CREATE TABLE IF NOT EXISTS facts (fact_id VARCHAR PRIMARY KEY, doc_id VARCHAR, table_id VARCHAR,
      "row" INTEGER, "col" INTEGER, section_id VARCHAR, statement_type VARCHAR, label VARCHAR,
-     concept VARCHAR, standard_concept VARCHAR, period_start DATE, period_end DATE, is_instant BOOLEAN,
-     fiscal_year INTEGER, period_precision VARCHAR,
+     note_ref VARCHAR, concept VARCHAR, standard_concept VARCHAR, period_start DATE, period_end DATE,
+     is_instant BOOLEAN, fiscal_year INTEGER, period_precision VARCHAR,
      value DOUBLE, unit VARCHAR, scale DOUBLE, sign INTEGER, decimals INTEGER, extractor VARCHAR,
      confidence DOUBLE, bbox VARCHAR)""",
   """CREATE TABLE IF NOT EXISTS toc (doc_id VARCHAR, seq INTEGER, level INTEGER, title VARCHAR,
@@ -353,7 +353,7 @@ function _ensure_repo(con)
         DBInterface.execute(con, ddl)
     end
     # migrations for DBs created before a column existed (idempotent)
-    for col in ("fiscal_year INTEGER", "period_precision VARCHAR")
+    for col in ("fiscal_year INTEGER", "period_precision VARCHAR", "note_ref VARCHAR")
         DBInterface.execute(con, "ALTER TABLE facts ADD COLUMN IF NOT EXISTS $col")
     end
     for col in ("currency VARCHAR", "scale DOUBLE")
@@ -508,7 +508,14 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             for x in get(firstcell, t.table_id, String[])
                 push!(cand, x)
             end
-            st = EDGAR.classify_table_class(join(cand, " | "))
+            # A NOTE table stays DESCRIPTIVE, never a primary statement (it's kept, not removed): its own
+            # caption / section title says "Notes to …" or starts with a note number ("24. Lease liabilities",
+            # "30. Notes to the cash flow statement"). Primary statements are titled, never numbered, so this
+            # only filters notes — and stops them polluting the statement facts (e.g. CF note rows). The note
+            # reference per line item is still captured on each fact via `note_ref`.
+            own = String[String(x) for x in (t.caption, t.title) if x !== missing]
+            isnote = any(s -> occursin(r"\bnotes?\s+to\b"i, s) || occursin(r"^\s*\d{1,3}\s*[.\)]", s), own)
+            st = isnote ? nothing : EDGAR.classify_table_class(join(cand, " | "))
             kind = st === nothing ? "descriptive" : something(EDGAR.table_class_kind(st), "statement")
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
             k = st === nothing ? "descriptive" : st
@@ -626,12 +633,18 @@ function _resolve_period_columns(pcols, loc::Symbol, st, docdates::Dict{Int,Date
     return out
 end
 
+# The list-shaped statements (`label × period → value`) the deriver can read. The statement of changes in
+# equity (`equity_changes`) is deliberately EXCLUDED — it is a MATRIX (movement × equity-component), not a
+# list, so it stays classified & kept but is derived separately (dimensionally) later, not here.
+const _DERIVABLE_ST = ("balance_sheet", "income_statement", "cash_flow")
+
 function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
     _ensure_repo(con)
+    inlist = join(("'" * s * "'" for s in _DERIVABLE_ST), ", ")
     tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.section_id AS section_id, " *
            "t.statement_type AS statement_type, t.n_rows AS n_rows, t.n_cols AS n_cols, " *
            "d.jurisdiction AS jurisdiction FROM \"tables\" t JOIN documents d USING (doc_id) " *
-           "WHERE t.kind = 'statement' AND t.statement_type IS NOT NULL" *
+           "WHERE t.kind = 'statement' AND t.statement_type IN ($inlist)" *
            (doc_id === nothing ? "" : " AND t.doc_id = ?")
     trows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, tsql) :
                                                         DBInterface.execute(con, tsql, (doc_id,)))
@@ -680,14 +693,16 @@ function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
                 (d === nothing || y === nothing) && continue
                 get!(dd, y, d)
             end
-            push!(prepared, (t = t, grid = grid, data_start = inf.data_start, valcols = valcols, loc = loc))
+            notescols = [col.col for col in inf.columns if col.kind === :notes]   # the "Notes" reference column(s)
+            push!(prepared, (t = t, grid = grid, data_start = inf.data_start, valcols = valcols,
+                             notescols = notescols, loc = loc))
         end
         # Pass 2 — emit one fact per (body label-row × value column), with document-aware period dates.
         ins = DBInterface.prepare(con,
             "INSERT INTO facts (fact_id, doc_id, table_id, \"row\", \"col\", section_id, statement_type, " *
-            "label, period_start, period_end, is_instant, fiscal_year, period_precision, " *
+            "label, note_ref, period_start, period_end, is_instant, fiscal_year, period_precision, " *
             "value, extractor, confidence) " *
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
         try
             for pr in prepared
                 t = pr.t; ntables += 1
@@ -699,6 +714,7 @@ function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
                 for r in pr.data_start:t.n_rows-1
                     lbl = get(pr.grid, (r, 0), "")
                     (!isempty(lbl) && EDGAR.parse_amount(lbl; locale = pr.loc) === nothing) || continue
+                    nref = join(filter(!isempty, [strip(get(pr.grid, (r, nc), "")) for nc in pr.notescols]), ", ")
                     for col in pr.valcols
                         p = EDGAR.parse_amount(get(pr.grid, (r, col.col), ""); locale = pr.loc)
                         (p === nothing || p.nil) && continue
@@ -706,8 +722,8 @@ function EDGAR.derive_facts!(con::DuckDB.DB; doc_id = nothing)
                                            (missing, missing, missing, missing)
                         fid = string(t.table_id, ":f", r, "_", col.col)
                         DBInterface.execute(ins, (fid, t.doc_id, t.table_id, r, col.col, _n(t.section_id),
-                            t.statement_type, lbl, _n(ps), _n(pe), inst, _n(fy), _n(prec),
-                            p.val, "derive_facts", 1.0))
+                            t.statement_type, lbl, isempty(nref) ? missing : nref, _n(ps), _n(pe), inst,
+                            _n(fy), _n(prec), p.val, "derive_facts", 1.0))
                         nfacts += 1
                     end
                 end
