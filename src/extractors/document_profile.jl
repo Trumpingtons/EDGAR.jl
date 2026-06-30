@@ -34,7 +34,8 @@ const TABLE_CLASSES = TableClass[
         r"income statement"i, r"statement of profit (?:or|and) loss"i, r"profit and loss account"i,
         r"statement of comprehensive income"i, r"statements? of operations"i,   # registered funds (sing./plur.)
         r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
-        r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i, r"conto economico"i,
+        r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i,
+        r"conto economico"i, r"(?:utile|reddito|redditività) complessiv[ao]"i,   # IT: P&L + comprehensive income (utile complessivo)
         r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서"]),
     TableClass("cash_flow", "statement", "Cash-flow statement", [
         r"cash ?flows?"i, r"statement of cash flow"i, r"kapitalflussrechnung"i,
@@ -44,6 +45,7 @@ const TABLE_CLASSES = TableClass[
         r"changes in equity"i, r"changes in net assets"i,   # registered funds
         r"eigenkapital(?:veränderungsrechnung|spiegel)"i,
         r"variation des capitaux propres"i, r"estado de cambios en el patrimonio"i,
+        r"variazioni.{0,25}patrimonio netto"i,   # IT: (prospetto delle) variazioni (nelle voci) del/di patrimonio netto
         r"(?:所有者|股东)权益变动表", r"株主資本等変動計算書", r"자본변동표"]),
     # Non-statement quantitative table — its own kind ("portfolio"), demonstrating the open registry.
     TableClass("fund_portfolio", "portfolio", "Fund portfolio holdings (schedule of investments)", [

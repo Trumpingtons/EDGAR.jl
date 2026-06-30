@@ -2970,6 +2970,77 @@ verified against real filings during testing.
 \emph{Variation des capitaux propres} all extracted and classified (TotalEnergies via its outline; both
 halves --- \emph{Actif} and \emph{Passif} --- of the two-part French \emph{Bilan} tag as the balance sheet).
 
+\section{Italy}
+\label{sec:esef-italy}
+
+Italian listed groups file their consolidated IFRS annual report (\emph{Relazione finanziaria annuale}) as
+ESEF iXBRL with \textbf{CONSOB} (\emph{Commissione Nazionale per le Società e la Borsa}), lodged through
+Borsa Italiana's storage mechanism. As with Germany and France, a local-GAAP layer sits underneath it that is
+typically PDF-only, so the particularities below matter for the PDF route (Chapter~\ref{ch:pdf}); they were
+verified against real filings during testing --- and Italy brought two genuine surprises to the classifier.
+
+\subsection{Two accounting flavours: OIC and IFRS}
+
+\begin{itemize}
+  \item \textbf{Italian GAAP --- the OIC} (\emph{Organismo Italiano di Contabilità}), built on the
+    \emph{codice civile} (art.~2424 \emph{Stato patrimoniale}, art.~2425 \emph{Conto economico}): the
+    \emph{single-entity} statutory accounts (\emph{bilancio d'esercizio}) --- a two-sided \emph{Stato
+    patrimoniale} (\emph{Attivo} / \emph{Passivo}), the \emph{Conto economico}, and the \emph{Nota
+    integrativa}. Typically PDF.
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{bilancio consolidato}): \emph{Stato
+    patrimoniale consolidato}, \emph{Conto economico consolidato}, \emph{Prospetto dell'utile complessivo},
+    \emph{Rendiconto finanziario}, \emph{Prospetto delle variazioni del patrimonio netto}. For
+    regulated-market issuers this is the ESEF-tagged report inside the \emph{Relazione finanziaria annuale}.
+\end{itemize}
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{Italian statement vocabulary.}
+\label{tab:it-vocab}
+\small
+\begin{tabular}{@{}p{0.52\textwidth}p{0.42\textwidth}@{}}
+\toprule
+\textbf{Italian} & \textbf{Meaning} \\
+\midrule
+\emph{Stato patrimoniale} (\emph{consolidato}) & Balance sheet \\
+\emph{Attività} / \emph{Passività} (\emph{e patrimonio netto}) & Assets / liabilities-and-equity \\
+\emph{Conto economico} (\emph{consolidato}) & Income statement \\
+\emph{Prospetto dell'utile complessivo} & Statement of comprehensive income \\
+\emph{Rendiconto finanziario} & Cash-flow statement \\
+\emph{Prospetto delle variazioni del patrimonio netto} & Statement of changes in equity \\
+\emph{Nota integrativa} & Notes to the accounts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{Comprehensive income is not a ``conto economico'' variant.} Italian filers title the OCI
+    statement \emph{Prospetto dell'utile complessivo} (Eni) or \emph{Prospetto dell'utile complessivo
+    rilevato nell'esercizio} (Enel) --- nothing in the heading contains \emph{conto economico}, so a P\&L
+    pattern alone misses it. We match the \emph{(utile/reddito) complessivo} family and fold it into the
+    income-statement class (as for the English \emph{statement of comprehensive income}).
+  \item \textbf{Changes in equity has two phrasings.} \emph{Prospetto delle variazioni \textbf{nelle voci
+    di} patrimonio netto} (Eni) versus \emph{\dots variazioni \textbf{del} patrimonio netto} (Enel). Match
+    loosely on \emph{variazioni\,\dots\,patrimonio netto}; neither uses an \emph{È}/\emph{Stato di} prefix.
+  \item \textbf{Number locale.} Like Germany, the thousands separator is a \textbf{dot} and the decimal mark
+    a comma: \texttt{1.234.567,89} = 1{,}234{,}567.89 --- the \emph{opposite} of the French space. Amounts
+    are usually \emph{milioni} (or \emph{migliaia}) \emph{di euro}.
+  \item \textbf{Statements run across pages with ``(segue)''.} A single statement is split over consecutive
+    pages marked \emph{(segue)} (``continued''): Eni's \emph{variazioni} spans three pages and its
+    \emph{rendiconto} two; Enel's \emph{stato patrimoniale} and \emph{variazioni} two each. Each page becomes
+    its own table row of the same class --- expected, not an error.
+\end{itemize}
+
+\noindent Confirmed end-to-end from PDF, without OCR, on two filers --- \textbf{Eni} (2024 consolidated
+financial statements) and \textbf{Enel} (2023 \emph{relazione e bilancio}): all five statement classes ---
+\emph{Stato patrimoniale}, \emph{Conto economico}, \emph{Prospetto dell'utile complessivo}, \emph{Rendiconto
+finanziario} and \emph{Prospetto delle variazioni del patrimonio netto} --- extracted and correctly
+classified, once the comprehensive-income and changes-in-equity patterns above were added.
+
 \chapter{UK filing systems}
 \label{sys:uk}
 
