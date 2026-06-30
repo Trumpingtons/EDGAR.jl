@@ -552,6 +552,22 @@ const _INSTANT_ST = ("balance_sheet",)
 # display order — direction (newest left vs right) read from the columns whose date survived. Conservative:
 # fires only when the distinct-date count matches the column count, the direction is known, and the result
 # is consistent with every surviving date. A non-monotonic date sequence is logged and left unrepaired.
+# True if the period dates are monotonic (single panel) OR a tiling of a repeated monotonic block — a
+# side-by-side multi-panel layout, e.g. an account-form balance sheet (Assets | Liabilities+Equity), each
+# panel covering the same periods: label,2025,2024,label,2025,2024. Only a sequence that is neither (a date
+# genuinely out of order, or panels that disagree) is the anomaly worth warning about.
+function _monotone_or_paneled(dates::AbstractVector{Date})
+    n = length(dates); n <= 1 && return true
+    for L in 1:n
+        n % L == 0 || continue
+        blk = view(dates, 1:L)
+        df = [blk[j+1] - blk[j] for j in 1:L-1]
+        (all(>=(Day(0)), df) || all(<=(Day(0)), df)) || continue
+        all(dates[k] == blk[(k-1) % L + 1] for k in 1:n) && return true
+    end
+    return false
+end
+
 function _resolve_period_columns(pcols, loc::Symbol, st, docdates::Dict{Int,Date}, table_id)
     is_instant = st in _INSTANT_ST
     cols = sort(collect(pcols); by = c -> c.col)        # left-to-right
@@ -570,11 +586,12 @@ function _resolve_period_columns(pcols, loc::Symbol, st, docdates::Dict{Int,Date
     known = [(i, ends[i]) for i in 1:n if ends[i] !== missing]
     direction = 0                                        # +1 = dates ascend with col index (newest right)
     if length(known) >= 2
-        d = [known[j+1][2] - known[j][2] for j in 1:length(known)-1]
-        nondec = all(>=(Day(0)), d); noninc = all(<=(Day(0)), d)   # ties are fine; only a reversal is a bug
+        kd = Date[k[2] for k in known]
+        d = [kd[j+1] - kd[j] for j in 1:length(kd)-1]
+        nondec = all(>=(Day(0)), d); noninc = all(<=(Day(0)), d)   # global direction (for the repair only)
         direction = (nondec && !noninc) ? 1 : (noninc && !nondec) ? -1 : 0
-        (nondec || noninc) ||
-            @warn "period dates not monotonic across columns; using per-column dates" table=table_id ends=ends
+        _monotone_or_paneled(kd) ||                                # panels & ties are fine; only a reversal warns
+            @warn "period dates neither monotonic nor a repeated panel; possible mis-extraction" table=table_id ends=ends
     end
 
     # column-level repair: dates mangled (a column is dateless) yet exactly one distinct date per column
