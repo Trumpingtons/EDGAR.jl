@@ -586,7 +586,7 @@ is what drives the install:
     \texttt{FilingSystem} it largely knows the language already, so setting it is cheap.
 \end{itemize}
 
-\section{The ingestion pipeline}
+\section{The ingestion pipeline}\label{sec:pdf-pipeline}
 
 Whichever engine runs, the main approach produces \emph{one} Structured Document; every output family and
 every persistence target derives from it (Figure~\ref{fig:pdf-ingestion}).
@@ -3451,6 +3451,30 @@ Other corporate actions & Share Buyback Report; Extraordinary Report & \emph{not
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Downloadable formats: PDF, iXBRL, classic XBRL and CSV}\label{sec:edinet-formats}
+For a periodic securities report EDINET serves the \emph{same} filing in \textbf{four} forms, selected by the
+document API's \texttt{type} parameter --- unusually rich (ESEF, by contrast, ships inline XBRL only):
+\begin{itemize}[nosep]
+  \item \textbf{(a) PDF} (\texttt{type=2}) --- the rendered report; the form \texttt{EDGAR.jl}'s PDF
+    extractor consumes. Japanese EDINET PDFs carry a garbled/CID text layer, so they need forced full-page
+    OCR (\S\ref{sec:pdf-pipeline}), which is the slow path.
+  \item \textbf{(b) Inline XBRL (iXBRL)} --- inside the submission ZIP (\texttt{type=1}): the report as
+    xHTML with embedded \texttt{ix:} tags (one \texttt{\_ixbrl.htm} per section) plus the
+    label/presentation/calculation/definition linkbases and the schema.
+  \item \textbf{(c) Classic XBRL} --- \emph{also} inside that ZIP: a separate \texttt{.xbrl} instance
+    alongside the inline documents. So recent filings provide \emph{both} XBRL forms, not one.
+  \item \textbf{(d) CSV} (\texttt{type=5}) --- the FSA's own parse of the tagged facts, the validation
+    oracle of \S\ref{sec:edinet-oracle}.
+\end{itemize}
+
+\noindent Four renderings of one submission let the PDF extractor be checked against three independent,
+byte-identical references. One caveat on the CSV: it is \emph{not} tables-only. It lists \emph{every} tagged
+fact --- including narrative sections tagged as \textbf{text-block} facts (company history, business
+description, \ldots), each a single multi-thousand-character cell of raw text/HTML. So the numeric statements
+arrive as tidy per-fact rows, but prose is present only as coarse whole-section blocks, not structured
+paragraphs. The CSV columns are the element ID (concept), item name (the Japanese/English label), context,
+relative year, the \emph{consolidated/individual} scope marker, period-vs-instant, unit and value.
 
 \subsection{Periodic securities reports}
 The annual securities report (\emph{y\=uka sh\=oken h\=okokusho}, doc-type code \texttt{120}), the quarterly
