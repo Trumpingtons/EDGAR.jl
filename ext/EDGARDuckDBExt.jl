@@ -447,7 +447,27 @@ EDGAR.to_repository(path::AbstractString, db::AbstractString) =
 # accounts). Used to confine primary-statement detection to those page ranges — the structural discriminator
 # that separates a real statement from its echo elsewhere (e.g. a German management report's `Ertragslage`).
 const _FS_SECTION = r"financial statements|konzernabschluss|jahresabschluss|comptes consolid|comptes annuels|états financiers|bilancio consolidato|bilancio d.esercizio|bilancio separato|estados financ|cuentas anuales|demonstrações financ|财务报表|連結財務諸表|財務諸表|計算書類|재무제표|финансов[ао][яй] отч"i
-const _FS_NOTNOTE = r"\bnotes?\b|anhang|附注|주석|примечани"i
+const _FS_NOTNOTE = r"\bnotes?\b|anhang|附注|注記|주석|примечани"i
+
+# Notes-SECTION headings (the block of notes that follows the primary statements), multilingual. Marks the
+# notes boundary: within an FS section the statements come first, then the notes start here.
+const _NOTES_SEC = r"notes to the|notes to consolidated|notes forming part|\bnotes to\b|konzernanhang|\banhang\b|note al bilancio|note illustrative|note esplicative|nota integrativa|notes annexes|annexe aux comptes|notas a los|notas explicativas|注記|주석|примечания к|附注"i
+
+# Notes-section boundary page(s) per doc, from the bookmark TOC (sorted). A table at/after the boundary
+# within its FS section is a note, not a statement.
+function _notes_pages(con, doc_id)
+    sql = "SELECT doc_id, title, page FROM toc" *
+          (doc_id === nothing ? "" : " WHERE doc_id = ?") * " ORDER BY doc_id, seq"
+    rows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, sql) :
+                                                       DBInterface.execute(con, sql, (doc_id,)))
+    out = Dict{String,Vector{Int}}()
+    for r in rows
+        (r.title === missing || r.page === missing) && continue
+        occursin(_NOTES_SEC, String(r.title)) && push!(get!(out, r.doc_id, Int[]), r.page)
+    end
+    for v in values(out); sort!(v); end
+    return out
+end
 
 # Page ranges of the financial-statements section(s) per doc, from the bookmark TOC: each FS-matching entry
 # spans until the next bookmark at the same-or-higher level. Overlapping/adjacent ranges are merged. Empty
@@ -507,6 +527,7 @@ end
 function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
     fsr = _fs_ranges(con, doc_id)
     anchors = _toc_anchors(con, doc_id)
+    nbs = _notes_pages(con, doc_id)
     tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.page_start AS page, t.ord AS ord, " *
            "t.caption AS caption, s.title AS title FROM \"tables\" t " *
            "LEFT JOIN sections s ON t.section_id = s.section_id" *
@@ -586,6 +607,14 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             # TOC confinement: when the bookmarks mark the FS section(s), a table outside every FS range
             # cannot be a primary statement (excludes management-report / front-half echoes).
             (st !== nothing && has_fs && !in_fs) && (st = nothing)
+            # Notes-section boundary: within its FS section the statements come first, then the notes — a
+            # table at/after the notes boundary (that starts within the same FS range) is a note, not a
+            # statement (catches note tables sitting inside the FS section, after the statements).
+            if st !== nothing && in_fs && t.page !== missing
+                cr = findfirst(r -> r[1] <= t.page <= r[2], rng)
+                cr === nothing || any(nb -> rng[cr][1] <= nb <= t.page, get(nbs, t.doc_id, Int[])) &&
+                    (st = nothing)
+            end
             # Per-statement TOC anchor: when a bookmark names the statement on this exact page, that type is
             # authoritative — it confirms the type and recovers statements whose caption didn't match.
             if t.page !== missing
