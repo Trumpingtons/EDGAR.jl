@@ -477,6 +477,49 @@ end
           (1, "us-gaap:NetCashProvidedByUsedInOperatingActivities", -19001000000.0)
 end
 
+@testset "narratives(): XBRL text-block extraction (N6, offline)" begin
+    # The prose counterpart of facts(): harvest text-block concepts (local name ending in "TextBlock")
+    # from a classic XBRL instance. Content is ESCAPED html, so it must be entity-decoded THEN tag-stripped.
+    # A numeric fact (NetSales) must NOT appear; a block tagged twice under the same context is deduped.
+    xml = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"
+                xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+                xmlns:jppfs_cor="http://disclosure.edinet-fsa.go.jp/taxonomy/jppfs/2025-11-01/jppfs_cor"
+                xmlns:jpcrp_cor="http://disclosure.edinet-fsa.go.jp/taxonomy/jpcrp/2025-11-01/jpcrp_cor">
+      <xbrli:context id="D"><xbrli:entity><xbrli:identifier scheme="s">E99999</xbrli:identifier></xbrli:entity>
+        <xbrli:period><xbrli:startDate>2024-04-01</xbrli:startDate><xbrli:endDate>2025-03-31</xbrli:endDate></xbrli:period></xbrli:context>
+      <xbrli:context id="I"><xbrli:entity><xbrli:identifier scheme="s">E99999</xbrli:identifier></xbrli:entity>
+        <xbrli:period><xbrli:instant>2025-06-30</xbrli:instant></xbrli:period></xbrli:context>
+      <xbrli:unit id="JPY"><xbrli:measure>iso4217:JPY</xbrli:measure></xbrli:unit>
+      <jppfs_cor:NetSales contextRef="D" unitRef="JPY" decimals="0">1000000</jppfs_cor:NetSales>
+      <jpcrp_cor:BusinessRisksTextBlock contextRef="D">&lt;p&gt;Risk factor one.&lt;/p&gt;&lt;p&gt;Risk factor two.&lt;/p&gt;</jpcrp_cor:BusinessRisksTextBlock>
+      <jpcrp_cor:BusinessRisksTextBlock contextRef="D">&lt;p&gt;Risk factor one.&lt;/p&gt;&lt;p&gt;Risk factor two.&lt;/p&gt;</jpcrp_cor:BusinessRisksTextBlock>
+      <jpcrp_cor:CompanyHistoryTextBlock contextRef="I">&lt;p&gt;Founded in 2020.&lt;/p&gt;</jpcrp_cor:CompanyHistoryTextBlock>
+    </xbrli:xbrl>
+    """
+    f = EDGAR.Filing(EDINET(), EDGAR.EntityId(:edinet, "E99999"), "acc", "t.xbrl", "", :xbrl, xml)
+    ns = collect(narratives(f; labels = false))          # labels=false → offline, title = concept local-name
+    @test length(ns) == 2                                # NetSales excluded; duplicate BusinessRisks deduped
+    @test Set(r.concept for r in ns) ==
+          Set(["jpcrp_cor:BusinessRisksTextBlock", "jpcrp_cor:CompanyHistoryTextBlock"])
+    @test all(r.source == "xbrl" for r in ns)
+    @test !any(occursin("NetSales", r.concept) for r in ns)
+    br = only(filter(r -> r.concept == "jpcrp_cor:BusinessRisksTextBlock", ns))
+    @test br.text == "Risk factor one. Risk factor two."  # decode-then-strip + whitespace collapse
+    @test br.char_len == length(br.text)
+    @test br.context_ref == "D" && br.period_end == Date("2025-03-31")
+    @test br.section_title == "BusinessRisksTextBlock"    # labels=false ⇒ concept local-name fallback
+    ch = only(filter(r -> r.concept == "jpcrp_cor:CompanyHistoryTextBlock", ns))
+    @test ch.text == "Founded in 2020." && ch.context_ref == "I"
+
+    # empty when a filing has no text-blocks — concretely typed (not Vector{Any})
+    nox = narratives(EDGAR.Filing(EDINET(), EDGAR.EntityId(:edinet, "E0"), "a", "x.xml", "", :xbrl,
+                                  "<xbrli:xbrl xmlns:xbrli=\"http://www.xbrl.org/2003/instance\"></xbrli:xbrl>");
+                     labels = false)
+    @test isempty(nox) && eltype(nox) == EDGAR.NarrativeRow
+end
+
 @testset "negated presentation labels flip the sign (offline)" begin
     # A face-statement role may present a concept with a negatedLabel/negatedTerseLabel, so the rendered
     # statement shows the opposite sign of the stored value (general: treasury stock as contra-equity, or
