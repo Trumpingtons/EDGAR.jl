@@ -572,6 +572,7 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
     end
     upd = DBInterface.prepare(con, "UPDATE \"tables\" SET kind = ?, statement_type = ? WHERE table_id = ?")
     counts = Dict{String,Int}()
+    found = Dict{String,Set{String}}()          # derivable statement types classified, per doc (for the K check)
     try
         for t in trows
             cand = String[]
@@ -625,9 +626,18 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
             k = st === nothing ? "descriptive" : st
             counts[k] = get(counts, k, 0) + 1
+            st in _DERIVABLE_ST && push!(get!(found, t.doc_id, Set{String}()), st)
         end
     finally
         DBInterface.close!(upd)
+    end
+    # Expected-K cross-check: the TOC anchors name which statements the filing declares — warn when an
+    # anchored derivable statement (BS/IS/CF) got no classified table (a coverage gap to investigate).
+    for (doc, anc) in anchors
+        exp = Set(v for v in values(anc) if v in _DERIVABLE_ST)
+        miss = setdiff(exp, get(found, doc, Set{String}()))
+        isempty(miss) ||
+            @warn "TOC-declared statement(s) not classified (coverage gap)" doc = doc missing = sort(collect(miss))
     end
     return counts
 end
