@@ -55,6 +55,7 @@ include("filing_systems/companies_house/bulk.jl")            # 🔵 Companies Ho
 include("filing_systems/nsm/nsm_categories.jl")              # 🔵 NSM (FCA) category vocabulary: type_code → description
 include("filing_systems/nsm/nsm.jl")                         # 🔵 NSM discovery: FCA National Storage Mechanism source (UKSEF AFR iXBRL → ESEF parse)
 include("filing_systems/edinet/edinet.jl")                   # 🔵 EDINET (Japan FSA) FilingSystem: offline submission-ZIP parse (reuses ESEF report-package path)
+include("filing_systems/edinet/concepts.jl")                 # 🔵 EDINET concept table: pre-distilled concept→balance (sign) + bilingual labels from the standard taxonomy
 include("filing_systems/edinet/discovery.jl")                # 🔵 EDINET discovery: EDINETApi source over the EDINET REST API (date-based)
 include("filing_systems/dart/dart.jl")                       # 🔵 DART (KR FSS) FilingSystem: offline OpenDART fnlttXbrl-package parse (reuses ESEF report-package path)
 include("filing_systems/dart/discovery.jl")                  # 🔵 DART discovery: OpenDARTApi source over the OpenDART REST API (by-company) + corp_code resolver
@@ -63,12 +64,14 @@ include("extractors/structured_document.jl")# 🟢 StructuredDocument substrate 
 include("extractors/document_profile.jl")   # 🟢 extensible table-classification taxonomy (BS/IS/CF/EC + open registry)
 include("extractors/facts_derive.jl")        # 🟢 facts derivation core: locale-aware amount parsing + column-axis inference
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
+include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf,
+       Narrative, narratives,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,
        classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,

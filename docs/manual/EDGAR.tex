@@ -745,6 +745,70 @@ or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"000032
 are equivalent); functions normalize to the 10-digit form. Every data call goes
 through the cached, User-Agent-aware request layer (\S\ref{sec:ua}).
 
+\section{Core types}
+\label{sec:api-types}
+
+\texttt{EDGAR.jl}'s data model is a small spine of value types that every workflow in this chapter operates
+on: a \texttt{Filing} is fetched; a region of it (or the whole thing) is captured as a \texttt{Selection};
+its numeric tags become \texttt{Fact}s and its prose becomes \texttt{Narrative}s; each leaves as a
+\texttt{Tables.jl} row table (\texttt{FactRow} / \texttt{NarrativeRow}) ready for a DataFrame or a database.
+Table~\ref{tab:coretypes} is the map; the exhaustive field-by-field reference lives in the docstrings.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The core value types and the spine they form (\texttt{Filing} \(\to\) \texttt{Selection} \(\to\)
+\texttt{Fact}\,/\,\texttt{Narrative} \(\to\) row tables).}
+\label{tab:coretypes}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.26\textwidth}p{0.37\textwidth}p{0.15\textwidth}@{}}
+\toprule
+\textbf{Type} & \textbf{What it is} & \textbf{Key fields} & \textbf{Produced by} \\
+\midrule
+\texttt{Filing} & An in-memory filing document (immutable). & \texttt{cik}, \texttt{accession},
+  \texttt{document}, \texttt{url}, \texttt{kind} (\texttt{:ixbrl}/\texttt{:xbrl}/\texttt{:html}/\texttt{:pdf}),
+  \texttt{content} & \texttt{fetch\_filing} (\S\ref{sec:filing-type}) \\
+\texttt{Selection} & A picked region --- or a whole filing --- of a rendered document. & \texttt{cik},
+  \texttt{accession}, \texttt{url}, \texttt{selector}, \texttt{kind}, \texttt{text}, \texttt{html},
+  \texttt{table}, \texttt{facts} & \texttt{select\_section} \\
+\texttt{Fact} & One \textbf{numeric} XBRL fact, value normalised (\(\mathrm{displayed}\times10^{\mathrm{scale}}\times\mathrm{sign}\)). &
+  \texttt{concept}, \texttt{label}, \texttt{value}, \texttt{unit}, \texttt{period\_start/end},
+  \texttt{is\_instant}, \texttt{dimensions}, \texttt{statement(s)}, \texttt{context\_ref} & \texttt{facts} \\
+\texttt{Narrative} & One \textbf{narrative} section --- prose's \texttt{Fact}. & \texttt{source}
+  (\texttt{:xbrl}/\texttt{:ixbrl}/\texttt{:pdf}/\texttt{:html}), \texttt{concept}, \texttt{section\_title},
+  \texttt{canonical\_title}, \texttt{tags}, \texttt{text}, \texttt{lang}, \texttt{period\_end}, \texttt{page} &
+  \texttt{narratives} \\
+\texttt{FactRow} / \texttt{NarrativeRow} & The above as \texttt{Tables.jl} rows --- the on-disk/export column
+  schema (\texttt{dimensions} JSON-encoded). & (columns mirror the struct) & the \texttt{facts} /
+  \texttt{narratives} row tables \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The numeric/prose pair.} \texttt{Fact}\,/\,\texttt{facts} (numbers) and
+\texttt{Narrative}\,/\,\texttt{narratives} (text) are deliberate parallels: the same provenance
+(\texttt{cik}, \texttt{accession}, \texttt{context\_ref}), the same period/dimension context, and both return
+a concretely-typed \texttt{Tables.jl} row table (empty-but-typed when a filing has none). A tagged numeric
+line item is a \texttt{Fact}; a tagged text-block, an ingested-PDF section, or a SEC \emph{Item} is a
+\texttt{Narrative}. The PDF path additionally exposes its own richer structure (a \texttt{StructuredDocument}
+of sections, text-blocks, tables and figures --- see the \emph{PDF and HTML reports} chapter); the
+\texttt{narratives} row table is the uniform, source-agnostic view across all of them.
+
+\paragraph{Naming and tagging a narrative.} A \texttt{Narrative} carries \emph{two} title columns plus a tag
+set, so the same prose can be identified verbatim, normalised, and grouped by theme:
+\begin{itemize}[nosep]
+  \item \texttt{section\_title} --- the section's own name, verbatim in its native language (the EDINET
+    verbose label, the SEC \emph{Item} title, or the PDF heading; it falls back to the concept local-name so
+    it is never blank).
+  \item \texttt{canonical\_title} --- the \textbf{normalised} name, the prose analogue of \texttt{Fact}'s
+    \texttt{concept}\,$\to$\,\texttt{standard\_concept}. It defaults to \texttt{section\_title} and can later
+    be canonicalised or translated (English, Mandarin, \ldots) so that ``\jpcjk{事業等のリスク}{}'', ``Item~1A.
+    Risk Factors'' and a PDF ``Risk Factors'' heading collapse to one label.
+  \item \texttt{tags} --- a multi-valued \textbf{thematic} classification (\texttt{["climate",
+    "supply-chain"]}), the axis along which narratives from \emph{different} filers are grouped horizontally
+    by theme. Empty for now, reserved for a later (AI or manual) tagging pass; multiple axes encode as
+    namespaced tags (\texttt{"theme:climate"}, \texttt{"risk:fx"}).
+\end{itemize}
+
 \section{Searching and Entity Lookup}
 \label{sec:api-search}
 
@@ -1994,6 +2058,84 @@ and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQ
 \texttt{ATTACH 'f.sqlite' (TYPE SQLITE)} export them with a single SQL statement. Wrapping
 these would only add dependencies for no gain.
 
+
+\section{Narratives \textemdash{} the text layer}
+\label{sec:api-narratives}
+
+\texttt{narratives(f)} is the prose counterpart of \texttt{facts(f)}: where \texttt{facts} returns a
+filing's numeric tags, \texttt{narratives} returns its \textbf{narrative sections} --- Management's
+Discussion, Business Risks, Governance, Significant Accounting Policies, and the rest --- as a
+\texttt{Tables.jl} row table of \texttt{Narrative}s (\S\ref{sec:api-types}). The \emph{same} call works
+whatever the source: a tagged XBRL text-block, an inline-XBRL text-block, or an ingested-PDF section. So
+everything downstream --- search, export to DuckDB, feeding a language model --- is source-agnostic: one row
+shape, several producers (Table~\ref{tab:narrative-producers}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{The \texttt{narratives} producers --- what counts as a ``narrative'' per source, and how it is found.}
+\label{tab:narrative-producers}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.40\textwidth}p{0.37\textwidth}@{}}
+\toprule
+\textbf{\texttt{source}} & \textbf{A narrative is\ldots} & \textbf{Found by} \\
+\midrule
+\texttt{:xbrl} & a classic-instance text-block element (escaped-HTML content) & concept local-name ends in
+  \texttt{TextBlock} \\
+\texttt{:ixbrl} & an \texttt{<ix:nonNumeric>} text-block fact in the inline document & concept local-name ends
+  in \texttt{TextBlock} \\
+\texttt{:pdf} & a \texttt{StructuredDocument} section, its text-blocks concatenated in reading order &
+  Docling section detection (\S\ref{sec:api-pdf}) \\
+\texttt{:html} & a SEC \emph{Item}/\emph{Part} section & \texttt{sections(f)} --- \emph{planned} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Forms.} \texttt{narratives} dispatches on what you hand it:
+\begin{lstlisting}
+julia> narratives(f)                               # a Filing: XBRL/iXBRL text-blocks (or a :pdf filing)
+julia> narratives(sd)                              # a StructuredDocument (a Docling parse of a PDF)
+julia> narratives(read_structured_document(path))  # a persisted structured.json (no Docling needed)
+julia> narratives(f; lang = "en")                  # choose the label language for the titles
+\end{lstlisting}
+
+\noindent Each row carries two title columns and a tag set --- \texttt{section\_title} (verbatim),
+\texttt{canonical\_title} (normalised) and \texttt{tags} (thematic, cross-filer) --- described under Core
+types (\S\ref{sec:api-types}); plus \texttt{text}, \texttt{lang}, and the provenance appropriate to the
+source (\texttt{concept}/\texttt{context\_ref}/\texttt{period\_end} for XBRL, \texttt{page}/\texttt{block\_id}
+for PDF).
+
+\paragraph{XBRL / iXBRL text-blocks.} A narrative is a \textbf{text-block} fact --- a concept whose local
+name ends in \texttt{TextBlock} (EDINET \texttt{jpcrp\_cor}/\texttt{jpigp\_cor}, SEC \texttt{us-gaap}). The
+numeric \texttt{facts} pipeline skips these (they are \texttt{ix:nonNumeric}); \texttt{narratives} generalises
+the same single-concept reader the auditor extractor uses, over \emph{every} text-block. Classic-instance
+content is stored as \emph{escaped} HTML (\texttt{\&lt;p\&gt;\ldots}), so it is entity-decoded \textbf{first}
+and tag-stripped \textbf{after} --- the reverse of the plain-string cleaner --- yielding clean prose;
+duplicate taggings of the same block (a filer tags it in several places) collapse by
+\texttt{(concept, context)}. Titles are the \textbf{verbose} label: for EDINET they come from the bundled
+concept table (\S\ref{sec:edinet-concepts}), because EDINET filings bundle only their \emph{extension}
+labels --- the standard-concept labels (all text-blocks included) live in the standard taxonomy, supplied
+through the same \texttt{\_standard\_labels} seam ESEF uses for \texttt{ifrs-full}.
+
+\paragraph{PDF sections.} \texttt{narratives(sd)} emits one \texttt{Narrative} per document section, carrying
+the heading as \texttt{section\_title} and the page as provenance, with \texttt{concept} empty. It runs on
+\emph{any} \texttt{StructuredDocument} --- a fresh Docling parse or a reloaded \texttt{structured.json} --- so
+the text layer is available without re-running the slow, OCR-heavy extraction. Granularity differs from XBRL
+by design: the PDF splits by every heading (Nintendo: 277 sections) where the XBRL groups by concept (its
+text-blocks), the same report seen at two resolutions.
+
+\paragraph{Validation --- the CSV as a same-document oracle.} EDINET's \texttt{type=5} CSV carries the FSA's
+own parse of \emph{both} the numeric facts and the text-blocks of the identical filing, so it validates
+\texttt{narratives} directly (\S\ref{sec:edinet-oracle}). The bundled \texttt{csv\_oracle} script
+(\texttt{src/sources/csv\_oracle.jl}, loaded on demand like the other \texttt{*\_oracle} helpers) reads it
+correctly (UTF-16, quoted multi-line cells) and prints the diff for a human to eyeball:
+\begin{lstlisting}
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "csv_oracle.jl")); using .CsvOracle
+julia> rep = CsvOracle.validate(f, "jpcrp030000-asr-....csv")   # facts + narratives parity
+julia> CsvOracle.text_diff(rep, "jpcrp_cor:BusinessRisksTextBlock")  # ours vs CSV, side by side
+\end{lstlisting}
+On real annual reports this shows \textbf{100\% content parity} for the tagged text-blocks (Toyota 152/152,
+Fast Retailing 138/138, whitespace-normalised). The check is \emph{exact} --- both sides derive from the same
+filing, so it validates the XBRL/iXBRL text-block extraction against an authoritative reference.
 
 \section{PDF documents}
 \label{sec:api-pdf}
@@ -3547,6 +3689,85 @@ remaining pieces also wait on that key or are planned: the full \textbf{form/doc
 \textbf{language-aware labels} (\texttt{label\_map(f;\ lang)} --- EDINET's label linkbase carries Japanese
 \emph{and} English via \texttt{xml:lang}, the forcing case for multilingual labels), and the EDINET
 \textbf{CSV fact export} as an independent parser oracle, described next.
+
+\section{The bundled concept table: labels and concept metadata}\label{sec:edinet-concepts}
+
+An EDINET submission tags each figure with a \emph{concept} (e.g.\ \texttt{jppfs\_cor:NetSales}) but ships
+no portable \textbf{label} for it and no concept \textbf{metadata} (its item \textbf{type}, its
+\textbf{balance}); all of that lives in the \emph{standard} EDINET taxonomy, a 72\,MB, 2\,700-file package
+the filing only \emph{references} by URI. Re-parsing that package per filing would be absurd, so
+\texttt{EDGAR.jl} pre-distils it once into a small JSON lookup table and ships that in the repository ---
+the EDINET analogue of the SEC concept-map under \texttt{src/core/taxonomy/data/}.
+
+\paragraph{What it is, and why it matters.} Each concept maps to:
+\begin{itemize}[nosep]
+  \item \texttt{label\_en} / \texttt{label\_ja} --- the bilingual \textbf{name}, taken from the taxonomy's
+    \textbf{verbose} label role. This is not an arbitrary choice: it is the \emph{exact} text EDINET's own
+    CSV export (\S\ref{sec:edinet-oracle}) uses to name each fact --- verified byte-for-byte against a real
+    filing (Toyota, E02144) at \textbf{106/106} narrative text-blocks and \textbf{338/338} numeric line
+    items, versus \textbf{0/106} for the shorter \emph{standard} label role (which drops the disambiguating
+    ``\jpcjk{、…}{}'' qualifier and the ``\jpcjk{［テキストブロック］}{}'' tag). So a fact names identically
+    to the regulator's parse. Present for every \emph{live} concept.
+  \item \texttt{type} (\texttt{monetaryItemType}, \texttt{textBlockItemType}, \ldots) --- so numeric line
+    items and narrative sections are told apart. This is how the narrative text-blocks (\texttt{jpcrp\_cor})
+    are \emph{found}: they are exactly the \texttt{textBlockItemType} concepts.
+  \item \texttt{balance} (\texttt{debit} / \texttt{credit} / \texttt{null}) and \texttt{periodType} ---
+    concept metadata. \textbf{\texttt{balance} is \emph{not} used to set or correct a value's sign.} An XBRL
+    value is already canonically signed --- SG\&A is stored \(+1000\) because it is a debit expense, and
+    that is exactly what \texttt{facts(f)} returns --- confirmed against the CSV oracle at \textbf{1378/1378}
+    facts with \emph{zero} sign-flips (\S\ref{sec:edinet-oracle}). \texttt{balance} is carried for
+    normalisation and consistency checks only, never as a sign rewrite.
+\end{itemize}
+A concept absent from the table is a filer's own \emph{extension} concept (e.g.\
+\texttt{jpcrp030000-asr\_E02144-000:StrategyClimateChangeTextBlock}); its label and metadata come from the
+filing's own bundled linkbase, not the standard vocabulary.
+
+\paragraph{Where it lives.} Under the EDINET system directory, one file per taxonomy \emph{effective date}:
+\begin{lstlisting}
+src/filing_systems/edinet/data/edinet_concepts_2024-11-01.json   % 9,569 concepts
+src/filing_systems/edinet/data/edinet_concepts_2025-11-01.json   % 9,596 concepts
+\end{lstlisting}
+\noindent Each is $\sim$2.8\,MB and keyed exactly as filings reference concepts (\texttt{prefix:LocalName}).
+The distiller is a one-shot developer script (not shipped code); only its JSON output is committed.
+
+\paragraph{What changes from one year to the next.} EDINET ships a new taxonomy version late each year
+(the ``\(N{+}1\)'' package lands around \texttt{N-11-01}). The governing rule is that a taxonomy is
+\textbf{append-with-deprecation, never mutate-in-place}: changing a live concept's meaning would silently
+break every filing that ever used it, so instead the old concept is \emph{deprecated} (kept, flagged) and a
+new one added. The practical consequence --- verified by diffing the \texttt{2024-11-01} and
+\texttt{2025-11-01} tables --- is that \textbf{the newest table is a safe superset for all prior years}:
+the sign of an existing concept never moves, and nothing is ever removed. Concretely, across the
+\(9\,569\) concepts common to both years (Table~\ref{tab:edinet-taxdiff}):
+
+\begin{table}[h]
+\centering
+\small
+\caption{The honest, non-overlapping tally: EDINET \texttt{2024-11-01} \(\to\) \texttt{2025-11-01} (verbose
+labels). The buckets are \emph{disjoint}, so they sum to the \(48\) distinct concepts touched --- but only
+the \(27\) additions move the total from \(9\,569\) to \(9\,596\). (The raw per-language label-change
+counts, \(15\)~EN and \(21\)~JA, are deliberately \emph{not} shown as buckets: they double-count the \(7\)
+deprecations, since deprecating a concept nulls its label in both languages.)}
+\label{tab:edinet-taxdiff}
+\begin{tabular}{@{}p{0.46\textwidth}p{0.09\textwidth}p{0.33\textwidth}@{}}
+\toprule
+\textbf{Bucket} & \textbf{Count} & \textbf{Affects the \(9\,569{\to}9\,596\) count?} \\
+\midrule
+added (new disclosures) & 27 & \textbf{yes} \((+27)\) --- e.g.\ \texttt{InterestExpensesOnLeaseLiabilitiesNOE} \\
+live \(\to\) deprecated (balance kept) & 7 & no (still present) --- \texttt{RightOfUseAssets}, \texttt{SalesDiscountsNOE}, \ldots \\
+genuine label rewordings & 14 & no --- cosmetic, e.g.\ a renumbered cross-reference in the verbose qualifier \\
+\midrule
+\textbf{distinct concepts changed} & \textbf{48} & \\
+\texttt{balance} / \texttt{type} / \texttt{periodType} changed & \textbf{0} & --- (metadata is stable across versions) \\
+concepts removed & \textbf{0} & --- (append-only; old filings never orphaned) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent A caveat that follows from the append-only rule: the 7 live\(\to\)deprecated concepts lose their
+verbose label in the newer table (deprecation carries only a deprecation \emph{note}, not a name), though
+they keep their \texttt{balance} and \texttt{type}. Naming is unaffected in practice --- the filing supplies
+its own bundled label --- but it is why both years are kept rather than only the newest: the older table
+still holds the labels for concepts the newer one has retired.
 
 \section{Validation: the EDINET CSV oracle}
 \label{sec:edinet-oracle}

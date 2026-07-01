@@ -105,9 +105,12 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked.
   through `label_map`/`facts`/`facts_json`. Default `lang=nothing` = no filter = **exact prior behaviour**
   (not defaulted to `en`, to avoid changing SEC/ESEF output). Testset "language-aware labels (E4.1, offline)"
   1/1; full suite (incl. live 31/31) green. Live ja/en selection on a real EDINET filing awaits the key.
-- ☐ E4.2 **CSV oracle** (`type=5`): `facts(f)` == the EDINET CSV's values (the JP parser oracle).
-- ☐ E4.3 Yahoo cross-check (`nnnn.T`); manual chapter (the EDINET placeholder already exists).
-- ☐ E4.4 🚦 **GATE (run tests + commit):** report parity vs the CSV oracle; commit.
+- ✅ E4.2 **CSV oracle** (`type=5`): `facts(f)` == the EDINET CSV's values — `src/sources/csv_oracle.jl`
+  (`validate`/`report`/`text_diff`, load-on-demand like the other `*_oracle` scripts; UTF-16 + quoted
+  multi-line cells handled). Verified **1378/1378 facts** on Toyota; also validates the new `narratives()`
+  text-block extraction (Toyota 152/152, Fast Retailing 138/138 content parity).
+- ⏸ E4.3 Yahoo cross-check (`nnnn.T`) — ☐; manual chapter — ✅ (EDINET chapter + `narratives` + concept-table §§).
+- ✅ E4.4 🚦 **GATE:** parity reported (above); committed.
 
 ## Open questions / risks
 - **ZIP entry layout** — EDINET inline-XBRL vs classic `.xbrl` under `XBRL/PublicDoc/`; the manifest may
