@@ -482,11 +482,31 @@ function _fs_ranges(con, doc_id)
     return out
 end
 
+# Per-statement TOC anchors: when a bookmark entry's title names a specific statement ("Bilan consolidé",
+# "①連結財政状態計算書", "Statement of Operations"), it anchors that statement TYPE to its page. Returns
+# `doc => (page => statement_type)`. Authoritative — used to confirm/assign the type for the table there.
+function _toc_anchors(con, doc_id)
+    sql = "SELECT doc_id, title, page FROM toc" *
+          (doc_id === nothing ? "" : " WHERE doc_id = ?") * " ORDER BY doc_id, seq"
+    rows = DuckDB.Tables.rowtable(doc_id === nothing ? DBInterface.execute(con, sql) :
+                                                       DBInterface.execute(con, sql, (doc_id,)))
+    out = Dict{String,Dict{Int,String}}()
+    for r in rows
+        (r.title === missing || r.page === missing) && continue
+        st = EDGAR.classify_table_class(String(r.title))
+        (st === nothing || st == "fund_portfolio") && continue
+        get!(out, r.doc_id, Dict{Int,String}())[r.page] = st
+    end
+    return out
+end
+
 # ── Table classification pass (set tables.kind / statement_type) ─────────────────────────────────
 # Match each table's caption (falling back to its enclosing section title) against the open TABLE_CLASSES
-# registry, confined — when the bookmark TOC marks them — to the financial-statements section(s).
+# registry, confined — when the bookmark TOC marks them — to the financial-statements section(s), and with
+# the type overridden by a per-statement TOC anchor on the table's page where one exists.
 function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
     fsr = _fs_ranges(con, doc_id)
+    anchors = _toc_anchors(con, doc_id)
     tsql = "SELECT t.table_id AS table_id, t.doc_id AS doc_id, t.page_start AS page, t.ord AS ord, " *
            "t.caption AS caption, s.title AS title FROM \"tables\" t " *
            "LEFT JOIN sections s ON t.section_id = s.section_id" *
@@ -566,6 +586,12 @@ function EDGAR.classify_tables!(con::DuckDB.DB; doc_id = nothing)
             # TOC confinement: when the bookmarks mark the FS section(s), a table outside every FS range
             # cannot be a primary statement (excludes management-report / front-half echoes).
             (st !== nothing && has_fs && !in_fs) && (st = nothing)
+            # Per-statement TOC anchor: when a bookmark names the statement on this exact page, that type is
+            # authoritative — it confirms the type and recovers statements whose caption didn't match.
+            if t.page !== missing
+                anc = get(get(anchors, t.doc_id, Dict{Int,String}()), t.page, nothing)
+                anc === nothing || (st = anc)
+            end
             kind = st === nothing ? "descriptive" : something(EDGAR.table_class_kind(st), "statement")
             DBInterface.execute(upd, (kind, st === nothing ? missing : st, t.table_id))
             k = st === nothing ? "descriptive" : st
