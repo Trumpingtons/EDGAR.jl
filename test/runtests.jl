@@ -1224,6 +1224,17 @@ end
     @test !isempty(rev)
     @test any(r -> r.value ≈ 2.40715e12 && r.unit == "INR" && r.period_end == Date(2024, 3, 31), rev)
 
+    # Period normalisation: NSE stamps EVERY duration context with the same quarter-end dates, so the
+    # annual and quarterly RevenueFromOperations facts share identical raw <xbrli:period> dates. The true
+    # period is recovered (at fetch time) from each context's own DateOf…ReportingPeriod facts — so the
+    # annual figure carries a 12-month period (FY 2023-04-01 → 2024-03-31) and the quarterly a 3-month one.
+    annual = filter(r -> r.concept == "in-bse-fin:RevenueFromOperations" &&
+                         r.period_start == Date(2023, 4, 1) && r.period_end == Date(2024, 3, 31), rows)
+    @test length(annual) == 1 && annual[1].value ≈ 9.14472e12          # FY (₹9,14,472 cr), 12 months
+    quarter = filter(r -> r.concept == "in-bse-fin:RevenueFromOperations" &&
+                          r.period_start == Date(2024, 1, 1) && r.period_end == Date(2024, 3, 31), rows)
+    @test length(quarter) == 1 && quarter[1].value ≈ 2.40715e12        # Q4 (₹2,40,715 cr), 3 months
+
     # Section text: narratives(f) also returns the Reg. 33 explanatory text-blocks, with NO India-specific
     # code — the shared text layer recognises the `…ExplanatoryTextBlock` suffix (as for ESEF/EDINET).
     ns = narratives(f)

@@ -59,6 +59,55 @@ function _india_entity(content::AbstractString)
     return m === nothing ? EntityId(:isin, "") : EntityId(:nse_symbol, String(m.captures[1]))
 end
 
+# ── Period normalisation ────────────────────────────────────────────────────────────────────────
+#
+# NSE Ind-AS instances carry UNRELIABLE `<xbrli:period>` dates: every plain duration context is stamped
+# with the SAME quarter-end dates — e.g. both `OneD` (current quarter, 3 months) and `FourD` (year-to-
+# date / full year, 12 months) declare `2024-01-01→2024-03-31` — so the reporting period a fact belongs
+# to CANNOT be read from `startDate`/`endDate` (verified on Reliance FY24 and Infosys FY24). The TRUE
+# period is, however, present as EXPLICIT facts *inside each context's own concepts*:
+# `in-bse-fin:DateOfStartOfReportingPeriod` / `DateOfEndOfReportingPeriod` tagged with that context's id.
+# So `FourD` carries `DateOfStartOfReportingPeriod=2023-04-01` (the FY start) while `OneD` carries
+# `2024-01-01` (the quarter start) — the authoritative distinction the `<xbrli:period>` dates lose.
+#
+# `_india_normalize_periods` rewrites each duration context's `<xbrli:startDate>`/`<xbrli:endDate>` to the
+# authoritative dates its own `DateOf…ReportingPeriod` facts declare, BEFORE the shared extractor parses
+# the instance — the same fetch-time content-rewrite pattern as Companies House canonicalisation. The
+# result: `facts()` reports the correct 3-month vs 12-month period per fact, with no change to the shared
+# extractor. Instant contexts and any duration context that declares no such facts are left untouched.
+
+# `contextRef → (start, end)` from the instance's `in-bse-fin:DateOf{Start,End}OfReportingPeriod` facts.
+# A fact `<in-bse-fin:DateOfStartOfReportingPeriod contextRef="FourD" …>2023-04-01</…>` contributes the
+# start for context `FourD`; the matching End fact contributes its end. Only contexts with BOTH are kept.
+function _india_reporting_periods(content::AbstractString)
+    starts = Dict{String,String}(); ends = Dict{String,String}()
+    for m in eachmatch(r"(?is)<in-bse-fin:DateOf(Start|End)OfReportingPeriod\b[^>]*\bcontextRef=\"([^\"]+)\"[^>]*>\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", content)
+        (m.captures[1] == "Start" ? starts : ends)[m.captures[2]] = m.captures[3]
+    end
+    periods = Dict{String,Tuple{String,String}}()
+    for (ctx, s) in starts
+        haskey(ends, ctx) && (periods[ctx] = (s, ends[ctx]))
+    end
+    return periods
+end
+
+# Rewrite each duration context's period dates to the authoritative reporting-period dates its own facts
+# declare. No-op for a context with no such facts (its dates are left as-is), and for instant contexts.
+function _india_normalize_periods(content::AbstractString)
+    periods = _india_reporting_periods(content)
+    isempty(periods) && return content
+    return replace(content, r"(?is)<xbrli:context\s+id=\"([^\"]+)\">(.*?)</xbrli:context>" => function (block)
+        m = match(r"(?is)<xbrli:context\s+id=\"([^\"]+)\">(.*?)</xbrli:context>", block)
+        ctx = m.captures[1]
+        haskey(periods, ctx) || return block
+        occursin("<xbrli:startDate>", block) || return block          # duration contexts only
+        s, e = periods[ctx]
+        block = replace(block, r"(?is)<xbrli:startDate>[^<]*</xbrli:startDate>" => "<xbrli:startDate>$s</xbrli:startDate>")
+        block = replace(block, r"(?is)<xbrli:endDate>[^<]*</xbrli:endDate>"     => "<xbrli:endDate>$e</xbrli:endDate>")
+        return block
+    end)
+end
+
 """
     fetch_filing(::India, src; entity=nothing, ref="") -> Filing
 
@@ -82,7 +131,7 @@ function fetch_filing(::India, src::AbstractString;
     else
         read(src)
     end
-    content = String(raw)
+    content = _india_normalize_periods(String(raw))
     ent = entity === nothing ? _india_entity(content) : entity
     return Filing(India(), ent, isempty(ref) ? basename(src) : String(ref), basename(src), src, :xbrl, content)
 end
