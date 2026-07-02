@@ -39,3 +39,56 @@ const _INDIA_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " *
 
 system_headers(::India) = ["User-Agent" => _INDIA_UA,
                            "Accept"     => "application/json, text/html, */*"]
+
+# ── I1: offline parse of a single Ind-AS XBRL instance ──────────────────────────────────────────
+#
+# An NSE filing is a single CLASSIC XBRL instance (`<xbrli:xbrl>` with `in-bse-fin:` concept-named
+# facts) — NOT inline XBRL, and NOT a package: the linkbases are the published BSE standard taxonomy,
+# referenced by <link:schemaRef>, not bundled (the standard-taxonomy-only shape, as at Companies House).
+# So `fetch_filing` just reads the instance bytes and builds an `:xbrl` Filing; the shared extractor's
+# classic-instance path (`_classic_facts`) parses concept elements against the instance's own contexts
+# and units. Raw `facts(f; classify=false)` needs no taxonomy; classification is the dedicated
+# `vocab_indas.jl` (I3) and human labels are the remote BSE label linkbase (I4).
+
+# Identity carried INSIDE the instance: the context entity `<identifier>` whose scheme is NSE's symbol
+# URI (`http://www.nseindia.com/NSESymbol`), e.g. `RELIANCE` — the NSE ticker, NOT the ISIN. The ISIN is
+# supplied by discovery (I2) from the results-API record, so a caller-given `entity` always wins over
+# this. Returns `EntityId(:nse_symbol, sym)`, or an empty `:isin` id when no NSE identifier is present.
+function _india_entity(content::AbstractString)
+    m = match(r"(?is)<(?:\w+:)?identifier\b[^>]*\bscheme=\"[^\"]*nseindia\.com[^\"]*\"[^>]*>\s*([^<\s]+)", content)
+    return m === nothing ? EntityId(:isin, "") : EntityId(:nse_symbol, String(m.captures[1]))
+end
+
+"""
+    fetch_filing(::India, src; entity=nothing, ref="") -> Filing
+
+Read an NSE **Ind-AS XBRL instance** — a local path (offline) or an `http(s)://` URL — into a
+[`Filing`](@ref). The instance is classic XBRL, so the filing is `:xbrl` and flows through the same
+`facts(f; classify, labels)` API as every other system. `entity` defaults from discovery (which knows
+the ISIN, I2); offline it is parsed from the instance's context identifier (the NSE symbol). `ref`
+defaults to the source basename.
+
+```julia
+f = fetch_filing(India(), "test/data/india/reliance-fy2024.xml")
+facts(f)                       # raw Ind-AS facts (classification is I3; needs vocab_indas.jl)
+```
+"""
+function fetch_filing(::India, src::AbstractString;
+                      entity::Union{EntityId,Nothing}=nothing, ref::AbstractString="")
+    raw = if startswith(src, "http://") || startswith(src, "https://")
+        b = fetch_url(src; headers = system_headers(India()))
+        b === nothing && error("could not fetch India XBRL instance $(repr(src))")
+        Vector{UInt8}(b)
+    else
+        read(src)
+    end
+    content = String(raw)
+    ent = entity === nothing ? _india_entity(content) : entity
+    return Filing(India(), ent, isempty(ref) ? basename(src) : String(ref), basename(src), src, :xbrl, content)
+end
+
+# India method of the per-system linkbase fetcher (core/extract_xbrl.jl). NSE instances bundle NO
+# linkbases — they reference the published BSE standard taxonomy by URL — so at I1 this returns "" for
+# every suffix: raw facts need no linkbase, and classification will use `vocab_indas.jl` (I3). Fetching
+# the remote BSE label linkbase for human-readable labels is I4.
+_fetch_linkbase(::India, f::Filing, suffix::AbstractString; lang=nothing) = ""

@@ -1195,6 +1195,43 @@ end
     @test arow.label == "자산"
 end
 
+@testset "India: offline Ind-AS XBRL instance extraction (I1)" begin
+    # A REAL NSE Ind-AS financial-results instance (Reliance Industries, consolidated, FY ending
+    # 31-Mar-2024; see the NOTICE beside it) — a single CLASSIC XBRL instance, NOT inline and NOT a
+    # package: the linkbases are the published BSE standard taxonomy, not bundled (the Companies House
+    # standard-taxonomy-only shape). Exercises the 6th FilingSystem's offline parse with NO network —
+    # `fetch_filing(::India, path)` → an `:xbrl` filing → the shared classic-instance extractor. Raw facts
+    # need no taxonomy; classification is the dedicated `vocab_indas.jl` (I3), so this asserts RAW
+    # extraction only (no `classify`).
+    inst = joinpath(@__DIR__, "data", "india", "reliance-fy2024.xml")
+    f = fetch_filing(India(), inst)
+    @test f.system isa India
+    @test f.kind === :xbrl
+    @test f.entity == EntityId(:nse_symbol, "RELIANCE")        # from the context identifier (ISIN is discovery, I2)
+    @test f.document == "reliance-fy2024.xml"
+
+    rows = facts(f)                                            # raw (classify=false); vocab_indas is I3
+    @test length(rows) > 200                                  # ~294 in the real instance
+
+    # The India taxonomy thesis: every reporting concept sits in the national `in-bse-fin` namespace,
+    # with IFRS-identical local names and ZERO bare `ifrs-full` (the driver for the dedicated vocab, I3).
+    @test all(r -> startswith(r.concept, "in-bse-fin:"), rows)
+    @test !any(r -> startswith(r.concept, "ifrs-full:"), rows)
+    @test any(r -> r.concept == "in-bse-fin:Assets", rows)    # an IFRS-identical local name is present
+
+    # A known face concept with its real value: Q4 (Jan–Mar 2024) RevenueFromOperations ≈ ₹2,40,715 cr.
+    rev = filter(r -> r.concept == "in-bse-fin:RevenueFromOperations", rows)
+    @test !isempty(rev)
+    @test any(r -> r.value ≈ 2.40715e12 && r.unit == "INR" && r.period_end == Date(2024, 3, 31), rev)
+
+    # Section text: narratives(f) also returns the Reg. 33 explanatory text-blocks, with NO India-specific
+    # code — the shared text layer recognises the `…ExplanatoryTextBlock` suffix (as for ESEF/EDINET).
+    ns = narratives(f)
+    @test length(ns) == 3                                     # Notes on Financial Results / Assets & Liabilities / Segments
+    @test all(n -> endswith(n.concept, "ExplanatoryTextBlock"), ns)
+    @test any(n -> occursin("GST recovered", n.text), ns)     # the Segments note prose
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →
