@@ -4510,17 +4510,31 @@ through the corporate registrar (\textbf{MCA21}) and through every stock exchang
 (\textbf{NSE}, \textbf{BSE}). Which channel to build on is therefore the central design decision for the
 adapter --- so this chapter opens, unusually, with a \emph{Repositories} survey (\S\ref{sec:india-repos}).
 Listed-company financials are filed in \textbf{Ind-AS} --- the IFRS-converged Indian Accounting Standards ---
-under a national XBRL taxonomy published by the exchanges, and (the working thesis) classify against the
-\emph{existing} \texttt{ifrs-full} vocabulary after a namespace-canonicalisation step, with little or no new
-national GAAP. Identity is the company's \textbf{ISIN} (\texttt{EntityId(:isin,\ "INE002A01018")}), with the
-NSE ticker symbol and BSE scrip code as secondary schemes.
+under a national XBRL taxonomy published by the exchanges, and classify through a \textbf{dedicated}
+\texttt{vocab\_indas.jl} keyed on the \texttt{in-bse-fin} namespace (the same by-namespace national-vocabulary
+pattern as Japan and the UK; \S\ref{sec:india-taxonomy}). Identity is the company's \textbf{ISIN}
+(\texttt{EntityId(:isin,\ "INE002A01018")}), with the NSE ticker symbol and BSE scrip code as secondary
+schemes.
 
-\emph{Status:} reconnaissance \textbf{verified live} (2026-07); the adapter is \textbf{not yet built}. The
-findings in \S\ref{sec:india-repos} --- the keyless NSE discovery-to-XBRL seam and the \texttt{in-bse-fin}
-taxonomy --- are established against real filings (Reliance Industries, FY2023--24), but no
-\texttt{discover}/\texttt{fetch}/classification code ships yet. This \textbf{supersedes} the earlier
-``India MCA21 --- paid'' note in the portability survey: MCA21 (the registrar) is indeed paid, but that is
-the \emph{wrong} channel --- the \textbf{exchanges publish the results XBRL keyless}.
+\emph{Status:} the seam (I0) and the \textbf{offline parse} (I1) are \textbf{implemented and tested} ---
+\texttt{fetch\_filing(India(),\ \ldots)} builds an \texttt{:xbrl} filing and \texttt{facts(f)} extracts its
+Ind-AS facts (and \texttt{narratives(f)} its section text, below), verified against a real filing (Reliance
+Industries, FY2023--24; 294 facts, all \texttt{in-bse-fin}). Live NSE \emph{discovery} (I2), the
+\texttt{vocab\_indas.jl} \emph{classification} (I3) and human-readable \emph{labels} (I4) are the remaining
+phases. This \textbf{supersedes} the earlier ``India MCA21 --- paid'' note in the portability survey: MCA21
+(the registrar) is indeed paid, but that is the \emph{wrong} channel --- the \textbf{exchanges publish the
+results XBRL keyless}.
+
+\paragraph{Facts \emph{and} section text.} An NSE filing yields both. \texttt{facts(f)} returns the numeric
+Ind-AS statements (the \texttt{in-bse-fin} concepts); \texttt{narratives(f)} (\S\ref{sec:api-narratives})
+returns the filing's \textbf{explanatory text-blocks} --- the Regulation~33 notes tagged with the
+\texttt{\ldots{}ExplanatoryTextBlock} suffix --- with \textbf{no India-specific code}, because the shared
+text layer already recognises that suffix (exactly as for ESEF and EDINET). Reliance's FY2023--24 filing
+exposes three: \emph{Notes on Financial Results}, \emph{Notes on Assets and Liabilities} and \emph{Notes on
+Segments} (e.g.\ ``Q4~FY24 Segment Revenue includes Rs~24{,}119~crore GST recovered''). This is unlike DART,
+whose \texttt{fnlttXbrl} package is numeric-only (\S\ref{sys:dart}). One current limit: until the standard
+BSE label linkbase is wired (I4), a narrative's \texttt{section\_title} is the raw concept name rather than a
+human label --- the prose \emph{bodies} are complete.
 
 \section{Repositories}\label{sec:india-repos}
 
@@ -4620,11 +4634,59 @@ element names, merely re-namespaced.
 This is the \textbf{inverse of Korea}. K-IFRS filings tag under \emph{bare} \texttt{ifrs-full}, so DART
 needed no vocabulary and no rewriting (\S\ref{sec:dart-kifrs}); India tags the \emph{same} IFRS concepts
 under a national prefix. Because \texttt{EDGAR.jl} classifies by \textbf{namespace, not prefix}, an
-\texttt{in-bse-fin} concept will not match the \texttt{ifrs-full} vocabulary as-is. The planned strategy
-therefore mirrors the Companies House canonicalisation: rewrite each \texttt{in-bse-fin} concept whose local
-name exists in \texttt{ifrs-full} onto the \texttt{ifrs-full} namespace, then classify unchanged --- reusing
-the entire IFRS vocabulary --- and add a small India-specific vocabulary \emph{only} for the residue of
-genuinely national extensions, measured empirically rather than assumed.
+\texttt{in-bse-fin} concept will not match the \texttt{ifrs-full} vocabulary as-is. \texttt{EDGAR.jl}
+therefore classifies India through a \textbf{dedicated \texttt{vocab\_indas.jl}} keyed on the
+\texttt{in-bse-fin} namespace --- the same by-namespace national-vocabulary pattern as Japan
+(\texttt{vocab\_jpgaap}) and the UK (\texttt{vocab\_ukgaap}), rather than rewriting concepts onto
+\texttt{ifrs-full}. Because the local names are IFRS-identical, that vocabulary is largely the IFRS concept
+set re-keyed under \texttt{in-bse-fin}, plus the genuinely India-specific extensions. (This is phase~I3; the
+offline parse and raw \texttt{facts} already work without it.)
+
+\section{Entities covered}\label{sec:india-entities}
+
+Unlike EDINET or DART --- one regulator, one inclusion rule --- ``which companies can I reach?'' has a
+\textbf{different answer per repository}, because the three channels cover different universes
+(Table~\ref{tab:india-entities}). All three receive the \emph{same} Ind-AS results filing under SEBI
+Reg.~33; they differ in \emph{which} entities are obliged to lodge with them. \texttt{EDGAR.jl} builds on the
+exchange channels, so its covered set is \textbf{listed issuers}; the registrar's far larger all-companies
+universe is out of scope (paid).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Indian repositories cover different entity universes (hence a per-repository inclusion rule).}
+\label{tab:india-entities}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.37\textwidth}p{0.18\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{Repository} & \textbf{Inclusion criterion} & \textbf{Universe (order of mag.)} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{NSE} & equity listed on the National Stock Exchange (files Reg.~33 results) & $\sim$2{,}000 issuers & \textbf{primary} --- extracted \\
+\textbf{BSE} & equity listed on the Bombay Stock Exchange --- a \emph{superset}: includes BSE-only SMEs and smaller issuers & $\sim$5{,}000+ issuers & second channel (planned) \\
+\textbf{MCA21} & \emph{every} incorporated company --- listed or unlisted, public or private & $>$1 million active & \emph{out of scope} (paid) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{NSE-listed and BSE-listed issuers}
+The exchange channels cover \textbf{listed equity issuers} filing quarterly and annual financial results
+under SEBI Reg.~33. Most large companies are listed on \emph{both} exchanges (dual-listed), so NSE and BSE
+overlap heavily at the top; BSE's roll is the larger and messier (many BSE-only SMEs and small issuers that
+NSE does not carry). \texttt{EDGAR.jl} takes NSE as the primary channel and BSE as the authoritative second
+channel and cross-check (\S\ref{sec:india-repos}); an entity is identified by its ISIN, with the NSE symbol
+and BSE scrip code as secondary schemes. Each filing is lodged in both \textbf{standalone} and
+\textbf{consolidated} form (the results API flags which); \texttt{EDGAR.jl} picks per request, defaulting to
+consolidated.
+
+\subsection{MCA21 --- all incorporated companies (out of scope)}
+MCA21 additionally holds the annual accounts of \emph{every} registered company --- unlisted and private
+included --- a universe orders of magnitude larger (India has over a million active companies). It is the
+only channel that reaches \emph{unlisted} entities, but access is paid and per-document
+(\S\ref{sec:india-repos}), so \texttt{EDGAR.jl} does not use it; the listed-company statements it holds are
+the same ones the exchanges publish for free.
+
+\paragraph{Boundary.} The results API surveyed here covers \textbf{equity issuers} (Reg.~33). Other
+SEBI-regulated vehicles that also publish financial results --- REITs, InvITs, mutual funds --- file under
+\emph{separate} regulations and endpoints, not yet surveyed; they are outside the current India scope.
 
 \chapter{Russia \textemdash{} CBR / e-disclosure}
 \label{sys:russia}
