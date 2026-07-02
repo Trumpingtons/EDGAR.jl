@@ -2991,8 +2991,11 @@ against real reports during testing.
     typically PDF.
   \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{Konzernabschluss}):
     \emph{Konzernbilanz}, \emph{Konzern-Gewinn- und Verlustrechnung}, etc. For regulated-market issuers
-    this is the ESEF-tagged report, reachable as iXBRL via filings.xbrl.org; otherwise it too is often
-    only PDF.
+    this is the ESEF-tagged report --- but Germany's OAM is the \emph{Bundesanzeiger}, whose XBRL is
+    \textbf{not openly retrievable}, and \href{https://filings.xbrl.org}{filings.xbrl.org} carries
+    \textbf{no German filings at all} (a country query returns zero --- verified). So in practice even the
+    consolidated ESEF report reaches us only as \textbf{PDF}: Germany is a PDF-route jurisdiction end to
+    end (Chapter~\ref{ch:pdf}), which is exactly why it is a key target for the document-AI extractor.
 \end{itemize}
 
 \noindent A single German company can therefore present \emph{both}: a consolidated IFRS report (possibly
@@ -3044,6 +3047,24 @@ ESEF) and a statutory HGB single-entity account (usually PDF).
 \noindent These were confirmed end-to-end from PDF, without OCR: a HGB \emph{Jahresabschluss}
 (\emph{Bilanzsumme} 197.754~Mio~€, \emph{Aktiva} = \emph{Passiva}) and an IFRS \emph{Konzernbilanz}
 (total 1.986.546~T€, assets = equity \(+\) liabilities) both extracted and cross-footed correctly.
+
+\subsection{Balance-sheet presentation: account-form, by law (\emph{Kontoform})}
+\label{sec:esef-germany-tshape}
+
+Like Italy (\S\ref{sec:esef-italy-tshape}), Germany's statutory balance sheet is \textbf{account-form} and it
+is mandated by \textbf{law}: \textbf{HGB §266(1)} opens \emph{``Die Bilanz ist in Kontoform aufzustellen''} ---
+the \emph{Bilanz} must be drawn up in \textbf{account form (\emph{Kontoform})}, \emph{Aktiva} on the left,
+\emph{Passiva} (\emph{Eigenkapital und Schulden}) on the right, each an ordered hierarchy of letter
+macro-classes (\emph{A}, \emph{B}, \emph{C}\ldots), Roman-numeral classes and Arabic-numeral items; size bands
+(\emph{klein}\,/\,\emph{mittelgroß}\,/\,\emph{groß}) only abridge the depth, not the form.\footnote{\emph{HGB}
+§266 (Gliederung der Bilanz), Abs.~1 Satz~1: \emph{``Die Bilanz ist in Kontoform aufzustellen.''} ---
+\href{https://www.gesetze-im-internet.de/hgb/__266.html}{gesetze-im-internet.de/hgb/\_\_266}.} So this is the
+genuine account-form ``\emph{T}'', verified from the \emph{statute itself}. The same split as everywhere in
+this chapter applies: the account-form is the \textbf{HGB national-GAAP} statutory format (the single-entity
+\emph{Jahresabschluss}, usually PDF at the \emph{Bundesanzeiger}); a listed group's consolidated \textbf{IFRS}
+\emph{Konzernbilanz} is \textbf{report-form}. The ``two-sided and multi-page'' note above is exactly the
+extraction consequence --- \emph{Aktiva} and \emph{Passiva} on separate pages, stitched into one statement,
+with the \emph{Bilanzsumme} equal on both sides as a built-in cross-foot.
 
 \section{France}
 \label{sec:esef-france}
@@ -3107,10 +3128,22 @@ verified against real filings during testing.
     title.
 \end{itemize}
 
-\noindent Confirmed end-to-end from PDF, without OCR, on two filers --- \textbf{LVMH} and
-\textbf{TotalEnergies}: \emph{Bilan consolidé}, \emph{Compte de résultat consolidé}, cash-flow and
-\emph{Variation des capitaux propres} all extracted and classified (TotalEnergies via its outline; both
-halves --- \emph{Actif} and \emph{Passif} --- of the two-part French \emph{Bilan} tag as the balance sheet).
+\subsection{Balance-sheet presentation: \emph{bilan en tableau} (account-form)}
+\label{sec:esef-france-tshape}
+
+Like Italy and Germany (\S\ref{sec:esef-italy-tshape}, \S\ref{sec:esef-germany-tshape}), France's statutory
+balance sheet is \textbf{account-form}: the \textbf{PCG} prescribes the \emph{bilan} \textbf{``en tableau''}
+--- \emph{Actif} and \emph{Passif} side by side --- while the \emph{compte de résultat} is presented
+\textbf{``en liste''} (vertical). The 2025 PCG reform trimmed the model set to exactly these two: a single
+\emph{bilan en tableau} (before appropriation of the result) and a \emph{compte de résultat en
+liste}.\footnote{\emph{Plan Comptable Général} (Règlement ANC n°~2014-03, refonte applicable au 1\textsuperscript{er}~janvier
+2025); \emph{Code de commerce} art.~R.123-181\,ff.\ (forme des comptes annuels). On the reform's reduced model
+set see e.g.\
+\href{https://www.l-expert-comptable.com/a/7298-la-reforme-du-plan-comptable-general.html}{l-expert-comptable.com}
+and \href{https://www.inextenso.fr/magazin/gerer-developper-mon-activite/reforme-du-plan-comptable-general-pcg-ce-qui-change-pour-votre-entreprise-en-2025/}{In~Extenso}.}
+The same split as everywhere in this chapter applies: the account-form \emph{bilan} is the \textbf{French-GAAP
+(PCG)} statutory format for the \emph{comptes sociaux} (usually PDF at the \emph{greffe}); a listed group's
+consolidated \textbf{IFRS} \emph{bilan consolidé}, inside the URD, is \textbf{report-form}.
 
 \section{Italy}
 \label{sec:esef-italy}
@@ -3177,11 +3210,253 @@ verified against real filings during testing --- and Italy brought two genuine s
     its own table row of the same class --- expected, not an error.
 \end{itemize}
 
-\noindent Confirmed end-to-end from PDF, without OCR, on two filers --- \textbf{Eni} (2024 consolidated
-financial statements) and \textbf{Enel} (2023 \emph{relazione e bilancio}): all five statement classes ---
-\emph{Stato patrimoniale}, \emph{Conto economico}, \emph{Prospetto dell'utile complessivo}, \emph{Rendiconto
-finanziario} and \emph{Prospetto delle variazioni del patrimonio netto} --- extracted and correctly
-classified, once the comprehensive-income and changes-in-equity patterns above were added.
+\subsection{The account-form (\emph{T}-shaped) balance sheet}
+\label{sec:esef-italy-tshape}
+
+Italy's statutory balance sheet is \textbf{account-form}, and --- unlike the Spanish case
+(\S\ref{sec:esef-spain-tshape}) --- it is defined by \textbf{law}. Under \textbf{Codice Civile art.~2424},
+the \emph{Stato patrimoniale} is drawn up \emph{``a sezioni contrapposte''} --- \textbf{contrasting sections,
+side by side}: the \emph{Attivo} (assets) on the left, the \emph{Passivo} (liabilities \emph{and} net equity,
+\emph{patrimonio netto}) on the right. Each side is a numbered hierarchy: macro-classes in capital letters
+(\emph{Attivo}: \emph{A}~crediti verso soci, \emph{B}~immobilizzazioni, \emph{C}~attivo circolante,
+\emph{D}~ratei e risconti; \emph{Passivo}: \emph{A}~patrimonio netto, \emph{B}~fondi per rischi e oneri,
+\emph{C}~trattamento di fine rapporto, \emph{D}~debiti, \emph{E}~ratei e risconti), then Roman-numeral
+classes and Arabic-numeral items. So this is the genuine \textbf{account-form / horizontal ``T''} --- and
+it is verified from the \emph{legal schema itself}, which is stronger evidence than any single filing.%
+\footnote{\emph{Codice Civile} art.~2424, ``Contenuto dello stato patrimoniale''; the \emph{sezioni
+contrapposte} (facing-sections) layout is confirmed across authoritative Italian sources ---
+\href{https://www.informazionefiscale.it/stato-patrimoniale-schema-art-2424-bilancio}{informazionefiscale.it},
+\href{https://www.laleggepertutti.it/codice-civile/art-2424-codice-civile-contenuto-dello-stato-patrimoniale}{La~Legge per Tutti},
+and the standard-setter \emph{OIC} (Organismo Italiano di Contabilità),
+\href{https://www.fondazioneoic.eu/wp-content/uploads/2022/10/2019-01-OIC-12-Composizione-e-schemi-del-bilancio.pdf}{OIC~12 --- Composizione e schemi del bilancio}.}
+
+\noindent \textbf{A nuance --- the same split as everywhere in this chapter.} The account-form is the
+\emph{national-GAAP} (OIC) \textbf{statutory} format, used by \textbf{unlisted} companies. \textbf{Listed}
+Italian issuers prepare their financial statements under \textbf{IFRS} --- for the \emph{consolidated and the
+separate (parent)} accounts alike (\emph{D.Lgs.}~38/2005) --- so their ESEF filings are \textbf{report-form
+IFRS}, \emph{not} the ``T''. The account-form therefore lives on the \textbf{unlisted\,/\,PDF side} (accounts
+deposited at the \emph{Registro delle Imprese}), not in the ESEF listed filings --- exactly the
+IFRS-consolidated vs national-GAAP-individual split drawn throughout this chapter. On the PDF route, the
+account-form\,/\,panel-aware two-sided-balance-sheet handling (\S\ref{sec:pdf-classification}) recognises
+both facing halves as \emph{one} statement.
+
+\section{Spain}
+\label{sec:esef-spain}
+
+Spanish listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL with
+the \textbf{CNMV} (\emph{Comisión Nacional del Mercado de Valores}); they are also carried by
+filings.xbrl.org (unlike Germany). As with the other countries a national-GAAP layer sits underneath --- the
+\textbf{PGC} single-entity accounts, filed at the \emph{Registro Mercantil} and typically PDF-only (its
+balance-sheet \emph{presentation} --- and a common misconception about it --- is discussed in
+\S\ref{sec:esef-spain-tshape}). The three worked examples below span three sectors --- \textbf{Inditex}
+(retail), \textbf{Banco Santander} (bank), \textbf{Iberdrola} (utility) --- one country, one ESEF/IFRS
+regime, three statement vocabularies; all figures below were read from the filed reports.
+
+\subsection{Two accounting flavours: PGC and IFRS}
+
+\begin{itemize}
+  \item \textbf{Spanish GAAP --- the PGC} (\emph{Plan General de Contabilidad}) --- the \emph{single-entity}
+    statutory accounts (\emph{cuentas anuales}): the \emph{Balance} (\emph{Activo}, \emph{Patrimonio neto y
+    Pasivo}), the \emph{Cuenta de pérdidas y ganancias}, the \emph{Estado de cambios en el patrimonio neto},
+    the \emph{Estado de flujos de efectivo} and the \emph{Memoria} (notes). Filed at the \emph{Registro
+    Mercantil}; typically PDF. Lighter variants: \emph{PGC de PYMES} (SMEs) and a micro-enterprise regime.
+    (On its balance-sheet presentation, see \S\ref{sec:esef-spain-tshape}.)
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{cuentas anuales consolidadas}):
+    \emph{Estado de situación financiera} (or \emph{Balance}), \emph{Cuenta de resultados}, \emph{Estado del
+    resultado global}, \emph{Estado de flujos de efectivo}, \emph{Estado (total) de cambios en el patrimonio
+    neto}. This is the ESEF-tagged report; each of the three examples tags the full \textbf{five}-statement
+    set (\texttt{BalanceSheet}, \texttt{IncomeStatement}, \texttt{ComprehensiveIncome}, \texttt{Equity},
+    \texttt{CashFlow}).
+\end{itemize}
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{Spanish statement vocabulary (IFRS-consolidated and PGC terms).}
+\label{tab:es-vocab}
+\small
+\begin{tabular}{@{}p{0.52\textwidth}p{0.42\textwidth}@{}}
+\toprule
+\textbf{Spanish} & \textbf{Meaning} \\
+\midrule
+\emph{Estado de situación financiera} / \emph{Balance} & Balance sheet \\
+\emph{Activo} / \emph{Patrimonio neto y Pasivo} & Assets side / equity-and-liabilities side \\
+\emph{Cuenta de resultados} / \emph{Cuenta de pérdidas y ganancias} & Income statement \\
+\emph{Estado del resultado global} & Statement of comprehensive income \\
+\emph{Estado de flujos de efectivo} & Cash-flow statement \\
+\emph{Estado (total) de cambios en el patrimonio neto} & Statement of changes in equity \\
+\emph{Memoria} / \emph{Notas} & Notes to the accounts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Three IFRS income-statement vocabularies, one country.} The income statement is where sector
+diverges most, and the three examples cover the three \texttt{ifrs-full} presentations (read from the filed
+reports):
+\begin{itemize}[nosep]
+  \item \textbf{Inditex (retail)} --- \emph{function-of-expense}: \texttt{ifrs-full:Revenue} \(\to\)
+    \texttt{CostOfSales} \(\to\) \texttt{GrossProfit} \(\to\) \texttt{OperatingExpense} (18 income-statement
+    concepts, \(\approx\)500 facts total).
+  \item \textbf{Iberdrola (utility)} --- \emph{nature-of-expense}: \texttt{ifrs-full:Revenue},
+    \texttt{RawMaterialsAndConsumablesUsed}, \texttt{EmployeeBenefitsExpense},
+    \texttt{OtherWorkPerformedByEntityAndCapitalised} (27 concepts, \(\approx\)650 facts).
+  \item \textbf{Banco Santander (bank)} --- the banking layout, with \emph{no} revenue/cost-of-sales:
+    \texttt{ifrs-full:RevenueFromInterest}, \texttt{InterestExpense}, \texttt{FeeAndCommissionIncome} (41
+    income-statement concepts, \(\approx\)1{,}700 facts --- banks disclose far more). This is the
+    \texttt{ifrs-full} financial-institution vocabulary, not a Spanish specificity, but the trio shows it
+    cleanly.
+\end{itemize}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{Issuer extensions are a large, locally-named share.} Roughly a quarter to a third of tagged
+    facts are issuer \emph{extension} concepts (Inditex \(\approx\)166/504, Santander \(\approx\)501/1716,
+    Iberdrola \(\approx\)165/655), and they carry the \emph{filer's} language: Iberdrola's are Spanish
+    (e.g.\ \texttt{ibe:GastosDeServicios}), Inditex's English (\texttt{itx:GrossProfitMargin}). Do not assume
+    an English concept local-name; the \texttt{standard\_concept}/W4 bridge is what normalises them.
+  \item \textbf{Filing language varies.} Inditex and Santander filed English-labelled packages (\texttt{-en}),
+    Iberdrola Spanish (\texttt{-es}). The standard \texttt{ifrs-full} concepts still resolve to their taxonomy
+    labels; only the extension concepts are in the filing language.
+  \item \textbf{Number locale.} Comma decimal with a \textbf{dot} (or space) thousands separator ---
+    \texttt{1.234.567,89} = 1{,}234{,}567.89 (like Germany, unlike France's space); amounts usually
+    \emph{en miles} or \emph{en millones de euros}.
+  \item \textbf{``Balance'' vs ``Estado de situación financiera''.} Like the French \emph{Bilan}, Spanish IFRS
+    filers may keep \emph{Balance} rather than the literal IFRS \emph{Estado de situación financiera} --- match
+    both, loosely.
+\end{itemize}
+
+\subsection{Balance-sheet presentation: report-form, not the ``T''}
+\label{sec:esef-spain-tshape}
+
+A common assumption is that Spanish accounts use an \textbf{account-form} (``\emph{T}''-shaped) balance sheet
+--- \emph{Activo} on one side, \emph{Patrimonio neto y Pasivo} on the other. For \emph{modern} Spanish GAAP
+this is \textbf{not} the case: the PGC~2007 \emph{modelo de balance} is \textbf{vertical (report-form)} ---
+\emph{ACTIVO} (\emph{A}~no corriente, \emph{B}~corriente) listed first, then \emph{PATRIMONIO NETO Y PASIVO}
+(\emph{A}~patrimonio neto, \emph{B}~pasivo no corriente, \emph{C}~pasivo corriente) below it; the horizontal
+``account'' form belongs to the \emph{pre-2007} plans. Checked against a real filing: in Iberdrola's
+individual accounts the \emph{Activo} and \emph{Patrimonio neto y Pasivo} blocks render as \emph{separate,
+stacked} tables --- vertical, not one two-sided table. The genuine account-form ``T'' is a \textbf{continental}
+trait mandated by law in \textbf{Italy}, \textbf{Germany} and \textbf{France}
+(\S\ref{sec:esef-italy-tshape}, \S\ref{sec:esef-germany-tshape}, \S\ref{sec:esef-france-tshape}) --- but
+\emph{not} in modern Spanish GAAP.
+
+\section{Netherlands}
+\label{sec:esef-nl}
+
+Dutch listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL with the
+\textbf{AFM} (\emph{Autoriteit Financi\"ele Markten}); they are also carried by filings.xbrl.org (unlike
+Germany). The national-GAAP layer sits underneath in the \emph{Dutch Civil Code} --- \textbf{Title~9 of
+Book~2 BW} (\emph{Burgerlijk Wetboek}), fleshed out by the \textbf{RJ} guidelines (\emph{Richtlijnen voor de
+jaarverslaggeving}, issued by the \emph{Raad voor de Jaarverslaggeving}) --- with the single-entity statutory
+accounts filed at the \textbf{KvK} (\emph{Kamer van Koophandel}, the Chamber of Commerce), typically as SBR/PDF;
+its balance-sheet \emph{presentation} is discussed in \S\ref{sec:esef-nl-tshape}. The three worked examples
+below span three sectors --- \textbf{ASML} (semiconductors), \textbf{ING Groep} (bank), \textbf{Heineken}
+(brewer) --- one country, one ESEF/IFRS regime, three statement vocabularies. Every figure below was read from
+the filed report, and each matched the filings.xbrl.org (Arelle) value-parity oracle exactly: \textbf{ASML
+380/380}, \textbf{ING 396/396}, \textbf{Heineken 294/294} facts.
+
+\subsection{Two accounting flavours: Dutch GAAP and IFRS}
+
+\begin{itemize}
+  \item \textbf{Dutch GAAP --- Title~9 Book~2 BW + RJ} --- the \emph{single-entity} statutory accounts
+    (\emph{jaarrekening}): the \emph{balans} (\emph{activa} / \emph{passiva}, the latter being \emph{eigen
+    vermogen en schulden}), the \emph{winst-en-verliesrekening}, the \emph{kasstroomoverzicht} and the
+    \emph{toelichting} (notes). Filed at the KvK; typically SBR (the Dutch inline-XBRL profile) or PDF for the
+    smallest filers. Size regimes under art.~2:396--398 BW (\emph{klein} / \emph{middelgroot} / \emph{groot})
+    scale the disclosure, with lighter RJk guidance for small entities.
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{geconsolideerde jaarrekening}):
+    \emph{geconsolideerde balans}, \emph{geconsolideerde winst-en-verliesrekening}, \emph{overzicht van het
+    totaalresultaat}, \emph{geconsolideerd kasstroomoverzicht}, \emph{mutatieoverzicht van het eigen
+    vermogen}. This is the ESEF-tagged report that AFM collects; all three examples tag the full IFRS
+    statement set.
+\end{itemize}
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{Dutch statement vocabulary (IFRS-consolidated and Title~9 terms).}
+\label{tab:nl-vocab}
+\small
+\begin{tabular}{@{}p{0.50\textwidth}p{0.44\textwidth}@{}}
+\toprule
+\textbf{Dutch} & \textbf{Meaning} \\
+\midrule
+\emph{Balans} & Balance sheet \\
+\emph{Activa} / \emph{Passiva} & Assets side / equity-and-liabilities side \\
+\emph{Eigen vermogen} / \emph{Schulden} & Equity / liabilities \\
+\emph{Winst-en-verliesrekening} & Income statement (profit-and-loss account) \\
+\emph{Overzicht van het totaalresultaat} & Statement of comprehensive income \\
+\emph{Kasstroomoverzicht} & Cash-flow statement \\
+\emph{Mutatieoverzicht van het eigen vermogen} & Statement of changes in equity \\
+\emph{Toelichting} & Notes to the accounts \\
+\emph{Jaarrekening} / \emph{Jaarverslag} & Financial statements / annual report \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Three IFRS income-statement vocabularies, one country.} The income statement is where sector
+diverges most, and the three examples cover the three \texttt{ifrs-full} presentations (read from the filed
+reports):
+\begin{itemize}[nosep]
+  \item \textbf{ASML (semiconductors)} --- \emph{function-of-expense}, with a product/service split:
+    \texttt{ifrs-full:RevenueFromContractsWithCustomers} split into \texttt{asml:NetSystemSales} /
+    \texttt{asml:NetServiceAndFieldOptionSales}, \(\to\) \texttt{ifrs-full:CostOfSales} (itemised
+    \texttt{asml:CostOfSystemSales} / \texttt{asml:CostOfServiceAndFieldOptionsSales}) \(\to\)
+    \texttt{GrossProfit} \(\to\) \texttt{ResearchAndDevelopmentExpense},
+    \texttt{SellingGeneralAndAdministrativeExpense} \(\to\) \texttt{ProfitLossFromOperatingActivities} (24
+    issuer extensions, 606 facts).
+  \item \textbf{Heineken (brewer)} --- \emph{nature-of-expense}, with a beverage-industry line:
+    \texttt{ifrs-full:Revenue} and the extension \texttt{heia:RevenueLessExciseTaxExpense} (revenue net of
+    excise duties), then \texttt{EmployeeBenefitsExpense} and depreciation/amortisation as expense categories;
+    excise itself sits in \texttt{ifrs-full:TaxExpenseOtherThanIncomeTaxExpense} (25 extensions, 371 facts).
+  \item \textbf{ING Groep (bank)} --- the banking layout, with \emph{no} revenue/cost-of-sales:
+    \texttt{ifrs-full:InterestRevenueCalculatedUsingEffectiveInterestMethod}, \texttt{InterestExpense} and net
+    \texttt{InterestRevenueExpense}; \texttt{FeeAndCommissionIncome} / \texttt{FeeAndCommissionExpense};
+    \texttt{ing:ValuationResultsAndNetTradingIncome}; and loan-loss via
+    \texttt{ing:AdditionToLoanLossProvision} (33 extensions, 553 facts --- the balance sheet is dominated by
+    \texttt{FinancialAssetsAtFairValueThrough\ldots} measurement categories). This is the \texttt{ifrs-full}
+    financial-institution vocabulary, not a Dutch specificity, but the trio shows it cleanly.
+\end{itemize}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{The extension prefix is the issuer's ticker/short-code.} Each filer's extension namespace is
+    its own short code --- \texttt{asml:}, \texttt{ing:}, \texttt{heia:} (Heineken's Euronext ticker HEIA) ---
+    and the extension concepts are \textbf{English}-named (\texttt{heia:RevenueLessExciseTaxExpense},
+    \texttt{ing:AdditionToLoanLossProvision}), unlike the Spanish filers whose extensions may be in the local
+    language. Roughly 24--33 extension concepts per filer; the \texttt{standard\_concept}/W4 bridge normalises
+    them.
+  \item \textbf{Industry-specific extensions carry the sector.} The single most telling concept in each filing
+    is an extension: Heineken's \texttt{heia:RevenueLessExciseTaxExpense} (a beverage \emph{net-revenue} line),
+    ING's fair-value-through-P\&L financial-instrument categories. Do not expect these in \texttt{ifrs-full}.
+  \item \textbf{Filing language is English.} These Dutch multinationals file English-labelled packages; the
+    \texttt{narratives()} text-blocks come through as \texttt{ifrs-full:Disclosure\ldots Explanatory} (ASML 55,
+    ING 87, Heineken 74), the IFRS \emph{Explanatory} convention (\S\ref{sec:api-narratives}), not the
+    \texttt{TextBlock} suffix.
+  \item \textbf{Number locale.} In the human-readable iXBRL the Dutch convention is comma decimal with a
+    \textbf{dot} thousands separator --- \texttt{1.234.567,89} = 1{,}234{,}567.89 (like Germany and Spain) ---
+    though the tagged XBRL values are locale-normalised, so extraction is unaffected.
+\end{itemize}
+
+\subsection{Balance-sheet presentation: a statutory \emph{choice} of formats}
+\label{sec:esef-nl-tshape}
+
+Where Spain mandates the vertical form (\S\ref{sec:esef-spain-tshape}) and Italy, Germany and France the
+account form (\S\ref{sec:esef-italy-tshape}, \S\ref{sec:esef-germany-tshape}, \S\ref{sec:esef-france-tshape}),
+Dutch law leaves it to the filer. The \emph{Besluit modellen jaarrekening}
+(BMJ, the Model Financial Statements Decree under Title~9) prescribes the layouts and offers two balance-sheet
+models: \textbf{Model~A} (\emph{vertical / report-form}, \emph{activa} then \emph{passiva} stacked) and
+\textbf{Model~B} (\emph{horizontal / account-form}, the two-sided ``\emph{T}''); the profit-and-loss account
+is Model~E or F, with lighter models (C/D, I/J) for small companies under art.~2:396~BW.\footnote{\emph{Besluit
+modellen jaarrekening} (BWBR0003648), bijlagen; see also \emph{Title~9 Book~2 BW}, art.~2:361\,ff. The BMJ has
+the status of law and applies to \emph{N.V.}\ and \emph{B.V.}\ entities (partially to banks and insurers).}
+So the account-form ``\emph{T}'' is \emph{permitted} in the Netherlands but not compelled --- in practice large
+listed groups present the vertical Model~A, and the ESEF/IFRS consolidated statements the three examples file
+are the IAS~1 vertical layout throughout.
 
 \chapter{UK filing systems}
 \label{sys:uk}
@@ -3853,6 +4128,16 @@ statement API (\texttt{fnlttSinglAcntAll}, the primary statements only --- the F
 \S\ref{sec:dart-oracle}). There is \textbf{no CSV} endpoint (no analogue of EDINET's \texttt{type=5}); the
 disclosure document itself (\texttt{document.xml}) is human-readable DART markup, out of scope for
 \texttt{facts()}.
+
+\paragraph{No narratives from the XBRL.} \texttt{narratives(f)} (\S\ref{sec:api-narratives}) returns
+\textbf{nothing} for a DART filing --- and that is correct, not a gap in the extractor. The reason: DART's
+\texttt{fnlttXbrl} package is the \textbf{numeric financial statements only}; a DART instance carries
+\emph{no} text-block facts (verified on a real filing --- Hyundai Motor's FY2025 report has \textbf{zero}
+\texttt{TextBlock}/\texttt{Explanatory}-suffixed concepts). DART's narrative disclosures live in the separate
+\texttt{document.xml} --- human-readable DART markup, \emph{not} XBRL-tagged (and out of scope, above) --- so
+there is simply nothing for the XBRL-based \texttt{narratives()} to extract. Recovering DART prose would need
+a \texttt{document.xml} parser, not the XBRL path. (Contrast EDINET, whose iXBRL tags text-blocks, and ESEF,
+whose IFRS text-blocks use the \texttt{…Explanatory} suffix.)
 
 \section{Entities covered}\label{sec:dart-entities}
 

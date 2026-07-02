@@ -104,7 +104,9 @@ function narratives end
 # A narrative section is a text-block fact: an XBRL concept whose local name ends in "TextBlock" (EDINET
 # jpcrp/jpigp/jppfs, SEC us-gaap, …). General across jurisdictions — no per-system table needed for the
 # predicate (the EDINET concept table's `type` can refine it later).
-_is_narrative_concept(c::AbstractString) = endswith(c, "TextBlock")
+# A text-block concept, across taxonomy conventions: EDINET/SEC/us-gaap end the local name in "TextBlock";
+# IFRS/ESEF (ifrs-full) end it in "Explanatory" (e.g. DisclosureOfSignificantAccountingPoliciesExplanatory).
+_is_narrative_concept(c::AbstractString) = endswith(c, "TextBlock") || endswith(c, "Explanatory")
 
 # The section title: the concept's label if the taxonomy provides one, else the concept local-name (part
 # after the ':') so a filer-extension text-block is still named, never blank.
