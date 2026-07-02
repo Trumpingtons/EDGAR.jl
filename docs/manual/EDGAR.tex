@@ -4688,6 +4688,222 @@ the same ones the exchanges publish for free.
 SEBI-regulated vehicles that also publish financial results --- REITs, InvITs, mutual funds --- file under
 \emph{separate} regulations and endpoints, not yet surveyed; they are outside the current India scope.
 
+\section{Forms and statement types}\label{sec:india-forms}
+
+The exchange channel carries the \textbf{SEBI LODR Regulation~33 financial results} --- the XBRL financial
+filing \texttt{EDGAR.jl} extracts --- in quarterly and annual periodicity, each lodged in \textbf{standalone}
+and \textbf{consolidated} form (Table~\ref{tab:india-forms}). Crucially, and unlike a uniform IFRS regime
+(or K-IFRS at DART, \S\ref{sec:dart-forms}), \textbf{SEBI prescribes a different results \emph{format} for
+each company type}, and the repository serves each as a \emph{distinct} \texttt{in-bse-fin} template ---
+signalled by the instance's \textbf{filename prefix} (\texttt{INDAS\_\ldots} for general companies,
+\texttt{BANKING\_\ldots} for banks, with further templates for NBFCs and insurers). A bank's results carry
+\emph{no} \texttt{RevenueFromOperations} at all. India's forms are therefore genuinely its own; they do not
+map onto another jurisdiction's shapes.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Indian exchange filings and their support in \texttt{EDGAR.jl}.}
+\label{tab:india-forms}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.43\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Filing} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Financial results (Reg.~33) & Quarterly (Q1--Q3) and Annual results, each \emph{standalone} and \emph{consolidated}, as XBRL in company-type templates (Table~\ref{tab:india-formats}) & statements extracted \\
+Shareholding pattern (Reg.~31) & quarterly shareholding disclosure (separate endpoint) & \emph{not yet} \\
+Announcements / annual report (Reg.~30, 34) & material-event disclosures; the full annual report (PDF) & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Financial results, and the per-company-type formats}
+The Reg.~33 results --- India's analogue of the 10-Q/10-K --- are filed with \emph{both} NSE and BSE, each
+period in a \textbf{standalone} and a \textbf{consolidated} version (the API flags which; \texttt{EDGAR.jl}
+defaults to consolidated). The annual filing (the Q4 results carrying the full-year column) holds the
+audited annual statements. \emph{What} that filing contains, however, depends on the company-type format
+(Table~\ref{tab:india-formats}), verified on real filings: a general company (\texttt{INDAS\_}) reports
+\texttt{RevenueFromOperations} and a standard Ind-AS profit-and-loss; a bank (\texttt{BANKING\_}) reports
+\texttt{InterestEarned}, \texttt{InterestExpended}, \texttt{Deposits} and \texttt{Advances} in the Banking
+Regulation Act shape. The templates can even bind \emph{different taxonomy versions} (general
+\texttt{2020-03-31}, banking \texttt{2019-09-30}). The adapter must branch on the format --- a general-format
+classifier or oracle would silently miss a bank's income statement entirely.
+
+\begin{table}[h]
+\centering
+\small
+\caption{SEBI results \emph{formats} --- one XBRL template per company type, keyed by the instance filename
+prefix. Verified on FY2024 filings where noted.}
+\label{tab:india-formats}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.22\textwidth}p{0.32\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Template (prefix)} & \textbf{Company type} & \textbf{Characteristic top-line concepts} & \textbf{Status} \\
+\midrule
+\texttt{INDAS\_} & General (manufacturing, services --- non-financial) & \texttt{RevenueFromOperations}; Ind-AS P\&L, BS, cash-flow, segment & verified (Reliance, IOC, Infosys) \\
+\texttt{BANKING\_} & Banks & \texttt{InterestEarned} / \texttt{InterestExpended}; \texttt{Deposits}, \texttt{Advances} & verified (HDFC~Bank) \\
+(NBFC, Insurance) & NBFCs; insurers & sector-specific formats & \emph{not yet surveyed} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reporting periods and the column convention}\label{sec:india-periods}
+An NSE results instance has an \textbf{unreliable period structure} that \texttt{EDGAR.jl} normalises at
+fetch time. NSE stamps \emph{every} duration context with the \emph{same} quarter-end dates: in Reliance's
+FY2024 filing both the current-quarter context (\texttt{OneD}) and the year-to-date context (\texttt{FourD})
+declare \texttt{2024-01-01}$\to$\texttt{2024-03-31}, even though \texttt{FourD} is the full 12-month year.
+The actual reporting \emph{column} is carried not in the dates but in the \textbf{context-id prefix}:
+\texttt{One} = current quarter (3 months), \texttt{Four} = year-to-date / full year (12 months), with
+\texttt{Two}/\texttt{Three}/\texttt{Five}\ldots{} the comparative columns. A na\"ive reader of
+\texttt{<xbrli:period>} therefore \emph{cannot} tell a quarterly figure from an annual one.
+
+The true period is nonetheless present, as \textbf{explicit facts inside each context}:
+\texttt{in-bse-fin:DateOfStartOfReportingPeriod} / \texttt{DateOfEndOfReportingPeriod} (and
+\texttt{DateOf\{Start,End\}OfFinancialYear}). So \texttt{FourD} carries \texttt{DateOfStartOfReportingPeriod
+= 2023-04-01} (the financial-year start) while \texttt{OneD} carries \texttt{2024-01-01} (the quarter start)
+--- the distinction the \texttt{<xbrli:period>} dates lose. \texttt{fetch\_filing(India(),\ \ldots)}
+therefore \textbf{rewrites each duration context's period to the authoritative dates its own
+\texttt{DateOf\ldots ReportingPeriod} facts declare}, before the shared extractor runs --- the same
+fetch-time content-rewrite pattern as the Companies House namespace canonicalisation (\S\ref{sys:companieshouse}).
+The result: \texttt{facts(f)} reports the correct 3-month vs 12-month period per fact, with no change to the
+shared extractor (verified on Reliance and Infosys FY2024). \textbf{Consequence for analysis:} select the
+annual figure by its 12-month period (the \texttt{Four} column); the quarterly figure is the 3-month
+\texttt{One} column. The Yahoo reconciliation (\S\ref{sec:india-yahoo}) uses the annual column throughout.
+
+\subsection{Statement types within a results filing}
+A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
+(\texttt{INDAS\_}) format it carries the \textbf{balance sheet} (\texttt{Assets},
+\texttt{EquityAndLiabilities}), the \textbf{statement of profit and loss} including \textbf{other
+comprehensive income} (\texttt{RevenueFromOperations}\,\ldots\,\texttt{ProfitLossForPeriod},
+\texttt{ComprehensiveIncomeForThePeriod}), the \textbf{cash-flow statement} (indirect method ---
+\texttt{TypeOfCashFlowStatement} $=$ \texttt{"Cash Flow Indirect"}) and \textbf{segment} reporting. It does
+\emph{not} carry a statement of changes in equity, nor the notes --- those, with the full statements, live
+in the separate annual report (Reg.~34, a PDF, out of scope). The banking format instead reports interest
+earned/expended, deposits and advances. Every filing self-declares its shape through metadata concepts:
+\texttt{NatureOfReportStandaloneConsolidated}, \texttt{ReportingQuarter},
+\texttt{WhetherResultsAreAuditedOrUnaudited}, \texttt{TypeOfCashFlowStatement},
+\texttt{LevelOfRoundingUsedInFinancialStatements} (e.g.\ \texttt{"Crores"}) and
+\texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}).
+
+\subsection{Statement classification: a dedicated \texttt{vocab\_indas}}
+All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
+(\S\ref{sec:india-taxonomy}); because \texttt{EDGAR.jl} classifies by \emph{namespace}, not prefix, India is
+classified through a dedicated \texttt{vocab\_indas.jl} keyed on \texttt{in-bse-fin} (phase~I3) --- which
+must cover \emph{every} company-type format (the general Ind-AS lines \emph{and} the banking interest-based
+lines), the inverse of DART, which needed no vocabulary at all (\S\ref{sec:dart-kifrs}). Two Ind-AS
+presentation choices in the \emph{general}-format income statement --- revenue reported \emph{gross of
+excise duty}, and a broad \emph{finance-costs} bucket --- are where our figures legitimately differ from
+third-party sources; the next section is the reconciliation map (for the general format; banks reconcile on
+different lines).
+
+\section{Reconciling income-statement figures with Yahoo Finance}\label{sec:india-yahoo}
+
+India has no Arelle / \href{https://filings.xbrl.org}{filings.xbrl.org} oracle (the same gap as Korea,
+\S\ref{sec:dart-oracle}), so the cheap independent cross-check on a filer's headline numbers is
+\textbf{Yahoo Finance} (NSE tickers \texttt{.NS}, BSE \texttt{.BO}). But Yahoo's line-item \emph{names}, and
+their \emph{scope}, are not the Ind-AS \texttt{in-bse-fin} concepts: a na\"ive value-against-value
+comparison appears to ``fail'' on lines that are merely \emph{defined} differently, not mis-extracted. This
+section is the map --- for each income-statement line, the XBRL concept, the Yahoo field, and how to get
+from one to the other. It was verified line-by-line on three FY2024 consolidated filings: Reliance
+Industries, Infosys and Indian~Oil. All three are \textbf{general-format} (\texttt{INDAS\_}) filers
+(\S\ref{sec:india-forms}); a bank's \texttt{BANKING\_} results reconcile on different lines (interest
+earned/expended, not revenue) and are not covered here.
+
+\paragraph{Rule of thumb.} \textbf{Every profit line from profit-before-tax downward matches Yahoo to the
+rupee} (tax, profit for the period, owners' share, minority interest --- and depreciation). The two lines
+that carry Indian-GAAP-specific gross-ups --- \textbf{revenue} (excise duty) and \textbf{finance costs}
+(lease interest, unwinding of discount) --- are where the two sources legitimately diverge. Anchor a
+validation on the profit lines; treat revenue and finance-costs as \emph{definitional-difference} lines.
+
+\subsection{The concept map}
+Each income-statement line, as \texttt{in-bse-fin:} concept $\leftrightarrow$ Yahoo field (prefixes dropped):
+
+\begin{itemize}
+  \item \textbf{Revenue:} \texttt{RevenueFromOperations} vs Yahoo \texttt{TotalRevenue} ---
+    \emph{Yahoo $=$ XBRL $-$ excise duty}; equal when there is no excise (deep dive below).
+  \item \textbf{Finance / interest cost:} \texttt{FinanceCosts} vs Yahoo \texttt{InterestExpense} --- the
+    XBRL bucket is a \emph{superset} (adds lease-liability interest and unwinding of discount), so
+    XBRL~$\ge$~Yahoo (deep dive below).
+  \item \textbf{Depreciation:} \texttt{DepreciationDepletionAndAmortisationExpense} vs Yahoo
+    \texttt{ReconciledDepreciation} --- \emph{equal}.
+  \item \textbf{Profit before tax:} \texttt{ProfitBeforeTax} vs Yahoo \texttt{PretaxIncome} --- Yahoo may
+    take \texttt{SegmentProfitBeforeTax}, which \emph{adds share of profit of associates/JVs} (Ind-AS shows
+    that post-tax): \texttt{PretaxIncome $=$ ProfitBeforeTax $+$ ShareOfProfit\ldots Associates}.
+  \item \textbf{Tax:} \texttt{TaxExpense} vs Yahoo \texttt{TaxProvision} --- \emph{equal}.
+  \item \textbf{Profit for the period:} \texttt{ProfitLossForPeriod} vs Yahoo
+    \texttt{NetIncomeContinuousOperations} --- \emph{equal}.
+  \item \textbf{Net income (owners):} \texttt{ProfitOrLossAttributableToOwnersOfParent} vs Yahoo
+    \texttt{NetIncome} / \texttt{NetIncomeCommonStockholders} --- \emph{equal}.
+  \item \textbf{Non-controlling interest:} \texttt{ProfitOrLossAttributableToNonControllingInterests} vs
+    Yahoo \texttt{MinorityInterests} --- \emph{equal} (Yahoo carries it negative).
+  \item \textbf{Basic EPS:} \texttt{BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations} vs
+    Yahoo \texttt{BasicEPS} --- Yahoo \emph{restates for later bonus issues / splits} (Reliance
+    \texttt{102.90} $\to$ Yahoo \texttt{51.45} after the 1:1 bonus).
+\end{itemize}
+
+\subsection{Revenue --- excise duty (\texttt{RevenueFromOperations} $-$ excise $=$ \texttt{TotalRevenue})}
+Ind-AS reports \texttt{RevenueFromOperations} \textbf{gross of excise duty}, with the excise shown as a
+separate expense line --- tagged \texttt{in-bse-fin:OtherExpenses} in the operating-expense breakdown member
+whose \texttt{DescriptionOfOtherExpenses} is \texttt{"Excise Duty"}. Yahoo (like most data vendors) presents
+revenue \textbf{net of excise}. Because the excise sits in \emph{both} revenue and expenses, it cancels at
+profit-before-tax --- which is why every profit line still matches. Post-GST (2017) excise survives only on
+\textbf{petroleum} (petrol, diesel, ATF, crude, still outside GST), so this affects refiners and not
+services or most goods companies. Table~\ref{tab:india-rev-recon} works it across the three filers.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Revenue reconciliation, FY2024 (Rs crore). \texttt{RevenueFromOperations} $-$ excise duty
+($-$ other operating revenue) $=$ Yahoo \texttt{TotalRevenue}.}
+\label{tab:india-rev-recon}
+\begin{tabular}{@{}p{0.22\textwidth}rrrr@{}}
+\toprule
+\textbf{Filer} & \textbf{Rev.\ from ops} & \textbf{$-$ Excise} & \textbf{$-$ Other op.\ rev.} & \textbf{$=$ Yahoo} \\
+\midrule
+Reliance Industries & 914{,}472 & 13{,}408 & --- & 901{,}064 \\
+Indian Oil (IOC)    & 881{,}235 & 104{,}884 & $\approx$3{,}510 & 772{,}842 \\
+Infosys             & 153{,}670 & --- (none) & --- & 153{,}674$^{*}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent For Reliance the excise line closes the gap \textbf{exactly} ($914{,}472 - 13{,}408 = 901{,}064$).
+For Infosys (IT services) there is \emph{no} excise, so revenue matches. Indian~Oil is the honest edge case:
+excise ($104{,}884$) explains 96.8\,\% of the gap, leaving a $\sim$Rs~3{,}510~crore residual that is
+\textbf{not present anywhere in the condensed results XBRL} (its \texttt{RevenueFromOperations} is a single
+undivided line). The most likely source is \emph{other operating revenue} netted out by the vendor but
+itemised only in the full annual report --- a reminder that for a \emph{rupee-exact} revenue check the
+quarterly results filing is sometimes insufficient, and one should anchor on profit-before-tax (excise- and
+associates-neutral) instead. \footnotesize$^{*}$Yahoo reports Infosys in \textbf{USD} (\$18.562~bn); see
+\emph{Caveats}.\normalsize
+
+\subsection{Finance costs --- a broader bucket than Yahoo's interest expense}
+Ind-AS \texttt{FinanceCosts} is a \emph{superset} of Yahoo's \texttt{InterestExpense}: besides interest on
+borrowings it includes interest on \textbf{lease liabilities} (Ind-AS~116), \textbf{unwinding of discount}
+on provisions (decommissioning / asset-retirement) and other borrowing costs, whereas Yahoo's
+\texttt{InterestExpense} is the narrower pure-debt figure. So the XBRL value is consistently $\ge$ Yahoo's:
+Reliance \texttt{23{,}118} vs \texttt{21{,}772}; Indian~Oil \texttt{7{,}826} vs \texttt{7{,}584} (Rs~crore).
+It is a scope difference, not an error.
+
+\subsection{The lines that match, and the associates reclassification}
+Tax (\texttt{TaxExpense} $=$ \texttt{TaxProvision}), profit for the period (\texttt{ProfitLossForPeriod} $=$
+\texttt{NetIncomeContinuousOperations}), owners' net income
+(\texttt{ProfitOrLossAttributableToOwnersOfParent} $=$ \texttt{NetIncome}), minority interest and
+depreciation all match \textbf{to the rupee} across the filers. The one apparent exception, profit-before-tax,
+is a \emph{classification} difference: Indian~Oil's \texttt{ProfitBeforeTax} is \texttt{55{,}742} but Yahoo's
+\texttt{PretaxIncome} is \texttt{57{,}288} --- because Yahoo takes \texttt{SegmentProfitBeforeTax}, which
+includes the Rs~1{,}546~crore \emph{share of profit of associates} that Ind-AS presents \emph{after} tax.
+It reconciles ($55{,}742 + 1{,}546 = 57{,}288$) and washes out by net income.
+
+\subsection{Two caveats: currency and per-share restatement}
+\textbf{Currency.} Yahoo does \emph{not} always report an Indian issuer in rupees. Companies that publish
+USD financial statements are carried by Yahoo in \textbf{USD} --- Infosys's FY2024 income statement comes
+back as \$18.562~bn revenue, \$3.167~bn net income --- so the currency must be \emph{detected}, not assumed
+INR, and converted at the year's average rate (Infosys FY2024 $\approx$ Rs~82.79/USD, a rate the
+depreciation line confirms: \$565~m $\times$ 82.79 $=$ Rs~4{,}678~crore, matching our figure exactly).
+Reliance and Indian~Oil are reported in INR. \textbf{Per-share restatement.} Yahoo restates EPS for
+\emph{later} bonus issues and splits, so a filed \texttt{BasicEarningsLossPerShare} will not match Yahoo's
+\texttt{BasicEPS} across a corporate action (Reliance's filed \texttt{102.90} vs Yahoo's \texttt{51.45}
+after the 2024 1:1 bonus).
+
 \chapter{Russia \textemdash{} CBR / e-disclosure}
 \label{sys:russia}
 
