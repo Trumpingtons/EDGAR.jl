@@ -34,6 +34,12 @@ canonicalization. India files the *same IFRS concepts under a national namespace
 matches **by namespace, not prefix** (see `vocab_ukgaap.jl` header, `_ch_canonicalize` in
 companies_house.jl). So `in-bse-fin:Assets` will **not** hit `vocab_ifrs` as-is — the namespace differs.
 
+### DECISIONS LOCKED (2026-07-02)
+- **Vocab:** Strategy **C — dedicated `vocab_indas.jl`** (a full national vocabulary keyed on the
+  `in-bse-fin` namespace, mirroring `vocab_jpgaap`/`vocab_ukgaap`), NOT the canonicalize-to-ifrs-full
+  path. The most explicit route; supersedes the "Recommendation: A" note below.
+- **Build cadence:** proceed **I0 scaffold only** (seam so `using EDGAR` loads clean), then STOP + report.
+
 ### Vocab strategy — the design fork (decide before coding D3-analog)
 
 | Strategy | Mechanism | Pro | Con |
