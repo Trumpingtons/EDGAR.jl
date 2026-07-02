@@ -4487,6 +4487,157 @@ set_credentials(DART(); api_key = ENV["DART_API_KEY"])
 \texttt{corpCode.xml} resolver.
 \end{subappendices}
 
+\chapter{China \textemdash{} CSRC / CNINFO}
+\label{sys:china}
+
+\emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
+
+China is the strongest \textbf{multi-system-per-country} case: disclosure is split across the
+\textbf{CSRC} (listed companies, surfaced through the \href{http://www.cninfo.com.cn}{CNINFO} portal and
+the Shanghai/Shenzhen exchange sites), the \textbf{MOF}/\textbf{SASAC} channel (state-owned enterprises,
+largely internal), and \textbf{AMAC} (funds). It also has the lowest XBRL-retrieval maturity of the major
+markets --- the exchange portals expose no clean machine API --- and a large standalone \textbf{CAS}
+(Chinese Accounting Standards) national-GAAP vocabulary that would need its own taxonomy mapping. The
+repository survey, access mechanics and taxonomy work are deferred; this chapter is a scaffold so the
+structure is in place when the work begins.
+
+\chapter{India \textemdash{} NSE, BSE and MCA21}
+\label{sys:india}
+
+India is being added as the \textbf{sixth} \texttt{FilingSystem}. Unlike the single national regulator-API
+of EDINET or DART, Indian financial disclosure is \textbf{multi-channel}: the same company's numbers surface
+through the corporate registrar (\textbf{MCA21}) and through every stock exchange the company lists on
+(\textbf{NSE}, \textbf{BSE}). Which channel to build on is therefore the central design decision for the
+adapter --- so this chapter opens, unusually, with a \emph{Repositories} survey (\S\ref{sec:india-repos}).
+Listed-company financials are filed in \textbf{Ind-AS} --- the IFRS-converged Indian Accounting Standards ---
+under a national XBRL taxonomy published by the exchanges, and (the working thesis) classify against the
+\emph{existing} \texttt{ifrs-full} vocabulary after a namespace-canonicalisation step, with little or no new
+national GAAP. Identity is the company's \textbf{ISIN} (\texttt{EntityId(:isin,\ "INE002A01018")}), with the
+NSE ticker symbol and BSE scrip code as secondary schemes.
+
+\emph{Status:} reconnaissance \textbf{verified live} (2026-07); the adapter is \textbf{not yet built}. The
+findings in \S\ref{sec:india-repos} --- the keyless NSE discovery-to-XBRL seam and the \texttt{in-bse-fin}
+taxonomy --- are established against real filings (Reliance Industries, FY2023--24), but no
+\texttt{discover}/\texttt{fetch}/classification code ships yet. This \textbf{supersedes} the earlier
+``India MCA21 --- paid'' note in the portability survey: MCA21 (the registrar) is indeed paid, but that is
+the \emph{wrong} channel --- the \textbf{exchanges publish the results XBRL keyless}.
+
+\section{Repositories}\label{sec:india-repos}
+
+There is no single ``Indian EDGAR.'' A listed Indian company's financial statements are lodged, in the same
+Ind-AS XBRL, with more than one repository, under the market regulator's disclosure rules (\textbf{SEBI}'s
+Listing Obligations and Disclosure Requirements, Regulation~33 --- quarterly and annual financial results).
+The three repositories differ sharply in \emph{access}, which is what decides where \texttt{EDGAR.jl}
+fetches from (Table~\ref{tab:india-repos}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Indian financial-disclosure repositories and their accessibility.}
+\label{tab:india-repos}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.30\textwidth}p{0.24\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{Repository} & \textbf{What it is} & \textbf{Access} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{NSE} & National Stock Exchange corporate-filings portal; the results XBRL of every NSE-listed company & \textbf{Keyless} JSON API (cookie-gated); direct Ind-AS \texttt{.xml} URLs & \textbf{primary channel} (planned) \\
+\textbf{BSE} & Bombay Stock Exchange filings portal; \emph{publisher} of the \texttt{in-bse-fin} taxonomy & \textbf{Keyless} JSON API (endpoint not yet mapped) & second channel / cross-check (planned) \\
+\textbf{MCA21} & Ministry of Corporate Affairs statutory registry; every company's annual AOC-4 XBRL & \textbf{Paid}, per-document; no bulk API & \emph{out of scope} (wrong door) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{NSE --- the primary channel (keyless)}
+The National Stock Exchange exposes a corporate-filings \textbf{financial-results} endpoint that behaves
+exactly like the discovery-to-XBRL seam of EDINET and DART, but with \textbf{no API key} --- only a browser
+\emph{cookie bootstrap}. A query by ticker symbol returns a JSON array, one object per results filing, and
+\textbf{each object carries a direct, keyless URL to the Ind-AS XBRL instance} (plus the ISIN, the
+consolidated/standalone flag, the audited flag and the financial year). This is the repository the adapter
+is built on. The access flow is three requests:
+
+\begin{lstlisting}[style=term]
+# 1. Bootstrap cookies from the homepage (a browser User-Agent is required).
+% curl -c cookies.txt -A "$UA" https://www.nseindia.com/
+
+# 2. Discover a company's results filings (keyless JSON; send the cookies + a Referer).
+% curl -b cookies.txt -A "$UA" -H "Referer: https://www.nseindia.com/" \
+    "https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol=RELIANCE&period=Annual"
+
+# 3. Fetch the Ind-AS XBRL instance named in each record's `xbrl` field.
+% curl -b cookies.txt -A "$UA" -H "Referer: https://www.nseindia.com/" \
+    https://nsearchives.nseindia.com/corporate/xbrl/INDAS_104634_1106038_22042024074704.xml
+\end{lstlisting}
+
+\noindent Each discovery record looks like the following (fields abridged); the \texttt{xbrl} URL is the
+parse target, and \texttt{isin} is the identity key:
+
+\begin{lstlisting}[style=term]
+{
+  "companyName":   "Reliance Industries Limited",
+  "isin":          "INE002A01018",
+  "consolidated":  "Consolidated",          # or "Standalone" -- filers lodge both
+  "audited":       "Audited",
+  "financialYear": "01-Apr-2023 To 31-Mar-2024",
+  "period":        "Annual",
+  "indAs":         "Ind-AS New",
+  "xbrl":          "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_104634_1106038_22042024074704.xml"
+}
+\end{lstlisting}
+
+\noindent Two practical notes. First, the cookie bootstrap is mandatory --- the API returns nothing to a
+cookieless client, and NSE runs bot detection, so a realistic \texttt{User-Agent} and the \texttt{Referer}
+header matter; the session cookies expire and must be refreshed (refresh-on-failure, \emph{not} a retry
+loop). Second, an NSE filing is a \textbf{single \texttt{.xml} instance} --- the linkbases are \emph{not}
+bundled (the standard-taxonomy-only shape also seen at Companies House), so classification leans on the
+presentation roles plus the canonical concept anchors rather than a bundled presentation linkbase.
+
+\subsection{BSE --- the taxonomy publisher and second channel}
+The Bombay Stock Exchange hosts the same Regulation~33 results filings and, importantly, is the
+\textbf{publisher of the taxonomy} the instances are written in (the \texttt{in-bse-fin} namespace,
+\S\ref{sec:india-taxonomy}). BSE also exposes a \textbf{keyless} JSON API (a probe returns HTTP~200), which
+makes it the natural authoritative \emph{second} channel: because both exchanges publish the same company's
+same filing, one can be cross-checked against the other as a same-document oracle. The exact
+announcement/results endpoint and its six-digit \emph{scrip-code} addressing are \textbf{not yet mapped};
+NSE alone is sufficient for the initial adapter, and BSE is deferred to the cross-check work.
+
+\subsection{MCA21 --- the registrar (out of scope)}
+MCA21 is the Ministry of Corporate Affairs' statutory registry, where \emph{every} incorporated company ---
+listed or not --- files its annual return and financial statements (the AOC-4 XBRL form for the classes
+required to tag). It is the most \emph{complete} repository, but access is \textbf{paid and per-document}
+(document-purchase fees, no bulk or keyless API), which makes it the wrong door for XBRL extraction. The
+listed-company financials that MCA21 holds are the same statements the exchanges publish for free, so
+\texttt{EDGAR.jl} takes the exchange channel and treats MCA21 as out of scope.
+
+\subsection{Taxonomy --- \texttt{in-bse-fin}, IFRS names under a national namespace}\label{sec:india-taxonomy}
+A real NSE instance (Reliance, consolidated, FY ending 31~March~2024) resolves the taxonomy question that
+governs classification. \textbf{Every} reporting concept sits in a \emph{single national namespace},
+\texttt{in-bse-fin} (\texttt{http://www.bseindia.com/xbrl/fin/2020-03-31/in-bse-fin}, BSE's ``Financial
+Results'' taxonomy) --- there are \textbf{zero} bare \texttt{ifrs-full} tags. But the concept
+\emph{local names are IFRS-identical}: \texttt{in-bse-fin:Assets},
+\texttt{in-bse-fin:AdjustmentsForDepreciationAndAmortisationExpense},
+\texttt{in-bse-fin:AmountOfItemThatWillBeReclassifiedToProfitAndLoss} are the verbatim \texttt{ifrs-full}
+element names, merely re-namespaced.
+
+This is the \textbf{inverse of Korea}. K-IFRS filings tag under \emph{bare} \texttt{ifrs-full}, so DART
+needed no vocabulary and no rewriting (\S\ref{sec:dart-kifrs}); India tags the \emph{same} IFRS concepts
+under a national prefix. Because \texttt{EDGAR.jl} classifies by \textbf{namespace, not prefix}, an
+\texttt{in-bse-fin} concept will not match the \texttt{ifrs-full} vocabulary as-is. The planned strategy
+therefore mirrors the Companies House canonicalisation: rewrite each \texttt{in-bse-fin} concept whose local
+name exists in \texttt{ifrs-full} onto the \texttt{ifrs-full} namespace, then classify unchanged --- reusing
+the entire IFRS vocabulary --- and add a small India-specific vocabulary \emph{only} for the residue of
+genuinely national extensions, measured empirically rather than assumed.
+
+\chapter{Russia \textemdash{} CBR / e-disclosure}
+\label{sys:russia}
+
+\emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
+
+Russian corporate disclosure centres on the \textbf{Bank of Russia} (CBR) as securities-market regulator and
+the authorised \textbf{information-disclosure agencies} (the e-disclosure centres, e.g.\ Interfax's system),
+with issuers reporting under \textbf{RAS} (Russian Accounting Standards) and, for consolidated accounts,
+IFRS. The repository survey --- which venues expose machine-readable (XBRL) filings versus PDF, the access
+model, and any sanctions/access constraints from outside Russia --- is \textbf{not yet done}; this chapter is
+a scaffold to be filled once India is complete and Russia is picked up.
+
 \chapter{Additional Data Sources}
 \label{sec:validation}
 

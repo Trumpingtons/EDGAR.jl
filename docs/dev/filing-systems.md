@@ -82,7 +82,17 @@ taxonomy families. Clear these five and the rest follow by construction.
 - **HK IRD** 🔭 — parse-only · private · tax purpose · IRD-FS taxonomy (HKFRS / HKFRS-PE) · identity = BRN.
   Proves the architecture handles a system we cannot fetch from. Costs nothing (parser already eats it).
 - **Taiwan MOPS** 🔭 — official but non-REST endpoint (`emops.twse.com.tw`); TIFRS · ZH-Hant.
-- **India MCA21** 🔭 — paid + per-country multi-channel (MCA21 / BSE / NSE); Ind-AS · Latin.
+
+**Promoted to driver — in build:**
+
+- **India** 🏗️ — the **6th driver** (see [india-plan.md](india-plan.md)). The old "MCA21 = paid" read was
+  the wrong channel: MCA21 (the registrar) is paid, but the **exchanges publish results XBRL keyless**. NSE
+  gives an EDINET-style discovery→XBRL seam with **no API key** (cookie bootstrap only) — verified live
+  2026-07 (Reliance FY23-24). Identity `:isin`; Ind-AS · Latin. Taxonomy is the *inverse* of Korea:
+  concepts sit in a national `in-bse-fin` namespace with **IFRS-identical local names** → canonicalize
+  `in-bse-fin`→`ifrs-full` (the Companies House by-namespace pattern), reuse `vocab_ifrs`. Linkbases not
+  bundled (standard-taxonomy-only, CH shape). BSE = keyless 2nd channel (unmapped). Recon done; adapter
+  not yet coded.
 
 **Horizon (informs D9 naming only):**
 
