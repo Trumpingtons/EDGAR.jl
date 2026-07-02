@@ -10,6 +10,7 @@
 /docs/manual/*.toc
 /docs/manual/*.fls
 /docs/manual/*.fdb_latexmk
+/docs/manual/*.xdv
 /docs/manual/*.synctex.gz
 texput.log
 
