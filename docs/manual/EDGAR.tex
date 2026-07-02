@@ -376,6 +376,52 @@ role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry ha
 of the package stays common --- which is what makes adding a second jurisdiction tractable rather
 than a rewrite.
 
+\section{Entity identity across jurisdictions}
+\label{sec:identity}
+
+Identity is one of those per-jurisdiction slices (Table~\ref{tab:portability}), and it is the concern most
+likely to trip up a reader coming from a single-regulator world: \emph{how} a filer is named is not universal.
+\texttt{EDGAR.jl} therefore gives every filer a \emph{typed} identity keyed by a per-system \emph{scheme} rather
+than a bare string, and one legal entity may carry several schemes at once. The concrete type
+(\texttt{EntityId}) and the full list of scheme symbols in use --- SEC's \texttt{:cik}, the LEI's \texttt{:lei},
+Companies~House's registration number, EDINET's and DART's codes --- are documented with the rest of the API in
+the Common~API chapter (\S\ref{sec:api-entityid}). What matters \emph{here}, at the architecture level, is a
+single distinction: of all these identifiers, \textbf{all but one are national registry keys}. The exception is
+the \textbf{LEI}, and it is worth being clear about it because it is easy to mistake for a European construct.
+
+\paragraph{The LEI is a global standard, not a European one.} It came out of the post-2008 G20/FSB response to
+the crisis --- when regulators found they could not reliably tell \emph{who} was on the other side of a trade
+--- and is governed by \textbf{GLEIF} (the Global Legal Entity Identifier Foundation, Basel) under
+\textbf{ISO~17442}. There are on the order of \textbf{2.5~million} active LEIs registered across 200+
+jurisdictions. Structurally it is a 20-character code: characters 1--4 identify the issuing \emph{LOU} (Local
+Operating Unit), 5--6 are reserved (\texttt{00}), 7--18 are entity-specific, and 19--20 are ISO~7064 mod-97
+check digits --- e.g.\ \texttt{529900T8BM49AURSDO55}.\footnote{GLEIF --- \href{https://www.gleif.org}{gleif.org};
+ISO~17442-1:2020. An LEI is issued by a GLEIF-accredited LOU and must be renewed annually.}
+
+\noindent It is mandated \emph{worldwide}, not just in the EU:
+\begin{itemize}[nosep]
+  \item \textbf{US} --- the \emph{CFTC} requires LEIs for swap/derivatives reporting (Dodd-Frank), and the
+    \emph{SEC} uses them in several places (security-based-swap reporting, Form N-PORT, N-CEN, \ldots). US
+    entities have LEIs.
+  \item \textbf{EU} --- MiFID~II (``\emph{no LEI, no trade}'' for transaction reporting), EMIR, and \emph{ESEF}
+    for the annual report. This is where the LEI is most visible and most mandatory, which is why it is
+    front-and-centre in the ESEF chapter (\S\ref{sys:esef}).
+  \item \textbf{Elsewhere} --- India (the RBI mandates it for large borrowers and high-value payments), Japan,
+    Canada, Australia and many others, across a range of reporting regimes.
+\end{itemize}
+
+\paragraph{Why the key differs by system --- and why it does not matter.} That \texttt{EDGAR.jl} keys
+ESEF/UKSEF filers by LEI but SEC filers by CIK is \emph{not} a statement that the LEI is European. It is a
+\textbf{filing-format} choice: an ESEF XBRL instance carries the LEI in its context entity identifier, whereas
+SEC filings are indexed by CIK. A US company on SEC has \emph{both} a CIK and (usually) an LEI; ESEF simply
+happens to put the LEI in the document, so that is what the parser reads.
+
+\noindent One consequence is worth stating, because it is what makes the identity model pay off. Because the
+LEI is global, it is the natural \textbf{cross-jurisdiction join key}: the same 20 characters can link a filer's
+SEC, ESEF and UKSEF appearances --- which a CIK, a Companies~House number or an EDINET code, each national,
+cannot. So while \texttt{EntityId} is deliberately scheme-agnostic, the LEI is the one scheme along which a
+\emph{single} entity's filings can be stitched together across the regimes this package covers.
+
 \section{Statement classification: two orthogonal axes}
 \label{sec:two-axes}
 \label{sec:classification-layers}
@@ -840,6 +886,44 @@ Searching typically begins with identifying a filer and then retrieving either c
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{\texttt{EntityId} and its schemes}
+\label{sec:api-entityid}
+
+A filer's identity is a typed pair, \texttt{EntityId(scheme::Symbol,\ value::String)} --- never a bare string,
+because the identifier scheme differs per \texttt{FilingSystem} and one legal entity may carry several at once.
+The scheme is an open-ended \texttt{Symbol}, so adding a jurisdiction adds \emph{data} (a new scheme value), not
+a new type. \texttt{EntityId} prints as \texttt{scheme:value} (e.g.\ \texttt{lei:529900T8BM49AURSDO55}).
+
+\begin{lstlisting}
+EntityId(:cik, "0000320193")            # Apple, on SEC EDGAR
+EntityId(:lei, "529900T8BM49AURSDO55")  # a filer on ESEF / UKSEF
+f.entity                                 # every Filing carries one; f.entity.value is the bare id
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The identity schemes in use, by filing system. Only the LEI is globally unique across regimes ---
+see the conceptual overview in \S\ref{sec:identity} (Architecture) for why.}
+\label{tab:identity-schemes}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.34\textwidth}@{}}
+\toprule
+\textbf{Scheme} & \textbf{System} & \textbf{Identifier} \\
+\midrule
+\texttt{:cik} & SEC (US) & Central Index Key \\
+\texttt{:lei} & ESEF, UKSEF & Legal Entity Identifier (\textbf{global}) \\
+\texttt{:companies\_house} & Companies House (UK) & company registration number \\
+\texttt{:edinet} / \texttt{:corporate\_number} & EDINET (JP) & EDINET code / \jpcjk{法人番号}{hōjin bangō} (corporate number) \\
+\texttt{:corp\_code} / \texttt{:stock\_code} & DART (KR) & DART corporate code / stock code \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The scheme set is intentionally open (a \texttt{Symbol}, not an \texttt{enum}); the list above is what
+the currently-implemented systems emit. For \emph{what} the LEI is, why --- despite its EU prominence --- it is a
+global rather than a European identifier, and why it is the natural cross-jurisdiction join key, see the
+overview in \S\ref{sec:identity}.
 
 \subsection{\texttt{cik}}
 
@@ -2830,10 +2914,53 @@ EU-regulated-market issuer & Citycon, Signify & Annual Financial Report & financ
 \end{table}
 
 \subsection{Regulated-market issuers}
-An issuer is identified by its \textbf{LEI} (Legal Entity Identifier, ISO~17442), read from the instance's
-context entity identifier rather than a CIK: \texttt{EntityId(:lei,\ "506700GE1G29325QX363")}. Examples
-include Citycon Oyj (Finnish) and Signify~N.V.\ (Dutch). The filer's home country and the report's language
-(an issuer often files several language variants) travel on the discovery handle.
+An issuer is identified by its \textbf{LEI} --- the global Legal Entity Identifier (\S\ref{sec:identity} covers
+the scheme, its ISO~17442 structure and why, despite its EU prominence, it is not a European construct) --- read
+from the instance's context entity identifier rather than a CIK: \texttt{EntityId(:lei,\
+"506700GE1G29325QX363")}. Examples include Citycon Oyj (Finnish) and Signify~N.V.\ (Dutch). The filer's home
+country and the report's language (an issuer often files several language variants) travel on the discovery
+handle.
+
+\subsection{Coverage: filers by country}
+\label{sec:esef-coverage}
+Discovery here runs through \href{https://filings.xbrl.org}{filings.xbrl.org} (\S\ref{sec:esef-forms}, below),
+whose index is the practical universe of machine-readable ESEF/UKSEF reports. A snapshot taken in 2026 holds
+\textbf{24{,}958} report packages from \textbf{3{,}902} distinct filers (counted by LEI) across
+\textbf{27}~countries. The ten best-covered countries, ranked by \emph{filer} count, are shown in
+Table~\ref{tab:esef-coverage}.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Best-covered countries on filings.xbrl.org, by distinct filer (LEI). Snapshot, 2026; 3{,}902 filers /
+24{,}958 packages across 27 countries in total.}
+\label{tab:esef-coverage}
+\begin{tabular}{@{}rlrr@{}}
+\toprule
+\textbf{\#} & \textbf{Country} & \textbf{Filers} & \textbf{Packages} \\
+\midrule
+1  & United Kingdom (UKSEF) & 798 & 2{,}838 \\
+2  & Sweden                 & 417 & 1{,}415 \\
+3  & Denmark                & 359 & 2{,}077 \\
+4  & Poland                 & 326 &   877 \\
+5  & Norway                 & 299 &   958 \\
+6  & France                 & 292 & 1{,}168 \\
+7  & Italy                  & 225 &   872 \\
+8  & Finland                & 170 & 1{,}168 \\
+9  & Netherlands            & 162 &   655 \\
+10 & Spain                  & 135 &   542 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Two things the table makes visible. First, \textbf{coverage is not economy size}: the Nordics
+(Sweden, Denmark, Norway, Finland) and Poland rank far above their GDP weight --- a reflection of clean OAM
+feeds and tagging adoption --- while \textbf{Germany is absent entirely} (zero packages), because the
+\emph{Bundesanzeiger}'s XBRL is not openly retrievable (\S\ref{sec:esef-germany}), so DE reaches us only by
+the PDF route (Chapter~\ref{ch:pdf}). Second, \textbf{Great~Britain leads}, but as \textbf{UKSEF} --- the UK
+profile of ESEF (Chapter~\ref{sys:uk}); filings.xbrl.org spans both regimes and the LEI (\S\ref{sec:identity})
+joins them seamlessly. Packages outnumber filers several-fold because each filer accrues one report per year,
+often in multiple language variants.
 
 \section{Forms and statement types}\label{sec:esef-forms}
 
