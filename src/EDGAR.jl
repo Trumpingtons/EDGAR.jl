@@ -47,6 +47,7 @@ include("core/taxonomy/vocab_indas.jl")     # 🟢 Ind-AS (in-bse-fin) classific
 include("core/taxonomy/vocab_incapmkt.jl")  # 🟢 in-capmkt (SEBI Integrated Filing) vocabulary (India; INDAS/BANKING/NBFC + Life/General Insurance)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
+include("core/breakdown.jl")                # 🟢 dimensional breakdown (revenue by segment/product/geography)
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations
 include("filing_systems/esef/report_package.jl") # 🔵 ESEF report-package ZIP reader (offline; ZipArchives)
 include("filing_systems/esef/esef.jl")      # 🔵 ESEF FilingSystem: fetch_filing(::ESEF, path/url) + bundled-linkbase fetch
@@ -81,7 +82,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,
        parse_amount, amount_locale, infer_columns, parse_period_end, period_dates,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
-       label_map, calculations, check_calculations, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
+       label_map, calculations, check_calculations, breakdown, segments, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, set_credentials, set_cache_policy, persist_user_agent, unpersist_user_agent,
        fetch_url, clean_cache, cache_metrics, cache_path_for,
        company_facts, company_concept, xbrl_frames, full_text_search, filings_by_text, filings_by_cik,

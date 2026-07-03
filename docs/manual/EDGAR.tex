@@ -146,6 +146,8 @@ reports}, so a filing's facts are recovered whether it is machine-tagged or publ
 \vspace{1em}
 
 % ===========================================================================
+\part{Common}
+
 \chapter{Introduction}
 \label{sec:intro}
 EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S. Securities and Exchange Commission's electronic filing system. All publicly listed companies in the United States submit their regulatory disclosures through EDGAR. Since 2009, financial statements within these filings have been tagged using XBRL (eXtensible Business Reporting Language), enabling structured, machine-readable access to financial data.
@@ -547,7 +549,7 @@ Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row
 of which extractor produced it.
 
 % ===========================================================================
-\chapter{PDF and HTML reports}
+\chapter{PDF and HTML Reports}
 \label{ch:pdf}
 
 Many regulatory filings are PDF, not XBRL --- at Companies House the format is unpredictable and much of
@@ -791,7 +793,7 @@ or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"000032
 are equivalent); functions normalize to the 10-digit form. Every data call goes
 through the cached, User-Agent-aware request layer (\S\ref{sec:ua}).
 
-\section{Core types}
+\section{Core Types}
 \label{sec:api-types}
 
 \texttt{EDGAR.jl}'s data model is a small spine of value types that every workflow in this chapter operates
@@ -830,17 +832,62 @@ Table~\ref{tab:coretypes} is the map; the exhaustive field-by-field reference li
 \end{tabular}
 \end{table}
 
-\paragraph{The numeric/prose pair.} \texttt{Fact}\,/\,\texttt{facts} (numbers) and
-\texttt{Narrative}\,/\,\texttt{narratives} (text) are deliberate parallels: the same provenance
-(\texttt{cik}, \texttt{accession}, \texttt{context\_ref}), the same period/dimension context, and both return
-a concretely-typed \texttt{Tables.jl} row table (empty-but-typed when a filing has none). A tagged numeric
-line item is a \texttt{Fact}; a tagged text-block, an ingested-PDF section, or a SEC \emph{Item} is a
-\texttt{Narrative}. The PDF path additionally exposes its own richer structure (a \texttt{StructuredDocument}
-of sections, text-blocks, tables and figures --- see the \emph{PDF and HTML reports} chapter); the
-\texttt{narratives} row table is the uniform, source-agnostic view across all of them.
+\noindent The rest of this section details each of these five value types in turn.
 
-\paragraph{Naming and tagging a narrative.} A \texttt{Narrative} carries \emph{two} title columns plus a tag
-set, so the same prose can be identified verbatim, normalised, and grouped by theme:
+\paragraph{Specialised types.} Beyond the value types above, \texttt{EDGAR.jl} defines several types scoped
+to a particular concern, documented where that concern lives rather than here:
+\begin{itemize}[nosep]
+  \item \texttt{FilingSystem}, \texttt{FilingSource}, \texttt{FilingHandle} --- the \emph{extension} and
+    \emph{discovery} seam (how a jurisdiction, and the source that lists its filings, plug in): see
+    Architecture, \S\ref{sec:architecture}.
+  \item \texttt{StructuredDocument} --- the rich section / table / figure tree of an ingested PDF: see the
+    \emph{PDF and HTML reports} chapter, \S\ref{ch:pdf}.
+  \item \texttt{FactRow} / \texttt{NarrativeRow} --- the \texttt{Tables.jl} row views of \texttt{Fact} /
+    \texttt{Narrative} (the on-disk / export column schema): see Table~\ref{tab:coretypes} above.
+\end{itemize}
+
+\subsection{\texttt{Filing}}
+\label{sec:filing-type}
+
+\noindent A \texttt{Filing} is an immutable value representing a filing document in memory --- a plain
+\texttt{struct} of six fields, normally created by \texttt{fetch\_filing}, which populates them from the
+submissions data and the retrieved document:
+
+\begin{lstlisting}
+struct Filing
+    cik::String         # 10-digit, zero-padded Central Index Key
+    accession::String   # dashed accession number
+    document::String    # the primary document's filename
+    url::String         # the EDGAR Archives URL it was fetched from
+    kind::Symbol        # :ixbrl, :xbrl, or :html
+    content::String     # the raw document text (HTML or XML)
+end
+\end{lstlisting}
+
+\noindent Because it is a plain \texttt{struct}, the default constructor
+\texttt{Filing(cik, accession, document, url, kind, content)} is also available --- useful in tests or when
+reconstructing a filing from previously saved content and metadata. Fields are accessed with dot notation:
+\texttt{f.content} is the document text the extraction helpers process, \texttt{f.kind} distinguishes iXBRL /
+XBRL / HTML, \texttt{f.url} records the source. A \texttt{Filing} displays as a compact one-line summary in
+the REPL and renders inline as HTML in notebook front-ends (\S\ref{sec:display-filing}).
+
+\subsection{\texttt{Fact}}
+
+\noindent \texttt{Fact}\,/\,\texttt{facts} (numbers) and \texttt{Narrative}\,/\,\texttt{narratives} (text)
+are deliberate parallels: the same provenance (\texttt{cik}, \texttt{accession}, \texttt{context\_ref}), the
+same period/dimension context, and both return a concretely-typed \texttt{Tables.jl} row table
+(empty-but-typed when a filing has none). A tagged \textbf{numeric} line item is a \texttt{Fact} --- its value
+normalised (\(\mathrm{displayed}\times10^{\mathrm{scale}}\times\mathrm{sign}\)), its fields as in
+Table~\ref{tab:coretypes}, produced by \texttt{facts}.
+
+\subsection{\texttt{Narrative}}
+
+\noindent A tagged \textbf{text}-block, an ingested-PDF section, or a SEC \emph{Item} is a \texttt{Narrative}
+--- prose's \texttt{Fact}, produced by \texttt{narratives}. (The PDF path additionally exposes its own richer
+structure, a \texttt{StructuredDocument} of sections, text-blocks, tables and figures --- see the \emph{PDF
+and HTML reports} chapter; the \texttt{narratives} row table is the uniform, source-agnostic view across all
+of them.) A \texttt{Narrative} carries \emph{two} title columns plus a tag set, so the same prose can be
+identified verbatim, normalised, and grouped by theme:
 \begin{itemize}[nosep]
   \item \texttt{section\_title} --- the section's own name, verbatim in its native language (the EDINET
     verbose label, the SEC \emph{Item} title, or the PDF heading; it falls back to the concept local-name so
@@ -854,6 +901,55 @@ set, so the same prose can be identified verbatim, normalised, and grouped by th
     by theme. Empty for now, reserved for a later (AI or manual) tagging pass; multiple axes encode as
     namespaced tags (\texttt{"theme:climate"}, \texttt{"risk:fx"}).
 \end{itemize}
+
+\subsection{\texttt{EntityId}}
+\label{sec:api-entityid}
+
+\noindent A filer's identity is a typed pair, \texttt{EntityId(scheme::Symbol,\ value::String)} --- never a
+bare string, because the identifier scheme differs per \texttt{FilingSystem} and one legal entity may carry
+several at once. The scheme is an open-ended \texttt{Symbol}, so adding a jurisdiction adds \emph{data} (a new
+scheme value), not a new type. \texttt{EntityId} prints as \texttt{scheme:value} (e.g.\
+\texttt{lei:529900T8BM49AURSDO55}).
+
+\begin{lstlisting}
+EntityId(:cik, "0000320193")            # Apple, on SEC EDGAR
+EntityId(:lei, "529900T8BM49AURSDO55")  # a filer on ESEF / UKSEF
+f.entity                                 # every Filing carries one; f.entity.value is the bare id
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The identity schemes in use, by filing system. Only the LEI is globally unique across regimes ---
+see the conceptual overview in \S\ref{sec:identity} (Architecture) for why.}
+\label{tab:identity-schemes}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.34\textwidth}@{}}
+\toprule
+\textbf{Scheme} & \textbf{System} & \textbf{Identifier} \\
+\midrule
+\texttt{:cik} & SEC (US) & Central Index Key \\
+\texttt{:lei} & ESEF, UKSEF & Legal Entity Identifier (\textbf{global}) \\
+\texttt{:companies\_house} & Companies House (UK) & company registration number \\
+\texttt{:edinet} / \texttt{:corporate\_number} & EDINET (JP) & EDINET code / \jpcjk{法人番号}{hōjin bangō} (corporate number) \\
+\texttt{:corp\_code} / \texttt{:stock\_code} & DART (KR) & DART corporate code / stock code \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The scheme set is intentionally open (a \texttt{Symbol}, not an \texttt{enum}); the list above is what
+the currently-implemented systems emit. For \emph{what} the LEI is, why --- despite its EU prominence --- it is a
+global rather than a European identifier, and why it is the natural cross-jurisdiction join key, see the
+overview in \S\ref{sec:identity}.
+
+\subsection{\texttt{Selection}}
+
+\noindent A \texttt{Selection} is a picked region --- or a whole filing --- of a \emph{rendered} document:
+the second link in the value spine (\texttt{Filing} $\rightarrow$ \texttt{Selection} $\rightarrow$
+\texttt{Fact}\,/\,\texttt{Narrative}). It captures a region's provenance and its content in every useful form
+at once: \texttt{cik}, \texttt{accession}, \texttt{url}, the \texttt{selector} that located it, its
+\texttt{kind}, and the region itself as \texttt{text}, \texttt{html}, \texttt{table} and extracted
+\texttt{facts}. It is produced interactively by the visual picker \texttt{select\_section} and consumed by
+the exporters (Markdown, iXBRL, facts JSON, DuckDB); that workflow is \S\ref{sec:select-section}.
 
 \section{Searching and Entity Lookup}
 \label{sec:api-search}
@@ -886,44 +982,6 @@ Searching typically begins with identifying a filer and then retrieving either c
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{\texttt{EntityId} and its schemes}
-\label{sec:api-entityid}
-
-A filer's identity is a typed pair, \texttt{EntityId(scheme::Symbol,\ value::String)} --- never a bare string,
-because the identifier scheme differs per \texttt{FilingSystem} and one legal entity may carry several at once.
-The scheme is an open-ended \texttt{Symbol}, so adding a jurisdiction adds \emph{data} (a new scheme value), not
-a new type. \texttt{EntityId} prints as \texttt{scheme:value} (e.g.\ \texttt{lei:529900T8BM49AURSDO55}).
-
-\begin{lstlisting}
-EntityId(:cik, "0000320193")            # Apple, on SEC EDGAR
-EntityId(:lei, "529900T8BM49AURSDO55")  # a filer on ESEF / UKSEF
-f.entity                                 # every Filing carries one; f.entity.value is the bare id
-\end{lstlisting}
-
-\begin{table}[h]
-\centering
-\small
-\caption{The identity schemes in use, by filing system. Only the LEI is globally unique across regimes ---
-see the conceptual overview in \S\ref{sec:identity} (Architecture) for why.}
-\label{tab:identity-schemes}
-\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.34\textwidth}@{}}
-\toprule
-\textbf{Scheme} & \textbf{System} & \textbf{Identifier} \\
-\midrule
-\texttt{:cik} & SEC (US) & Central Index Key \\
-\texttt{:lei} & ESEF, UKSEF & Legal Entity Identifier (\textbf{global}) \\
-\texttt{:companies\_house} & Companies House (UK) & company registration number \\
-\texttt{:edinet} / \texttt{:corporate\_number} & EDINET (JP) & EDINET code / \jpcjk{法人番号}{hōjin bangō} (corporate number) \\
-\texttt{:corp\_code} / \texttt{:stock\_code} & DART (KR) & DART corporate code / stock code \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent The scheme set is intentionally open (a \texttt{Symbol}, not an \texttt{enum}); the list above is what
-the currently-implemented systems emit. For \emph{what} the LEI is, why --- despite its EU prominence --- it is a
-global rather than a European identifier, and why it is the natural cross-jurisdiction join key, see the
-overview in \S\ref{sec:identity}.
 
 \subsection{\texttt{cik}}
 
@@ -1205,36 +1263,6 @@ julia> p.name, p.entityType, p.sic, p.fiscalYearEnd
 \texttt{download\_assets(f; destdir)} & Download a filing's referenced images and CSS/JS next to it. \\
 \bottomrule
 \end{longtable}
-
-\subsection{The \texttt{Filing} Type}
-\label{sec:filing-type}
-
-\noindent A \texttt{Filing} is an immutable value representing a filing document in
-memory. It is defined as a simple \texttt{struct} with six fields:
-
-\begin{lstlisting}
-struct Filing
-    cik::String         # 10-digit, zero-padded Central Index Key
-    accession::String   # dashed accession number
-    document::String    # the primary document's filename
-    url::String         # the EDGAR Archives URL it was fetched from
-    kind::Symbol        # :ixbrl, :xbrl, or :html
-    content::String     # the raw document text (HTML or XML)
-end
-\end{lstlisting}
-
-\noindent In normal use, \texttt{Filing} instances are created by
-\texttt{fetch\_filing}, which populates all fields from the SEC submissions data and
-the retrieved document. Because \texttt{Filing} is a plain \texttt{struct}, the
-default constructor
-\texttt{Filing(cik, accession, document, url, kind, content)} is also available,
-which can be useful in tests or when reconstructing a filing from previously saved
-content and metadata.
-
-Fields are accessed directly using dot notation. For example,
-\texttt{f.content} contains the document text processed by the extraction helpers, \texttt{f.kind} distinguishes between iXBRL, XBRL, and HTML filings, and \texttt{f.url} records the document's source. A \texttt{Filing} also displays as a
-compact one-line summary in the REPL and renders inline as HTML in notebook front-ends (\S\ref{sec:display-filing}).
-
 
 \subsection{Displaying a \texttt{Filing}}
 \label{sec:display-filing}
@@ -2074,7 +2102,7 @@ is also available directly:
 
 \sig{label\_map(f::Filing) -> Dict\{String, String\}}
 
-\paragraph{Calculation relationships.} A filing's \emph{calculation linkbase}
+\paragraph{Calculation relationships.}\label{sec:api-calc} A filing's \emph{calculation linkbase}
 (\texttt{*\_cal.xml}) is the arithmetic of each statement: which concepts sum into which, with
 a signed weight (\texttt{+1} added, \texttt{-1} subtracted). \texttt{calculations} returns it as
 a Tables.jl row table of \texttt{(statement, parent, child, weight)}.
@@ -2092,8 +2120,8 @@ children indeed sum to the reported operating income.
 \noindent \emph{Validating} those roll-ups is \texttt{check\_calculations}: for each parent concept
 and each context it is reported in, it sums the reported children and flags any summation that
 disagrees. The comparison is \textbf{decimals-aware} rather than a fixed percentage --- a fact
-reported at \texttt{@decimals=d} denotes the rounding interval $\text{value}\pm\tfrac{1}{2}\cdot
-10^{-d}$, and a roll-up is consistent when $|\text{reported}-\text{computed}|$ does not exceed the
+reported at \texttt{@decimals=d} denotes the rounding interval $\mathrm{value}\pm\frac{1}{2}\cdot
+10^{-d}$, and a roll-up is consistent when $|\mathrm{reported}-\mathrm{computed}|$ does not exceed the
 combined interval of the parent and its children, so rounding is never mistaken for an error.
 
 \sig{check\_calculations(f::Filing) -> Vector\{NamedTuple\}}
@@ -2200,6 +2228,71 @@ and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQ
 these would only add dependencies for no gain.
 
 
+\section{Analysis}
+\label{sec:api-analysis}
+
+Beyond fetching, extracting and classifying, \texttt{EDGAR.jl} provides \emph{analysis} helpers that
+compute over a filing's already-extracted facts --- disaggregation, consistency checks, and (in time)
+more. They share a shape: a pure function of a \texttt{Filing} returning a \texttt{Tables.jl} row table.
+This section is the method \emph{reference}; for the concepts, the per-jurisdiction axes, and worked
+value-added examples, see the \emph{Analysis} chapter (\S\ref{ch:analysis}). This section will grow; its
+first entry is dimensional disaggregation.
+
+\subsection{\texttt{breakdown} and \texttt{segments}}
+
+\paragraph{Signatures}
+\begin{center}
+\textbf{\sig{breakdown(f::Filing, concept; axis = nothing, labels = true, lang = nothing)}}\\
+\textbf{\sig{segments(f::Filing, concept; labels = true, lang = nothing)}}
+\end{center}
+
+\noindent Disaggregate one reported line along a dimension --- revenue by operating segment, by product,
+by geography; a balance by maturity. \texttt{breakdown} groups the values of \texttt{concept} by the
+members of a dimensional \emph{axis}; \texttt{segments} is the convenience that picks the segment axis for
+you. \textbf{No definition linkbase is required}: the members are read from the instance's own contexts,
+and each member's name from the label linkbase where members are \emph{named}
+(\texttt{aapl:IPhoneMember} $\rightarrow$ ``iPhone''), falling back to a per-member descriptor \emph{text}
+fact (\texttt{DescriptionOfReportableSegment}) where they are \emph{generic} (India).
+
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
+  \item[\quad - \texttt{concept}] the concept QName to disaggregate, e.g.\ \texttt{"us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"}.
+  \item[\quad - \texttt{axis}] the dimension to break down on; when \texttt{nothing} (default), auto-detected, preferring an axis whose name contains ``Segment''. (\texttt{segments} always uses the segment axis.)
+  \item[\quad - \texttt{labels}] resolve member names from the label linkbase (\texttt{false} leaves \texttt{name} equal to the member QName and skips the possibly-networked fetch).
+  \item[\quad - \texttt{lang}] language of the member names for multilingual taxonomies (EDINET, DART): e.g.\ \texttt{"en"} rather than the native Japanese/Korean.
+\end{description}
+
+\paragraph{Return Value.}
+A \texttt{Tables.jl} row table, one row per reported \texttt{(member, period)}, newest period first:
+\begin{itemize}[nosep]
+  \item \texttt{axis} --- the dimension broken down on
+  \item \texttt{member} --- the member QName (\texttt{aapl:AmericasSegmentMember})
+  \item \texttt{name} --- the member's human label (\texttt{"Americas Segment"}), or the QName if unresolved
+  \item \texttt{value}, \texttt{period\_start}, \texttt{period\_end}, \texttt{is\_instant}
+  \item \texttt{other\_dims} --- any OTHER axes on the same fact, so a breakdown entangled with a second dimension (e.g.\ a co-occurring consolidation-items axis) is visible rather than silently double-counted
+\end{itemize}
+
+\paragraph{Julia Example:} Apple revenue by operating segment, and by product.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079");
+julia> segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")
+        # Americas $178B, Europe $111B, Greater China $64B, Rest of Asia Pacific $34B, Japan $29B
+julia> breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax";
+                 axis = "srt:ProductOrServiceAxis")
+        # iPhone $210B, Services $109B, Wearables $36B, Mac $34B, iPad $28B
+\end{lstlisting}
+
+\paragraph{Coverage.} Works wherever segments are dimensionally tagged. \textbf{Named members} name
+themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang="en"} for English rather
+than the native names), and Companies House (all FRC-module labels resolved). \textbf{Generic members} ---
+\textbf{India}'s \texttt{…Segment01Member} placeholders --- are named instead from their
+\texttt{DescriptionOfReportableSegment} \emph{text} fact, which \texttt{breakdown} reads automatically (the
+non-numeric descriptor is invisible to \texttt{facts}, which is numeric-only). One caveat is a property of
+the filings, not the tool: at \textbf{ESEF} filers detail-tag the primary statements but \emph{block-tag the
+notes}, so the segment note usually carries no dimensional facts and the result is empty.
+
+
 \section{Narratives \textemdash{} the text layer}
 \label{sec:api-narratives}
 
@@ -2278,7 +2371,7 @@ On real annual reports this shows \textbf{100\% content parity} for the tagged t
 Fast Retailing 138/138, whitespace-normalised). The check is \emph{exact} --- both sides derive from the same
 filing, so it validates the XBRL/iXBRL text-block extraction against an authoritative reference.
 
-\section{PDF documents}
+\section{PDF and HTML Documents}
 \label{sec:api-pdf}
 
 Turning a PDF report into the structured \emph{document family} (sections, prose, tables, figures) is the
@@ -2616,6 +2709,279 @@ set_config(cache = :persistent, cache_ttl = 3600)   # keep across sessions, 1h f
 m = cache_metrics()                                  # (; hits, misses, requests, ...)
 clean_cache()
 \end{lstlisting}
+
+\chapter{Validation}
+\label{sec:validation}
+
+How do you know the numbers \texttt{EDGAR.jl} extracts are right? ``Trust, but verify.'' Validation has two
+faces --- \emph{external} references and \emph{internal} checks --- across the four sections of this chapter,
+ordered by \emph{decreasing independence} (Table~\ref{tab:validation-kinds}). Each asks a different question,
+and together they triangulate: an independent data source catches a wrong \emph{value}, a reference parser
+and the cross-format check catch a wrong \emph{extraction}, and the accounting rules catch a filing
+inconsistent with \emph{itself}.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The four kinds of validation, most independent first. Each section (§) answers a distinct question.}
+\label{tab:validation-kinds}
+\begin{tabular}{@{}p{0.03\textwidth}p{0.44\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{\S} & \textbf{Kind} & \textbf{The question it answers} \\
+\midrule
+\ref{sec:validation-sources}     & \textbf{Independent data} --- Yahoo, AlphaVantage & Is the value right vs.\ the world? \\
+\ref{sec:validation-parser}      & \textbf{Reference parser} --- Arelle + its published xBRL-JSON & Did we \emph{parse} it right? \\
+\ref{sec:validation-crossformat} & \textbf{Cross-format check} --- PDF vs.\ iXBRL & Do our own two paths agree? \\
+\ref{sec:validation-rules}       & \textbf{Accounting rules} --- \texttt{check\_calculations}, balance-sheet identity & Is the filing self-consistent? \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent All are cross-jurisdiction. The first three ship as \emph{do-it-yourself} helpers under
+\texttt{src/sources/}, deliberately \textbf{not part of the \texttt{EDGAR} module} (not \texttt{include}d by
+\texttt{src/EDGAR.jl}), so they add \textbf{no dependencies} and you load one on demand; a stray \texttt{.jl}
+there is ignored by the package loader. Each helper's \texttt{validate} returns a row table --- one row per
+fact (or headline metric) with the \texttt{EDGAR} value, the reference value, the relative difference and a
+\texttt{match} flag --- so you \texttt{filter} to mismatches or render with \texttt{PrettyTables}. Set a
+\texttt{User-Agent} first (\S\ref{sec:ua}); the scripts fall back to the \texttt{EDGAR\_UA} environment variable.
+
+\begin{table}[h]
+\centering
+\caption{The external validation references --- independent \emph{data}, and the reference \emph{parser} (same
+document, canonical XBRL processor).}
+\label{tab:oracles}
+\small
+\begin{tabular}{@{}p{0.30\textwidth}p{0.26\textwidth}p{0.18\textwidth}p{0.12\textwidth}@{}}
+\toprule
+\textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
+\midrule
+\textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
+\textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
+filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
+\textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Independent Data (Yahoo, AlphaVantage)}
+\label{sec:validation-sources}
+
+A \textbf{data} oracle confirms the \emph{numbers match the outside world}: it compares the headline totals
+(Assets, Equity, Revenue, Net income, operating cash flow), across all three statements, against an entirely
+separate data pipeline. Two ship --- \textbf{Yahoo Finance} (global reach) and \textbf{AlphaVantage}
+(US-strong), detailed below. A data oracle is the \emph{only} kind that can catch a filer \emph{mis-tagging}
+a value (a reference parser reads the same wrong tag), but only \emph{approximately}, since the providers
+round and normalize --- hence the 1\% tolerance.
+
+\subsection{Yahoo Finance}
+
+A \emph{data} oracle with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
+SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
+within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
+dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
+cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
+
+\paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
+headline totals against Yahoo:
+
+\begin{lstlisting}
+using YFinance
+include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+using .YahooOracle
+
+# 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
+f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
+select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
+
+# 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
+v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
+filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
+YahooOracle.report()                               # or the built-in multi-firm panel
+\end{lstlisting}
+
+\paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
+not its exchange symbol, so the data oracles take the ticker explicitly (\texttt{"AAPL"},
+\texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
+
+\subsection{AlphaVantage}
+
+A second \emph{data} oracle, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
+dependency}: AlphaVantage is an official, documented REST API (one keyed GET returns clean JSON), so
+the oracle uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
+allows only \(\sim\)25 calls/day, so the on-disk response cache makes re-runs free, and a fresh run is
+paced under the \(\sim\)5/minute limit (a burst of four network calls per minute; cached calls never
+block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
+variable):
+
+\begin{lstlisting}[style=term]
+# https://www.alphavantage.co/support/#api-key
+% export ALPHA_VANTAGE_API_KEY="your-key"
+% julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
+\end{lstlisting}
+
+\paragraph{Validating the extraction.} Extract a US filer with \texttt{EDGAR}, then cross-check against
+AlphaVantage's fundamentals:
+
+\begin{lstlisting}
+include(joinpath(pkgdir(EDGAR), "src", "sources", "alphavantage_oracle.jl"))
+using .AlphaVantageOracle
+
+# 1. EDGAR side -- Microsoft's latest 10-K, classified.
+f = fetch_filing("789019", first(filings_by_cik("789019"; forms = "10-K")).accession)
+select_statement(facts(f; classify = true), "IncomeStatement")
+
+# 2. Cross-check against AlphaVantage (cached; a fresh run is paced under the free tier).
+v = AlphaVantageOracle.validate(:sec, "789019", "MSFT")   # CIK + the AlphaVantage symbol
+filter(r -> !r.match && r.alphavantage !== nothing, v)    # real disagreements only
+AlphaVantageOracle.report()                               # or the built-in US panel
+\end{lstlisting}
+
+\noindent On the default panel the balance-sheet totals match the extraction to \texttt{0.000\%}.
+A metric AlphaVantage did not return (e.g. a throttled call) has \texttt{alphavantage === nothing} and
+is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter above.
+Throttle responses (which AlphaVantage returns with HTTP~200) are purged from the cache so they cannot
+poison a later run.
+
+\section{Reference Parser (Arelle, and its published xBRL-JSON)}
+\label{sec:validation-parser}
+
+A \textbf{parser} oracle confirms we \emph{read the filing right}: it compares the extracted facts against
+the \emph{same} filing as parsed by \textbf{Arelle}, the reference open-source XBRL processor --- an
+independent implementation of the same standard. A mismatch is therefore a \emph{parsing} discrepancy, never
+a data disagreement; conversely it cannot catch a filer \emph{mis-tagging} a value (both readers honour the
+same wrong tag), which is what the data oracles (\S\ref{sec:validation-sources}) are for. This is the same
+kind of reference the package already applies automatically on the SEC side, validating against the SEC's
+\texttt{companyfacts} API --- the SEC's own parse of the same filing; each filing system has an independent
+reference of this sort, which is what lets us trust one jurisdiction-agnostic parser where no such API exists
+(\S\ref{sec:architecture}). It comes in two forms, below --- the \emph{already-published} xBRL-JSON Arelle
+produces for filings.xbrl.org (no install; ESEF/UKSEF only, consolidated facts), and Arelle \emph{run
+locally} (needs the CLI, but validates \emph{any} filing and \emph{every} fact, dimensions included, so it
+covers the statement of changes in equity; verified at \textbf{100\%} on the five statements across SEC
+(Apple), ESEF (Citycon, 312/312), UKSEF (Kainos) and DART (Samsung, 5997/5997)). Both compare values
+\emph{raw} (the as-stored value; the classified value flips sign for \texttt{negatedLabel}/cash-outflow
+concepts).
+
+\medskip\noindent \textbf{Arelle also \emph{validates} a filing's own calculation, dimension and formula
+consistency} --- it is a full processor, not merely a parser. So it doubles as a reference for the
+\emph{accounting-rule} checks of \S\ref{sec:validation-rules}: our own \texttt{check\_calculations} can be
+cross-checked against Arelle's calculation validation --- the validator, validated.
+
+\subsection{Local Arelle --- the universal oracle}
+
+\texttt{arelle\_local\_oracle.jl} runs the Arelle CLI (\texttt{arelleCmdLine}) on the downloaded filing and
+compares EDGAR.jl's value for \emph{every} fact --- keyed by concept + period + full \emph{dimension} set
+--- against Arelle's. Because it keys on dimensions, it validates the dimensional statements the headline
+data checks cannot, in particular the \textbf{statement of changes in equity}. It needs the Arelle CLI
+installed (located via the \texttt{ARELLE\_CMD} env var, \texttt{PATH}, or the macOS app), and accepts
+whatever shape a filing arrives in:
+
+\begin{itemize}[nosep]
+  \item a \textbf{bare inline-XBRL/XBRL instance} (SEC --- \texttt{f.url} is the inline \texttt{.htm}, not a
+    ZIP); Arelle is pointed at the URL/file and fetches the DTS itself;
+  \item a formal \textbf{report package} (ESEF/UKSEF, with \texttt{META-INF/taxonomyPackage.xml}) --- handed
+    to Arelle \emph{as a package} so its catalog remaps the standard taxonomy;
+  \item a \textbf{loose package} (DART \texttt{fnlttXbrl}, an EDINET submission) --- extracted, with Arelle
+    pointed at the instance.
+\end{itemize}
+
+\noindent Values are compared \textbf{raw} (as stored): EDGAR.jl's classified value flips sign for
+\texttt{negatedLabel}/cash-outflow concepts, so the classification is used only to \emph{label} each row by
+statement, never to compare. The oracle is verified at \textbf{100\,\% on the financial statements ---
+including the changes-in-equity statement --- across every \texttt{FilingSystem}}: SEC (Apple 10-K), ESEF
+(Citycon, 312/312), UKSEF (Kainos), DART (Samsung, 5997/5997) and EDINET (Toyota 1378/1378; Nintendo, MUFG
+and Canon also 100\,\%). The handful of unconfirmed facts are note-level non-financial disclosures (counts,
+percentages).
+
+\begin{lstlisting}
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_local_oracle.jl"))
+using .ArelleLocalOracle
+
+# Any filing, any system: materialise it, run Arelle, compare every fact (incl. the SCE).
+f = fetch_filing(EDINET(), "Toyota-annual.zip")
+ArelleLocalOracle.report(ArelleLocalOracle.validate(f))      # per-statement parity
+filter(r -> !r.match, ArelleLocalOracle.validate(f))         # any discrepancies
+
+# DART convenience -- discover + validate in one call:
+set_credentials(DART(); api_key = ENV["DART_API_KEY"])
+ArelleLocalOracle.report_dart("005930"; year = 2023)         # Samsung -- 5997/5997, incl. SCE
+\end{lstlisting}
+
+\subsection{Published xBRL-JSON --- ESEF/UKSEF, no dependency}
+
+\texttt{arelle\_esef\_oracle.jl} skips the local install: it fetches the \emph{same filing's} xBRL-JSON as
+\textbf{already published} by \href{https://filings.xbrl.org}{filings.xbrl.org} (produced by Arelle), using
+just the HTTP+JSON \texttt{EDGAR} already has. So it adds no dependency, but is limited to the ESEF + UKSEF
+filings the aggregator hosts and to consolidated (undimensioned) facts. It mirrors
+\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266) ---
+credit there.
+
+\begin{lstlisting}[style=term]
+# the built-in firm panel (exits non-zero if parity drops below 95%):
+% julia --project=. src/sources/arelle_esef_oracle.jl
+\end{lstlisting}
+
+\paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR}, then
+check every consolidated fact against the same filing's xBRL-JSON:
+
+\begin{lstlisting}
+include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+using .ArelleEsefOracle
+filter(r -> !r.match, ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
+ArelleEsefOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
+\end{lstlisting}
+
+\noindent \texttt{ArelleEsefOracle.statements(lei)} reports parity \emph{per statement} --- one row
+\texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
+\texttt{CashFlow} --- near-exact on the default panel (\textbf{100\,\% fact parity}).
+
+
+
+\section{Cross-Format Check (PDF vs iXBRL)}
+\label{sec:validation-crossformat}
+
+Unlike the references above, this check is entirely \emph{internal}: it compares \texttt{EDGAR.jl}'s own two
+extraction paths for the \emph{same} filer. PDF (and HTML) is a first-class \texttt{EDGAR.jl} source
+(Chapter~\ref{ch:pdf}), so when a company files \emph{both} a PDF annual report and its iXBRL twin --- a
+``dual-format'' filing --- the PDF-derived facts should agree with the iXBRL-derived ones.
+\texttt{pdf\_oracle.jl} scores them against each other, treating the iXBRL twin as ground truth.
+
+The match is \textbf{value-anchored}: a PDF fact carries a line-item \emph{label}, not a concept, so it
+cannot be matched on concept. Instead it is matched on \texttt{(value, period)} --- and because the PDF
+stores the \emph{printed} number (e.g.\ £m: 64.9) while the twin is absolute (64{,}900{,}000), the match is
+on the \emph{significand} at any power-of-ten scale; the consistent scale factor across matches is the
+document's inferred rounding. A disagreement flags a \emph{format-specific} extraction bug --- a mis-read PDF
+cell or a mis-parsed iXBRL tag --- that neither a data oracle nor a reference parser would surface, since
+each of those sees only \emph{one} of the two formats.
+
+\section{Accounting Rules and Validation}
+\label{sec:validation-rules}
+
+Independent data sources tell you whether a figure matches the outside world; \emph{accounting rules} tell
+you whether a filing is consistent with \emph{itself} --- no network, no third party, just the relationships
+the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
+
+\begin{itemize}[nosep]
+  \item \textbf{Calculation roll-ups.} \texttt{check\_calculations(f)} verifies that every summation the
+    filing's calculation linkbase declares actually holds in the reported facts (parent $=\sum$ weighted
+    children), \emph{decimals-aware} so rounding is never mistaken for an error. It covers SEC, ESEF, India,
+    EDINET and DART; Companies House is N/A --- the FRC taxonomy ships no calculation linkbase, by design
+    (\S\ref{sec:api-calc} has the method and the details). The reference processor Arelle validates the very
+    same roll-ups (\S\ref{sec:validation-parser}), so \texttt{check\_calculations} can be checked against it.
+  \item \textbf{The balance-sheet identity.} The accounts must balance: net assets $=$ total equity, assets
+    $-$ liabilities $=$ equity. This holds in every jurisdiction, needs no linkbase, and is the one
+    consistency signal available even where a taxonomy defines \emph{no} calculation relationships (the UK).
+  \item \textbf{Formula-based checks.} Some regulators publish consistency \emph{formulae} beyond simple
+    summation --- roll-forwards, cross-dimension aggregations, existence / sign rules --- because a
+    calculation linkbase cannot express them. The FRC's UK taxonomy is the notable case (its published
+    \emph{Consistency Checks}). A general XBRL-Formula engine is out of scope for \texttt{EDGAR.jl}; the
+    accounting identities such formulae encode are what the checks above capture.
+\end{itemize}
+
+\noindent Internal and external validation are complementary: the accounting rules catch a filing that is
+self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while the data sources
+(\S\ref{sec:validation-sources}) catch a value that is internally consistent but wrong against the world.
+
+\part{Filing Systems}
 
 \chapter{EDGAR \textemdash{} U.S.\ SEC}
 \label{sys:edgar}
@@ -5098,219 +5464,87 @@ IFRS. The repository survey --- which venues expose machine-readable (XBRL) fili
 model, and any sanctions/access constraints from outside Russia --- is \textbf{not yet done}; this chapter is
 a scaffold to be filled once India is complete and Russia is picked up.
 
-\chapter{Additional Data Sources}
-\label{sec:validation}
+\part{Analysis}
 
-How do you know the numbers \texttt{EDGAR.jl} extracts are right? You can check them against
-independent references --- ``trust, but verify.'' \texttt{EDGAR.jl} ships four \emph{do-it-yourself}
-data sources under \texttt{src/sources/}, each an independent reference you compare the extraction
-against. They are deliberately \textbf{not part of the \texttt{EDGAR} module} (not \texttt{include}d by
-\texttt{src/EDGAR.jl}), so they add \textbf{no dependencies} to the package and never touch the working
-code; you load one on demand when you want reassurance. A stray \texttt{.jl} file under \texttt{src/}
-is ignored by the package loader.
+\chapter{Analysis}
+\label{ch:analysis}
+
+\texttt{EDGAR.jl} is meant to be a \emph{value-added} application, not merely a fetcher of filings. Once a
+filing's facts are extracted and classified (\S\ref{sec:api-analysis}), the \emph{same} data --- uniform
+across every jurisdiction in the preceding chapters --- supports analysis directly. This chapter frames the
+value-added analyses the data makes cheap, with the per-jurisdiction specifics and worked examples. It is
+deliberately \emph{light}: each topic here is the shallow end of something that, taken seriously (statistics,
+OLAP engines, forecasting, peer benchmarking), deserves its \emph{own} package built \emph{on top of}
+\texttt{EDGAR.jl}. The method signatures live in the Common API (\S\ref{sec:api-analysis}); here we give the
+concepts, the axes each jurisdiction actually exposes, and how to drive them from Julia.
+
+\section{Dimensional analysis (drill-down)}
+\label{sec:analysis-dimensional}
+
+XBRL is dimensional \emph{by construction}. The XBRL Dimensions specification models a filing's facts as
+\textbf{hypercubes}: a \emph{dimension} (axis) ranges over a \emph{domain} of \emph{members}, and a
+dimensioned fact is a \emph{cell}. A set of financial statements is therefore already an OLAP cube ---
+``revenue'' drilled down by operating segment, by product, by geography is nothing more than fixing a
+concept and slicing an axis. \texttt{EDGAR.jl} exposes this directly with \texttt{breakdown} (any axis) and
+\texttt{segments} (the segment axis), \textbf{without} a definition linkbase or an external cube: the members
+are read from the instance's own contexts, and each member's name from the label linkbase (for \emph{named}
+members) or a per-member descriptor text fact (for \emph{generic} ones). Signatures and full options are in
+the Common API (\S\ref{sec:api-analysis}).
+
+\paragraph{What each jurisdiction exposes.} Drill-down is only as good as the axes a filer \emph{tags}, and
+that varies by regime (Table~\ref{tab:analysis-axes}). Two patterns matter. \textbf{Named members} (SEC,
+IFRS/ESEF, EDINET, DART, Companies House) carry a real member concept (\texttt{aapl:AmericasSegmentMember})
+whose name resolves from the label linkbase --- for the CJK regimes, pass \texttt{lang="en"} for English
+rather than the native names. \textbf{Generic members} (India) carry placeholder members
+(\texttt{…Segment01Member}) whose real names live in a separate \texttt{DescriptionOfReportableSegment}
+\emph{text} fact per member; \texttt{breakdown} reads that descriptor automatically, so India resolves to
+``Retail'', ``Digital Services''\ldots\ all the same. And some regimes simply don't \emph{dimensionally}
+tag the segment note at all (ESEF block-tags it), so the cube is sparse where the filer chose prose over tags.
 
 \begin{table}[h]
 \centering
-\caption{The four additional data sources (validation oracles).}
-\label{tab:oracles}
 \small
-\begin{tabular}{@{}p{0.30\textwidth}p{0.26\textwidth}p{0.18\textwidth}p{0.12\textwidth}@{}}
+\caption{Analysis axes observed by jurisdiction, and how their members name themselves. The list is
+illustrative, not exhaustive --- a filer tags what it discloses.}
+\label{tab:analysis-axes}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.40\textwidth}p{0.34\textwidth}@{}}
 \toprule
-\textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
+\textbf{Jurisdiction} & \textbf{Example analysis axes} & \textbf{Member names} \\
 \midrule
-\textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
-\textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
-filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
-\textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
+\textbf{SEC} & \texttt{us-gaap:StatementBusinessSegmentsAxis}, \texttt{srt:ProductOrServiceAxis}, \texttt{srt:ConsolidationItemsAxis} & named; English labels \\
+\textbf{ESEF} & \texttt{ifrs-full:SegmentsAxis} \emph{when tagged} --- often the segment note is block-tagged, so absent & named (issuer extension) \\
+\textbf{EDINET} & \texttt{jpcrp\_cor:OperatingSegmentsAxis} & named; 日本語 default, \texttt{lang="en"} for English \\
+\textbf{DART} & \texttt{ifrs-full:SegmentsAxis} & named; 한국어 default, \texttt{lang="en"} for English \\
+\textbf{India} & \texttt{in-bse-fin:ReportableSegmentsAxis} (and the \texttt{in-capmkt} equivalent) & \emph{generic} members, named automatically from their \texttt{DescriptionOfReportableSegment} text fact \\
+\textbf{Companies House} & \texttt{uk-core:MaturitiesOrExpirationPeriodsDimension}, \texttt{uk-bus} officer/metadata axes; business segments rare & named; all FRC-module labels \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent They answer two different questions. A \textbf{data} oracle (\textbf{Yahoo Finance},
-\textbf{AlphaVantage}) confirms the \emph{numbers match the outside world}: it compares the headline
-totals (Assets, Equity, Revenue, Net income, operating cash flow) against an entirely separate data
-pipeline, across all three statements. A \textbf{parser} oracle (\textbf{Arelle}) confirms we
-\emph{read the filing right}: it compares the extracted facts against the \emph{same filing} as parsed by
-the reference XBRL processor. There are two: \texttt{arelle\_esef\_oracle.jl} fetches Arelle's
-\emph{already-published} xBRL-JSON from filings.xbrl.org (no dependency, but limited to the ESEF/UKSEF
-filings the aggregator hosts and to consolidated facts), while \texttt{arelle\_local\_oracle.jl} \emph{runs}
-Arelle locally on the filing itself (needs the Arelle CLI, but then validates \emph{any} filing --- SEC,
-ESEF/UKSEF, Korea/DART, Japan --- and \emph{every} fact, dimensions included, so it covers the statement of
-changes in equity). It accepts whatever shape a filing comes in:
-
-\begin{itemize}[nosep]
-  \item a \textbf{bare inline-XBRL/XBRL instance} --- e.g.\ a SEC filing, whose \texttt{f.url} is the inline
-    \texttt{.htm} (not a ZIP); Arelle is pointed at the URL (or a local file) and fetches the DTS itself;
-  \item a formal \textbf{report package} (ESEF/UKSEF, carrying \texttt{META-INF/taxonomyPackage.xml}) ---
-    handed to Arelle \emph{as a package} so its catalog remaps the standard taxonomy;
-  \item a \textbf{loose package} (DART \texttt{fnlttXbrl}, an EDINET submission) --- extracted, with Arelle
-    pointed at the instance.
-\end{itemize}
-
-\noindent Both oracles compare values \emph{raw} (the as-stored value; the classified value flips sign for
-\texttt{negatedLabel}/cash-outflow concepts). The local oracle is verified at \textbf{100\%} on the five
-financial statements (balance sheet, income statement, comprehensive income, cash flow and changes in
-equity) across SEC (Apple 10-K), ESEF (Citycon, 312/312), UKSEF (Kainos) and DART (Samsung, 5997/5997);
-the few unconfirmed facts are note-level non-financial disclosures (counts, percentages). A parser oracle
-cannot catch a filer \emph{mis-tagging} a value (everyone reads the same wrong tag); a data oracle can, but
-only approximately, since the data providers normalize.
-
-\medskip\noindent This is the same kind of check the package already applies on the SEC side: the
-extracted values are validated against the SEC's \texttt{companyfacts} API (the SEC's own parse of the
-same filing). Each filing system has an independent reference of this sort --- which is what lets us
-trust the one jurisdiction-agnostic parser across systems where no such API exists
-(\S\ref{sec:architecture}). Each oracle's \texttt{validate} returns a row table --- one row per fact
-(or per headline metric) with the \texttt{EDGAR} value, the reference value, the relative difference
-and a \texttt{match} flag --- so you can \texttt{filter} to mismatches or render it with
-\texttt{PrettyTables}. A \texttt{User-Agent} must be set first (\S\ref{sec:ua}); the scripts fall
-back to the \texttt{EDGAR\_UA} environment variable.
-
-\section{Yahoo Finance}
-
-A \emph{data} oracle with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
-SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
-within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
-dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
-cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
-
-\paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
-headline totals against Yahoo:
+\paragraph{Worked example.} Apple's latest 10-K, revenue drilled down two ways --- by operating segment and
+by product:
 
 \begin{lstlisting}
-using YFinance
-include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-using .YahooOracle
-
-# 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
-f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
-select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
-
-# 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
-v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
-filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
-YahooOracle.report()                               # or the built-in multi-firm panel
+julia> f = fetch_filing(320193, "0000320193-25-000079");
+julia> segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")
+        # Americas $178B · Europe $111B · Greater China $64B · Rest of Asia Pacific $34B · Japan $29B
+julia> breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax";
+                 axis = "srt:ProductOrServiceAxis")
+        # iPhone $210B · Services $109B · Wearables $36B · Mac $34B · iPad $28B
 \end{lstlisting}
 
-\paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
-not its exchange symbol, so the data oracles take the ticker explicitly (\texttt{"AAPL"},
-\texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
+\noindent The segment figures sum to Apple's total revenue --- the cube is internally consistent, which is
+itself checkable (see below). For a Japanese or Korean filer the same two calls work; add \texttt{lang="en"}
+to read ``Automotive'' / ``DRAM'' rather than \jpcjk{自動車}{} / DRAM.
 
-\section{AlphaVantage}
+\paragraph{Siblings (to grow).} Dimensional drill-down is one analysis the data supports; others share the
+same ``pure function of a \texttt{Filing}'' shape and will join this chapter. The natural next axis is
+\emph{cross-filer comparison} --- the same standardized concept across peers or across time. (Checking that
+a filing's numbers are self-consistent --- \texttt{check\_calculations} and the accounting-rule checks --- is
+a distinct concern, \emph{validation} rather than analysis; it lives in \S\ref{sec:validation-rules}.) Each
+of these stays framed here and deep in its own package.
 
-A second \emph{data} oracle, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
-dependency}: AlphaVantage is an official, documented REST API (one keyed GET returns clean JSON), so
-the oracle uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
-allows only \(\sim\)25 calls/day, so the on-disk response cache makes re-runs free, and a fresh run is
-paced under the \(\sim\)5/minute limit (a burst of four network calls per minute; cached calls never
-block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
-variable):
-
-\begin{lstlisting}[style=term]
-# https://www.alphavantage.co/support/#api-key
-% export ALPHA_VANTAGE_API_KEY="your-key"
-% julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
-\end{lstlisting}
-
-\paragraph{Validating the extraction.} Extract a US filer with \texttt{EDGAR}, then cross-check against
-AlphaVantage's fundamentals:
-
-\begin{lstlisting}
-include(joinpath(pkgdir(EDGAR), "src", "sources", "alphavantage_oracle.jl"))
-using .AlphaVantageOracle
-
-# 1. EDGAR side -- Microsoft's latest 10-K, classified.
-f = fetch_filing("789019", first(filings_by_cik("789019"; forms = "10-K")).accession)
-select_statement(facts(f; classify = true), "IncomeStatement")
-
-# 2. Cross-check against AlphaVantage (cached; a fresh run is paced under the free tier).
-v = AlphaVantageOracle.validate(:sec, "789019", "MSFT")   # CIK + the AlphaVantage symbol
-filter(r -> !r.match && r.alphavantage !== nothing, v)    # real disagreements only
-AlphaVantageOracle.report()                               # or the built-in US panel
-\end{lstlisting}
-
-\noindent On the default panel the balance-sheet totals match the extraction to \texttt{0.000\%}.
-A metric AlphaVantage did not return (e.g. a throttled call) has \texttt{alphavantage === nothing} and
-is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter above.
-Throttle responses (which AlphaVantage returns with HTTP~200) are purged from the cache so they cannot
-poison a later run.
-
-\section{Arelle}
-
-\textbf{Arelle} is the reference, open-source XBRL processor --- an independent implementation of the
-standard. \texttt{EDGAR.jl} validates against it two ways, both \emph{parser} oracles (same document,
-fact-level): the \textbf{local} oracle runs Arelle itself on the filing and covers \emph{every}
-\texttt{FilingSystem} and \emph{every} fact; the \textbf{published-JSON} oracle reuses Arelle's output from
-filings.xbrl.org with no extra dependency, for the ESEF/UKSEF filings that aggregator hosts.
-
-\subsection{Local Arelle --- the universal oracle}
-
-\texttt{arelle\_local\_oracle.jl} runs the Arelle CLI (\texttt{arelleCmdLine}) on the downloaded filing and
-compares EDGAR.jl's value for \emph{every} fact --- keyed by concept + period + full \emph{dimension} set
---- against Arelle's. Because it keys on dimensions, it validates the dimensional statements the headline
-data checks cannot, in particular the \textbf{statement of changes in equity}. It needs the Arelle CLI
-installed (located via the \texttt{ARELLE\_CMD} env var, \texttt{PATH}, or the macOS app), and accepts
-whatever shape a filing arrives in:
-
-\begin{itemize}[nosep]
-  \item a \textbf{bare inline-XBRL/XBRL instance} (SEC --- \texttt{f.url} is the inline \texttt{.htm}, not a
-    ZIP); Arelle is pointed at the URL/file and fetches the DTS itself;
-  \item a formal \textbf{report package} (ESEF/UKSEF, with \texttt{META-INF/taxonomyPackage.xml}) --- handed
-    to Arelle \emph{as a package} so its catalog remaps the standard taxonomy;
-  \item a \textbf{loose package} (DART \texttt{fnlttXbrl}, an EDINET submission) --- extracted, with Arelle
-    pointed at the instance.
-\end{itemize}
-
-\noindent Values are compared \textbf{raw} (as stored): EDGAR.jl's classified value flips sign for
-\texttt{negatedLabel}/cash-outflow concepts, so the classification is used only to \emph{label} each row by
-statement, never to compare. The oracle is verified at \textbf{100\,\% on the financial statements ---
-including the changes-in-equity statement --- across every \texttt{FilingSystem}}: SEC (Apple 10-K), ESEF
-(Citycon, 312/312), UKSEF (Kainos), DART (Samsung, 5997/5997) and EDINET (Toyota 1378/1378; Nintendo, MUFG
-and Canon also 100\,\%). The handful of unconfirmed facts are note-level non-financial disclosures (counts,
-percentages).
-
-\begin{lstlisting}
-include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_local_oracle.jl"))
-using .ArelleLocalOracle
-
-# Any filing, any system: materialise it, run Arelle, compare every fact (incl. the SCE).
-f = fetch_filing(EDINET(), "Toyota-annual.zip")
-ArelleLocalOracle.report(ArelleLocalOracle.validate(f))      # per-statement parity
-filter(r -> !r.match, ArelleLocalOracle.validate(f))         # any discrepancies
-
-# DART convenience -- discover + validate in one call:
-set_credentials(DART(); api_key = ENV["DART_API_KEY"])
-ArelleLocalOracle.report_dart("005930"; year = 2023)         # Samsung -- 5997/5997, incl. SCE
-\end{lstlisting}
-
-\subsection{Published xBRL-JSON --- ESEF/UKSEF, no dependency}
-
-\texttt{arelle\_esef\_oracle.jl} skips the local install: it fetches the \emph{same filing's} xBRL-JSON as
-\textbf{already published} by \href{https://filings.xbrl.org}{filings.xbrl.org} (produced by Arelle), using
-just the HTTP+JSON \texttt{EDGAR} already has. So it adds no dependency, but is limited to the ESEF + UKSEF
-filings the aggregator hosts and to consolidated (undimensioned) facts. It mirrors
-\href{https://github.com/trr266/ESEF.jl}{\texttt{ESEF.jl}}'s \texttt{pluck\_xbrl\_json} (MIT, TRR~266) ---
-credit there.
-
-\begin{lstlisting}[style=term]
-# the built-in firm panel (exits non-zero if parity drops below 95%):
-% julia --project=. src/sources/arelle_esef_oracle.jl
-\end{lstlisting}
-
-\paragraph{Validating the extraction.} Discover and extract an ESEF/UKSEF filer with \texttt{EDGAR}, then
-check every consolidated fact against the same filing's xBRL-JSON:
-
-\begin{lstlisting}
-include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
-using .ArelleEsefOracle
-filter(r -> !r.match, ArelleEsefOracle.validate("549300P8N0P6KDGTJ206"; year = 2023))  # discrepancies
-ArelleEsefOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF (e.g. 100%)
-\end{lstlisting}
-
-\noindent \texttt{ArelleEsefOracle.statements(lei)} reports parity \emph{per statement} --- one row
-\texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
-\texttt{CashFlow} --- near-exact on the default panel (\textbf{100\,\% fact parity}).
-
-
+\part{Reference}
 
 \chapter{Related Work and Comparison}
 \label{sec:related-work}

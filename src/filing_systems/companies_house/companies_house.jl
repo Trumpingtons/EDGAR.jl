@@ -147,25 +147,40 @@ end
 # `_ch_canonicalize`), so we rewrite `#core_` → `#uk-core_` in the linkbase before parsing so the keys
 # match. Presentation/calculation linkbases are not fetched yet (vocab classification suffices).
 
-# The FRC `core` label-linkbase URL derived from the core namespace declared in a CH instance, or
-# `nothing`. Namespace `http://xbrl.frc.org.uk/fr/<date>/core` ⇒ label
-# `https://xbrl.frc.org.uk/fr/<date>/core/frc-core-<date>-label.xml`.
-function _frc_core_label_url(content::AbstractString)
-    m = match(r"https?://xbrl\.frc\.org\.uk/fr/(\d{4}-\d{2}-\d{2})/core", content)
-    m === nothing && return nothing
-    date = m.captures[1]
-    return "https://xbrl.frc.org.uk/fr/$date/core/frc-core-$date-label.xml"
+# The FRC label linkbases for EVERY taxonomy module a CH instance declares — not just `core`. Each FRC
+# namespace `xmlns:uk-X="http://xbrl.frc.org.uk/<area>/<date>/<module>"` has a sibling label linkbase whose
+# element-ids are `X_…` (the module short name = the prefix minus `uk-`), while the instance tags concepts
+# `uk-X:…` — so each linkbase is remapped `#X_` → `#uk-X_` (as `core` always did) before the shared
+# `_concept_labels` reads it. This resolves labels for `uk-bus` (directors, account metadata), `uk-direp`
+# (directors' report), etc., not only the `uk-core` financial concepts. Returns `(url, remap)` per module.
+# Filenames follow the module: the `fr` area (core) prefixes them `frc-…`, other areas (cd/reports) do not.
+function _frc_label_sources(content::AbstractString)
+    out = Tuple{String,Pair{String,String}}[]
+    seen = Set{String}()
+    for m in eachmatch(r"xmlns:(uk-[\w-]+)=\"(https?://xbrl\.frc\.org\.uk/[\w/-]+/(\d{4}-\d{2}-\d{2})/[\w-]+)\"", content)
+        prefix, uri, date = m.captures[1], m.captures[2], m.captures[3]
+        uri in seen && continue
+        push!(seen, uri)
+        stem = replace(prefix, "uk-" => "")                                   # uk-bus → bus, uk-core → core
+        file = occursin(r"xbrl\.frc\.org\.uk/fr/", uri) ? "frc-$stem" : stem  # `fr` area names files `frc-…`
+        url = replace(uri, r"^http:" => "https:") * "/$file-$date-label.xml"
+        push!(out, (url, "#$(stem)_" => "#$(prefix)_"))
+    end
+    return out
 end
 
-# Companies House method of the per-system linkbase fetcher (see core/extract_xbrl.jl). Only the FRC
-# `core` LABEL linkbase is resolved (the financial concepts' human labels); presentation/calculation
-# return "" (classification falls back to the prefix-keyed UK-GAAP vocabulary, which works). The fetch
-# is a public, keyless GET of the standard taxonomy; "" on any failure (tolerated downstream).
+# Companies House method of the per-system linkbase fetcher (see core/extract_xbrl.jl). Fetches and remaps
+# the FRC LABEL linkbase of every declared module and concatenates them (the shared `_concept_labels`
+# parses the joined string). Presentation/calculation return "" — classification falls back to the
+# prefix-keyed UK-GAAP vocabulary (which works), and the FRC taxonomy has no calculation linkbase at all.
+# All GETs are public and keyless; a module that fails to fetch is simply skipped ("" if none resolve).
 function _fetch_linkbase(::CompaniesHouse, f::Filing, suffix::AbstractString; lang=nothing)
     suffix == "lab" || return ""
-    url = _frc_core_label_url(f.content)
-    url === nothing && return ""
-    xml = fetch_url(url; headers = _CH_TAXONOMY_HEADERS)
-    xml === nothing && return ""
-    return replace(String(xml), "#core_" => "#uk-core_")   # element-id prefix → canonical instance prefix
+    parts = String[]
+    for (url, remap) in _frc_label_sources(f.content)
+        xml = fetch_url(url; headers = _CH_TAXONOMY_HEADERS)
+        xml === nothing && continue
+        push!(parts, replace(String(xml), remap))
+    end
+    return join(parts, "\n")
 end

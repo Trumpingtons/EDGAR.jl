@@ -867,6 +867,35 @@ end
     @test check_calculations(Filing(India(), EntityId(:isin, ""), "x", "x", "x", :xbrl, "")) isa Vector
 end
 
+@testset "breakdown / segments (dimensional analysis, offline)" begin
+    # Revenue-by-segment from the instance's own dimensions — no definition linkbase. The Reliance in-bse-fin
+    # fixture tags SegmentRevenue by the reportable-segments axis (5 segments × the quarter + annual columns).
+    f = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "reliance-fy2024.xml"))
+    ax = "in-bse-fin:ReportableSegmentsAxis"
+    rows = breakdown(f, "in-bse-fin:SegmentRevenue"; axis = ax, labels = false)
+    @test length(rows) == 10
+    @test all(r -> r.axis == ax, rows)
+    @test all(r -> occursin("Segment", r.member), rows)
+    @test issorted(rows; by = r -> (r.period_end, -r.value), rev = true)     # newest period, largest value first
+    @test all(r -> r.value > 0, rows)
+
+    # `segments` is the convenience: it auto-locates the segment axis, same rows.
+    @test length(segments(f, "in-bse-fin:SegmentRevenue"; labels = false)) == 10
+    # auto-axis (no `axis`) prefers the segment axis.
+    @test breakdown(f, "in-bse-fin:SegmentRevenue"; labels = false)[1].axis == ax
+    # a concept with no segment dimension → empty (not an error).
+    @test isempty(segments(f, "in-bse-fin:Assets"; labels = false))
+    @test isempty(breakdown(f, "in-bse-fin:NoSuchConcept"; labels = false))
+    # `labels=false` leaves `name` as the member QName (no linkbase fetch).
+    @test rows[1].name == rows[1].member
+
+    # With labels (default), India's GENERIC members (…Segment01Member) are named from their
+    # `DescriptionOfReportableSegment` text fact --- the non-numeric descriptor reader (Phase 2).
+    named = Set(r.name for r in segments(f, "in-bse-fin:SegmentRevenue"))
+    @test Set(["Retail", "Digital Services", "Oil and Gas", "Others"]) ⊆ named
+    @test !any(n -> startswith(n, "in-bse-fin:"), named)                 # no raw member QNames leak through
+end
+
 @testset "golden: real captured payload -> all exports (W8, offline)" begin
     # A genuine picker transport payload for Walmart's income statement (test/data/), so the
     # whole pipeline is exercised against real data with no live browser.
@@ -1568,14 +1597,21 @@ end
 end
 
 @testset "Companies House: FRC standard-taxonomy labels (C3, offline)" begin
-    # CH carries no bundled linkbases; labels come from the PUBLISHED FRC `core` label linkbase, whose
-    # URL derives from the `core` namespace in the instance. The linkbase keys concepts by the schema
-    # element-id prefix `core_`; CH label fetching rewrites `#core_` → `#uk-core_` so the keys match
-    # the canonicalized facts. Offline: derivation + re-keying against a synthetic trimmed linkbase.
+    # CH carries no bundled linkbases; labels come from the PUBLISHED FRC label linkbases — one per
+    # taxonomy MODULE the instance declares (`core` financial concepts, `bus` directors/metadata,
+    # `direp` directors' report, …), not just `core`. Each module's URL derives from its
+    # `xmlns:uk-X="…/<date>/<module>"` namespace; its linkbase keys concepts by the schema element-id
+    # prefix `X_`, rewritten `#X_` → `#uk-X_` so the keys match the canonicalized facts. Offline:
+    # derivation for every module + re-keying against a synthetic trimmed linkbase.
     dir = joinpath(@__DIR__, "data", "companies_house")
-    @test EDGAR._frc_core_label_url("<x xmlns:ns5=\"http://xbrl.frc.org.uk/fr/2023-01-01/core\"/>") ==
-          "https://xbrl.frc.org.uk/fr/2023-01-01/core/frc-core-2023-01-01-label.xml"
-    @test EDGAR._frc_core_label_url("no frc namespace here") === nothing
+    src = Dict(EDGAR._frc_label_sources("""<x xmlns:uk-core="http://xbrl.frc.org.uk/fr/2023-01-01/core"
+        xmlns:uk-bus="http://xbrl.frc.org.uk/cd/2023-01-01/business"
+        xmlns:uk-direp="http://xbrl.frc.org.uk/reports/2023-01-01/direp"/>"""))
+    @test length(src) == 3
+    @test src["https://xbrl.frc.org.uk/fr/2023-01-01/core/frc-core-2023-01-01-label.xml"] == ("#core_" => "#uk-core_")
+    @test src["https://xbrl.frc.org.uk/cd/2023-01-01/business/bus-2023-01-01-label.xml"] == ("#bus_" => "#uk-bus_")
+    @test src["https://xbrl.frc.org.uk/reports/2023-01-01/direp/direp-2023-01-01-label.xml"] == ("#direp_" => "#uk-direp_")
+    @test isempty(EDGAR._frc_label_sources("no frc namespace here"))
 
     labxml = read(joinpath(dir, "frc-core-label-min.xml"), String)
     lm = EDGAR._concept_labels(replace(labxml, "#core_" => "#uk-core_"))
