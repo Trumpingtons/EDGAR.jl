@@ -4690,27 +4690,91 @@ SEBI-regulated vehicles that also publish financial results --- REITs, InvITs, m
 
 \section{Forms and statement types}\label{sec:india-forms}
 
-A listed Indian company discloses a whole \emph{universe} of documents to the exchanges, not one form.
-\texttt{EDGAR.jl} extracts the one that is XBRL-tagged financial data --- the \textbf{periodic financial
-results} --- and reaches the rest for discovery. This section introduces the regulator and the
-results \emph{format templates} (\S\ref{sec:india-sebi}), the other disclosure families
-(\S\ref{sec:india-other-forms}), the taxonomies (\S\ref{sec:india-taxonomies}), and what each format
-contains and how it is classified (\S\ref{sec:india-statements}).
-
-\subsection{SEBI and the periodic-results format templates}\label{sec:india-sebi}
 \textbf{SEBI} --- the Securities and Exchange Board of India --- is India's capital-markets regulator, the
 analogue of the U.S.\ SEC (statutory under the SEBI Act, 1992). Listed companies disclose to the exchanges
 (NSE, BSE) chiefly under the \textbf{SEBI (Listing Obligations and Disclosure Requirements) Regulations,
-2015} (``LODR''), with the takeover code (SAST, 2011), the insider-trading rules (PIT, 2015) and the issue
-regulations (ICDR, 2018) governing the rest. The XBRL-tagged financial filing is the \textbf{periodic
-financial results} (LODR Regulation~33): quarterly (Q1--Q3) and annual, each in a \textbf{standalone} and a
-\textbf{consolidated} version (\texttt{EDGAR.jl} defaults to consolidated). The annual filing --- the Q4
-results carrying the full-year column --- holds the audited annual statements.
+2015} (``LODR''), with the takeover code (SAST, 2011), the insider-trading rules (PIT, 2015) and the
+capital-issue regulations (ICDR, 2018) governing the rest. Disclosure is keyed to these \emph{regulations},
+not to a catalogue of numbered forms as at the SEC: a listed company files a whole \emph{universe} of
+documents (Table~\ref{tab:india-forms}), of which \texttt{EDGAR.jl} extracts the one that is XBRL-tagged
+financial data --- the periodic \textbf{financial results} --- and reaches the others for discovery as the
+adapter (and the PDF-extraction track) matures. Each disclosure class is detailed in a subsection below; the
+financial-statement structure of the periodic results --- the per-company-class \emph{format templates}
+(\S\ref{sec:india-formats}), the taxonomies (\S\ref{sec:india-taxonomies}) and the statement types and their
+classification (\S\ref{sec:india-statements}) --- follows at the end.
 
-Crucially, and unlike a uniform IFRS regime (or K-IFRS at DART, \S\ref{sec:dart-forms}), \textbf{SEBI does
-not prescribe one results format: it prescribes a different format per \emph{company class}}, and the
-repository serves each as a \emph{distinct} XBRL template, identified by the instance's \textbf{filename
-prefix} (Table~\ref{tab:india-formats}). A general company's \texttt{INDAS\_} template reports
+\begin{table}[h]
+\centering
+\small
+\caption{The Indian exchange-disclosure landscape --- each class detailed in a subsection below.}
+\label{tab:india-forms}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.38\textwidth}p{0.12\textwidth}p{0.11\textwidth}@{}}
+\toprule
+\textbf{Class ($\to$ subsection)} & \textbf{Documents (regulation)} & \textbf{Format} & \textbf{In EDGAR.jl} \\
+\midrule
+Periodic reports & quarterly \& annual results (LODR 33); annual report (LODR 34) & XBRL / PDF & results extracted \\
+Material-event disclosures & board outcomes, price-sensitive events (LODR 30); corporate actions & PDF / metadata & \emph{not yet} \\
+Shareholding disclosures & quarterly shareholding pattern (LODR 31) & XBRL & \emph{not yet} \\
+Ownership \& insider & insider trades (PIT~7), substantial acquisition (SAST) & metadata / PDF & \emph{not yet} \\
+Tender offers \& mergers & open offers (SAST), schemes of arrangement & PDF & \emph{not yet} \\
+Issuance disclosures & IPO / rights offer documents (ICDR), buy-backs & PDF & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Periodic reports}\label{sec:india-periodic}
+The scheduled financial filings. The \textbf{financial results} (LODR Regulation~33) --- filed
+\textbf{quarterly} (Q1--Q3) and \textbf{annually} --- are India's analogue of the 10-Q/10-K and the
+\emph{only} XBRL-tagged financial filing, the one \texttt{EDGAR.jl} extracts. They go to \emph{both} NSE and
+BSE, each period in a \textbf{standalone} and a \textbf{consolidated} version (the API flags which;
+\texttt{EDGAR.jl} defaults to consolidated). The annual filing --- the Q4 results carrying the full-year
+column --- holds the audited annual statements; \emph{what} it contains depends on the company class (its
+\emph{format template}, \S\ref{sec:india-formats}), and the statements are detailed in
+\S\ref{sec:india-statements}. The fuller \textbf{annual report} (LODR Regulation~34) --- the complete
+accounts with the notes and the statement of changes in equity that the condensed results omit --- is also a
+periodic filing, but a PDF, and a candidate for the PDF-extraction track rather than the XBRL path.
+
+\subsection{Material-event disclosures}\label{sec:india-material-events}
+Event-driven, ad-hoc disclosures of material corporate developments (LODR Regulation~30) --- entirely
+different in nature from the scheduled periodic reports, and the exact analogue of the SEC's Material-Event
+Disclosures (Form 8-K, \S\ref{sec:edgar-material-events}). A company must promptly inform the exchanges of
+deemed-material events (acquisitions, board-meeting outcomes, fund-raising, changes of directors / KMP /
+auditors, credit-rating changes, insolvency proceedings, \ldots) and of other events its materiality policy
+deems material, each as an \textbf{announcement with a PDF attachment} (the exchange exposes the feed keyless
+--- confirmed live: each record carries a timestamp and an attachment URL). \textbf{Corporate actions} ---
+dividends, bonus issues, stock splits and book-closure / ex-dates --- belong here too (a board-declared
+dividend is itself a Regulation~30 event), and are additionally published as a structured keyless feed of
+dates and ratios. All of this is PDF and metadata, not XBRL financial data --- \emph{not yet extracted}; the
+announcement PDFs are candidates for the PDF-extraction track.
+
+\subsection{Shareholding disclosures}\label{sec:india-shareholding}
+The quarterly \textbf{shareholding pattern} (LODR Regulation~31) --- the promoter / public / institutional
+ownership breakdown --- is itself filed as \textbf{XBRL}, on a template separate from the financial results.
+\emph{Not yet handled}; a natural second XBRL target after the financial results.
+
+\subsection{Ownership and insider disclosures}\label{sec:india-ownership}
+Changes in \emph{control and insider} holdings, under two regimes. The insider-trading rules (PIT, 2015)
+require promoters, directors and designated persons to disclose their trades --- the exchange's
+insider-trading feed lists the acquirer names, quantities and dates (confirmed live). The takeover code
+(SAST, 2011) requires disclosure of \textbf{substantial acquisitions} of shares or voting rights past a
+threshold. Structured metadata / PDF; \emph{not yet handled}.
+
+\subsection{Tender offers and mergers}\label{sec:india-tender}
+Control transactions: \textbf{open offers} under the takeover code (SAST) --- the Indian tender offer,
+triggered when an acquirer crosses the control threshold --- and \textbf{schemes of arrangement} (mergers,
+demergers) sanctioned by the National Company Law Tribunal and filed with the exchange. Offer documents and
+scheme papers are PDF; \emph{not yet handled}.
+
+\subsection{Issuance disclosures}\label{sec:india-issuance}
+Raising capital: the offer documents for \textbf{public and rights issues} under the capital-issue
+regulations (ICDR, 2018) --- the draft red-herring prospectus and the prospectus --- and \textbf{buy-backs}.
+These are among the richest PDF documents in the universe; \emph{not yet handled} (a PDF-track candidate).
+
+\subsection{Result format templates by company class}\label{sec:india-formats}
+Unlike a uniform IFRS regime (or K-IFRS at DART, \S\ref{sec:dart-forms}), \textbf{SEBI does not prescribe one
+results format: it prescribes a different format per \emph{company class}}, and the repository serves each as
+a \emph{distinct} XBRL template, identified by the instance's \textbf{filename prefix}
+(Table~\ref{tab:india-formats}). A general company's \texttt{INDAS\_} template reports
 \texttt{RevenueFromOperations}; a bank's \texttt{BANKING\_} template has \emph{no such concept}, reporting
 \texttt{InterestEarned} / \texttt{InterestExpended}, \texttt{Deposits} and \texttt{Advances} (the Banking
 Regulation Act shape); an NBFC files \texttt{NBFC\_INDAS\_}. The adapter must branch on the prefix --- a
@@ -4737,32 +4801,6 @@ filename prefix. Verified live on FY2024 filings where noted.}
 
 \noindent\footnotesize$^{*}$SBI~Life returned no rows from the results endpoint; insurers (IRDAI-regulated)
 appear to disclose through a separate channel --- not yet surveyed.\normalsize
-
-\subsection{Other disclosures beyond the periodic results}\label{sec:india-other-forms}
-The exchange exposes many more filing families through per-family endpoints (Table~\ref{tab:india-forms},
-each confirmed live except where noted). Only the periodic financial results are XBRL-tagged financial data;
-the rest are structured metadata or PDF, reached for discovery (and, for the annual report, the PDF
-extraction track) as the adapter matures.
-
-\begin{table}[h]
-\centering
-\small
-\caption{The Indian exchange-disclosure landscape and its support in \texttt{EDGAR.jl}.}
-\label{tab:india-forms}
-\begin{tabular}{@{}p{0.24\textwidth}p{0.38\textwidth}p{0.13\textwidth}p{0.10\textwidth}@{}}
-\toprule
-\textbf{Family} & \textbf{Documents (regulation)} & \textbf{Format} & \textbf{In EDGAR.jl} \\
-\midrule
-Periodic financial results & quarterly / annual results (LODR 33) & XBRL (templates) & extracted \\
-Shareholding pattern & quarterly ownership breakdown (LODR 31) & XBRL & \emph{not yet} \\
-Annual report & full annual report + accounts (LODR 34) & PDF & \emph{not yet} \\
-Material-event disclosures & board outcomes, price-sensitive events (LODR 30) & announcement + PDF & \emph{not yet} \\
-Corporate actions & dividends, bonus, splits, book-closure & metadata & \emph{not yet} \\
-Ownership \& insider & insider trades (PIT~7), substantial acquisition / open offers (SAST) & metadata / PDF & \emph{not yet} \\
-Offerings, tenders \& mergers & IPO / rights offer documents (ICDR), buy-backs, schemes of arrangement & PDF & \emph{not yet} \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 \subsection{Taxonomies}\label{sec:india-taxonomies}
 Every format tags under the same national namespace, \texttt{in-bse-fin} (\S\ref{sec:india-taxonomy}), but
