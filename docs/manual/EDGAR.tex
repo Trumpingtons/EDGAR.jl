@@ -4695,8 +4695,7 @@ A listed Indian company discloses a whole \emph{universe} of documents to the ex
 results} --- and reaches the rest for discovery. This section introduces the regulator and the
 results \emph{format templates} (\S\ref{sec:india-sebi}), the other disclosure families
 (\S\ref{sec:india-other-forms}), the taxonomies (\S\ref{sec:india-taxonomies}), what each format contains
-(\S\ref{sec:india-statements}), the reporting-period convention (\S\ref{sec:india-periods}) and statement
-classification (\S\ref{sec:india-classify}).
+(\S\ref{sec:india-statements}) and statement classification (\S\ref{sec:india-classify}).
 
 \subsection{SEBI and the periodic-results format templates}\label{sec:india-sebi}
 \textbf{SEBI} --- the Securities and Exchange Board of India --- is India's capital-markets regulator, the
@@ -4787,24 +4786,10 @@ interest earned / expended, deposits and advances; the \textbf{NBFC} format, Ind
 Every filing self-declares its shape through metadata concepts: \texttt{NatureOfReportStandaloneConsolidated},
 \texttt{ReportingQuarter}, \texttt{WhetherResultsAreAuditedOrUnaudited}, \texttt{TypeOfCashFlowStatement},
 \texttt{LevelOfRoundingUsedInFinancialStatements} (e.g.\ \texttt{"Crores"}) and
-\texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}).
-
-\subsection{Reporting periods --- normalised to the standard interface}\label{sec:india-periods}
-This subsection documents an \emph{internal} adapter step; it changes nothing about how an Indian filing is
-used. NSE's raw XBRL carries \textbf{unreliable} period dates --- every duration context is stamped with the
-same quarter-end dates, so on the face of it a 12-month annual figure and a 3-month quarterly figure are
-indistinguishable. The correct period is, however, present as explicit
-\texttt{in-bse-fin:DateOf\{Start,End\}OfReportingPeriod} facts inside each context, so
-\texttt{fetch\_filing(India(),\ \ldots)} rewrites every context's period to those authoritative dates at
-fetch time --- the same fetch-time normalisation as the Companies House namespace canonicalisation
-(\S\ref{sys:companieshouse}), and equally invisible to the caller.
-
-The result is the point: \texttt{facts(f)} carries \textbf{standard 3-month and 12-month periods}, so
-\textbf{an Indian filing is worked exactly like an SEC, ESEF or DART one} --- the annual figure is simply
-the 12-month fact and the quarter the 3-month fact, selected by their period as anywhere else. A user never
-sees, and never has to reason about, the NSE period encoding (verified on Reliance and Infosys FY2024). The
-Yahoo reconciliation (\S\ref{sec:india-yahoo}) accordingly works with the ordinary annual (12-month)
-figures.
+\texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}). An \emph{annual} results filing carries
+both the current-quarter and the full-year figures, so \texttt{facts(f)} returns a 3-month \emph{and} a
+12-month fact for each flow concept (just as an SEC 10-Q carries the quarter and the year-to-date); select
+the one you want by its period, exactly as in any other jurisdiction.
 
 \subsection{Statement classification: a dedicated \texttt{vocab\_indas}}\label{sec:india-classify}
 All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
