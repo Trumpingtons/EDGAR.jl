@@ -4690,60 +4690,104 @@ SEBI-regulated vehicles that also publish financial results --- REITs, InvITs, m
 
 \section{Forms and statement types}\label{sec:india-forms}
 
-The exchange channel carries the \textbf{SEBI LODR Regulation~33 financial results} --- the XBRL financial
-filing \texttt{EDGAR.jl} extracts --- in quarterly and annual periodicity, each lodged in \textbf{standalone}
-and \textbf{consolidated} form (Table~\ref{tab:india-forms}). Crucially, and unlike a uniform IFRS regime
-(or K-IFRS at DART, \S\ref{sec:dart-forms}), \textbf{SEBI prescribes a different results \emph{format} for
-each company type}, and the repository serves each as a \emph{distinct} \texttt{in-bse-fin} template ---
-signalled by the instance's \textbf{filename prefix} (\texttt{INDAS\_\ldots} for general companies,
-\texttt{BANKING\_\ldots} for banks, with further templates for NBFCs and insurers). A bank's results carry
-\emph{no} \texttt{RevenueFromOperations} at all. India's forms are therefore genuinely its own; they do not
-map onto another jurisdiction's shapes.
+A listed Indian company discloses a whole \emph{universe} of documents to the exchanges, not one form.
+\texttt{EDGAR.jl} extracts the one that is XBRL-tagged financial data --- the \textbf{periodic financial
+results} --- and reaches the rest for discovery. This section introduces the regulator and the
+results \emph{format templates} (\S\ref{sec:india-sebi}), the other disclosure families
+(\S\ref{sec:india-other-forms}), the taxonomies (\S\ref{sec:india-taxonomies}), what each format contains
+(\S\ref{sec:india-statements}), the reporting-period convention (\S\ref{sec:india-periods}) and statement
+classification (\S\ref{sec:india-classify}).
+
+\subsection{SEBI and the periodic-results format templates}\label{sec:india-sebi}
+\textbf{SEBI} --- the Securities and Exchange Board of India --- is India's capital-markets regulator, the
+analogue of the U.S.\ SEC (statutory under the SEBI Act, 1992). Listed companies disclose to the exchanges
+(NSE, BSE) chiefly under the \textbf{SEBI (Listing Obligations and Disclosure Requirements) Regulations,
+2015} (``LODR''), with the takeover code (SAST, 2011), the insider-trading rules (PIT, 2015) and the issue
+regulations (ICDR, 2018) governing the rest. The XBRL-tagged financial filing is the \textbf{periodic
+financial results} (LODR Regulation~33): quarterly (Q1--Q3) and annual, each in a \textbf{standalone} and a
+\textbf{consolidated} version (\texttt{EDGAR.jl} defaults to consolidated). The annual filing --- the Q4
+results carrying the full-year column --- holds the audited annual statements.
+
+Crucially, and unlike a uniform IFRS regime (or K-IFRS at DART, \S\ref{sec:dart-forms}), \textbf{SEBI does
+not prescribe one results format: it prescribes a different format per \emph{company class}}, and the
+repository serves each as a \emph{distinct} XBRL template, identified by the instance's \textbf{filename
+prefix} (Table~\ref{tab:india-formats}). A general company's \texttt{INDAS\_} template reports
+\texttt{RevenueFromOperations}; a bank's \texttt{BANKING\_} template has \emph{no such concept}, reporting
+\texttt{InterestEarned} / \texttt{InterestExpended}, \texttt{Deposits} and \texttt{Advances} (the Banking
+Regulation Act shape); an NBFC files \texttt{NBFC\_INDAS\_}. The adapter must branch on the prefix --- a
+general-format classifier or oracle silently misses a bank's income statement. India's forms are genuinely
+its own; they do not map onto another jurisdiction's shapes.
 
 \begin{table}[h]
 \centering
 \small
-\caption{Indian exchange filings and their support in \texttt{EDGAR.jl}.}
-\label{tab:india-forms}
-\begin{tabular}{@{}p{0.27\textwidth}p{0.43\textwidth}p{0.16\textwidth}@{}}
-\toprule
-\textbf{Filing} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
-\midrule
-Financial results (Reg.~33) & Quarterly (Q1--Q3) and Annual results, each \emph{standalone} and \emph{consolidated}, as XBRL in company-type templates (Table~\ref{tab:india-formats}) & statements extracted \\
-Shareholding pattern (Reg.~31) & quarterly shareholding disclosure (separate endpoint) & \emph{not yet} \\
-Announcements / annual report (Reg.~30, 34) & material-event disclosures; the full annual report (PDF) & \emph{not yet} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Financial results, and the per-company-type formats}
-The Reg.~33 results --- India's analogue of the 10-Q/10-K --- are filed with \emph{both} NSE and BSE, each
-period in a \textbf{standalone} and a \textbf{consolidated} version (the API flags which; \texttt{EDGAR.jl}
-defaults to consolidated). The annual filing (the Q4 results carrying the full-year column) holds the
-audited annual statements. \emph{What} that filing contains, however, depends on the company-type format
-(Table~\ref{tab:india-formats}), verified on real filings: a general company (\texttt{INDAS\_}) reports
-\texttt{RevenueFromOperations} and a standard Ind-AS profit-and-loss; a bank (\texttt{BANKING\_}) reports
-\texttt{InterestEarned}, \texttt{InterestExpended}, \texttt{Deposits} and \texttt{Advances} in the Banking
-Regulation Act shape. The templates can even bind \emph{different taxonomy versions} (general
-\texttt{2020-03-31}, banking \texttt{2019-09-30}). The adapter must branch on the format --- a general-format
-classifier or oracle would silently miss a bank's income statement entirely.
-
-\begin{table}[h]
-\centering
-\small
-\caption{SEBI results \emph{formats} --- one XBRL template per company type, keyed by the instance filename
-prefix. Verified on FY2024 filings where noted.}
+\caption{SEBI periodic-results \emph{formats} --- one XBRL template per company class, keyed by the instance
+filename prefix. Verified live on FY2024 filings where noted.}
 \label{tab:india-formats}
-\begin{tabular}{@{}p{0.16\textwidth}p{0.22\textwidth}p{0.32\textwidth}p{0.16\textwidth}@{}}
+\begin{tabular}{@{}p{0.19\textwidth}p{0.20\textwidth}p{0.31\textwidth}p{0.15\textwidth}@{}}
 \toprule
-\textbf{Template (prefix)} & \textbf{Company type} & \textbf{Characteristic top-line concepts} & \textbf{Status} \\
+\textbf{Template (prefix)} & \textbf{Company class} & \textbf{Characteristic top-line concepts} & \textbf{Status} \\
 \midrule
-\texttt{INDAS\_} & General (manufacturing, services --- non-financial) & \texttt{RevenueFromOperations}; Ind-AS P\&L, BS, cash-flow, segment & verified (Reliance, IOC, Infosys) \\
+\texttt{INDAS\_} & General (manufacturing, services) & \texttt{RevenueFromOperations}; Ind-AS P\&L, BS, cash-flow, segment & verified (Reliance, IOC, Infosys) \\
 \texttt{BANKING\_} & Banks & \texttt{InterestEarned} / \texttt{InterestExpended}; \texttt{Deposits}, \texttt{Advances} & verified (HDFC~Bank) \\
-(NBFC, Insurance) & NBFCs; insurers & sector-specific formats & \emph{not yet surveyed} \\
+\texttt{NBFC\_INDAS\_} & Non-banking financial companies & Ind-AS with the NBFC results schedule & verified (Bajaj~Finance) \\
+(Insurance) & Insurers & IRDAI-prescribed format, filed separately & \emph{not on this endpoint}$^{*}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\noindent\footnotesize$^{*}$SBI~Life returned no rows from the results endpoint; insurers (IRDAI-regulated)
+appear to disclose through a separate channel --- not yet surveyed.\normalsize
+
+\subsection{Other disclosures beyond the periodic results}\label{sec:india-other-forms}
+The exchange exposes many more filing families through per-family endpoints (Table~\ref{tab:india-forms},
+each confirmed live except where noted). Only the periodic financial results are XBRL-tagged financial data;
+the rest are structured metadata or PDF, reached for discovery (and, for the annual report, the PDF
+extraction track) as the adapter matures.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The Indian exchange-disclosure landscape and its support in \texttt{EDGAR.jl}.}
+\label{tab:india-forms}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.38\textwidth}p{0.13\textwidth}p{0.10\textwidth}@{}}
+\toprule
+\textbf{Family} & \textbf{Documents (regulation)} & \textbf{Format} & \textbf{In EDGAR.jl} \\
+\midrule
+Periodic financial results & quarterly / annual results (LODR 33) & XBRL (templates) & extracted \\
+Shareholding pattern & quarterly ownership breakdown (LODR 31) & XBRL & \emph{not yet} \\
+Annual report & full annual report + accounts (LODR 34) & PDF & \emph{not yet} \\
+Material-event disclosures & board outcomes, price-sensitive events (LODR 30) & announcement + PDF & \emph{not yet} \\
+Corporate actions & dividends, bonus, splits, book-closure & metadata & \emph{not yet} \\
+Ownership \& insider & insider trades (PIT~7), substantial acquisition / open offers (SAST) & metadata / PDF & \emph{not yet} \\
+Offerings, tenders \& mergers & IPO / rights offer documents (ICDR), buy-backs, schemes of arrangement & PDF & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Taxonomies}\label{sec:india-taxonomies}
+Every format tags under the same national namespace, \texttt{in-bse-fin} (\S\ref{sec:india-taxonomy}), but
+at a \emph{version} that varies by template: the general Ind-AS template binds
+\texttt{.../2020-03-31/in-bse-fin}, the banking template \texttt{.../2019-09-30/in-bse-fin}. So ``the Indian
+taxonomy'' is really a small \emph{family} of BSE-published templates that share IFRS-identical local names.
+Classification keys on the namespace --- not the version or the prefix --- so a single
+\texttt{vocab\_indas} spans them (\S\ref{sec:india-classify}); but code that resolves labels or the schema
+must use the exact version the instance declares.
+
+\subsection{Statement types by format class}\label{sec:india-statements}
+A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
+(\texttt{INDAS\_}) format it carries the \textbf{balance sheet} (\texttt{Assets},
+\texttt{EquityAndLiabilities}), the \textbf{statement of profit and loss} including \textbf{other
+comprehensive income} (\texttt{RevenueFromOperations}\,\ldots\,\texttt{ProfitLossForPeriod},
+\texttt{ComprehensiveIncomeForThePeriod}), the \textbf{cash-flow statement} (indirect method ---
+\texttt{TypeOfCashFlowStatement} $=$ \texttt{"Cash Flow Indirect"}) and \textbf{segment} reporting. It does
+\emph{not} carry a statement of changes in equity, nor the notes --- those, with the full statements, live
+in the separate annual report (Reg.~34, a PDF, out of scope). The \textbf{banking} format instead reports
+interest earned / expended, deposits and advances; the \textbf{NBFC} format, Ind-AS on the NBFC schedule.
+Every filing self-declares its shape through metadata concepts: \texttt{NatureOfReportStandaloneConsolidated},
+\texttt{ReportingQuarter}, \texttt{WhetherResultsAreAuditedOrUnaudited}, \texttt{TypeOfCashFlowStatement},
+\texttt{LevelOfRoundingUsedInFinancialStatements} (e.g.\ \texttt{"Crores"}) and
+\texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}).
 
 \subsection{Reporting periods and the column convention}\label{sec:india-periods}
 An NSE results instance has an \textbf{unreliable period structure} that \texttt{EDGAR.jl} normalises at
@@ -4768,22 +4812,7 @@ shared extractor (verified on Reliance and Infosys FY2024). \textbf{Consequence 
 annual figure by its 12-month period (the \texttt{Four} column); the quarterly figure is the 3-month
 \texttt{One} column. The Yahoo reconciliation (\S\ref{sec:india-yahoo}) uses the annual column throughout.
 
-\subsection{Statement types within a results filing}
-A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
-(\texttt{INDAS\_}) format it carries the \textbf{balance sheet} (\texttt{Assets},
-\texttt{EquityAndLiabilities}), the \textbf{statement of profit and loss} including \textbf{other
-comprehensive income} (\texttt{RevenueFromOperations}\,\ldots\,\texttt{ProfitLossForPeriod},
-\texttt{ComprehensiveIncomeForThePeriod}), the \textbf{cash-flow statement} (indirect method ---
-\texttt{TypeOfCashFlowStatement} $=$ \texttt{"Cash Flow Indirect"}) and \textbf{segment} reporting. It does
-\emph{not} carry a statement of changes in equity, nor the notes --- those, with the full statements, live
-in the separate annual report (Reg.~34, a PDF, out of scope). The banking format instead reports interest
-earned/expended, deposits and advances. Every filing self-declares its shape through metadata concepts:
-\texttt{NatureOfReportStandaloneConsolidated}, \texttt{ReportingQuarter},
-\texttt{WhetherResultsAreAuditedOrUnaudited}, \texttt{TypeOfCashFlowStatement},
-\texttt{LevelOfRoundingUsedInFinancialStatements} (e.g.\ \texttt{"Crores"}) and
-\texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}).
-
-\subsection{Statement classification: a dedicated \texttt{vocab\_indas}}
+\subsection{Statement classification: a dedicated \texttt{vocab\_indas}}\label{sec:india-classify}
 All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
 (\S\ref{sec:india-taxonomy}); because \texttt{EDGAR.jl} classifies by \emph{namespace}, not prefix, India is
 classified through a dedicated \texttt{vocab\_indas.jl} keyed on \texttt{in-bse-fin} (phase~I3) --- which
