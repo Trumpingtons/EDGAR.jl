@@ -138,15 +138,32 @@ Decision was Strategy C (dedicated vocab, NOT canonicalize). Two pieces together
   Bajaj NBFC 252/252; `select_statement` round-trips; balance sheet balances. Full suite green (no regression
   from the one-line classify_engine registry addition — in-bse-fin can't collide with other jurisdictions).
 
-### I4 — Labels + validation ☐
-- ☐ I4.1 Labels: Ind-AS instances don't bundle a label linkbase → use the standard BSE taxonomy labels
-  (English only; India files in English — `Latin`, no lang-split needed, simpler than DART's ko/en).
-  Confirm whether `_concept_labels` needs the remote BSE taxonomy or if IFRS labels suffice post-canon.
-- ☐ I4.2 Oracle: wire `_edgar_rows(:india,…)` + Yahoo `.NS`/`.BO` cross-check; map the BSE second channel
-  for the same-document cross-check.
-- ☐ I4.3 🚦 **GATE (run tests + commit):** offline fixture test + commit.
+### I4 — Labels + validation ✅ DONE
+- ✅ I4.1 Labels: India instances bundle no label linkbase → bundle the standard BSE/SEBI label linkbases
+  (English only, no lang-split). One label file per format, bundled in `src/filing_systems/india/data/`
+  and selected in lock-step with the presentation linkbase by a shared `_india_format` discriminator
+  (`_india_pre_file`/`_india_lab_file`, driving `_fetch_linkbase(::India,"lab")`). Nine files: four
+  `in-bse-fin` (general/banking/NBFC/other) + five `in-capmkt` (INDAS/banking/NBFC/LI/GI). Every fact is
+  now labelled offline for both taxonomy families (the "No native labels" warning is gone).
+- ✅ I4.2 Oracle: `_edgar_rows(:india,…)` + Yahoo `.NS` cross-check wired into `src/sources/yahoo_oracle.jl`
+  (India metric concepts for both taxonomies; the metric selector generalised from a `sec` bool to a
+  system symbol). Panel result: **Assets / Equity / NetIncome / OperCashFlow match Yahoo exactly (Δ0.000%)**
+  across TCS, Maruti, Reliance; **Revenue** shows the one documented ~1.6–1.75 % excise/GST definitional gap
+  (`RevenueFromOperations` vs Yahoo net revenue — expected, see the india-nse-xbrl-quirks memo). Dual-listed
+  ADR names (Infosys) are avoided — Yahoo serves their fundamentals in USD, not INR. (BSE `.BO` second-channel
+  cross-check remains a future nicety; the `.NS` check covers the validation intent.)
+- ✅ I4.3 GATE met: offline label testset (I4, 9 assertions) added; all India testsets green
+  (I1 15 · I2 11 · I3 13 · I5 30 · I4 9). Committed.
 
-## Roadmap — the Integrated Filing / `in-capmkt` seam (insurers, REITs/InvITs) — a FUTURE phase
+### I5 — Integrated Filing seam + `in-capmkt` classification ✅ DONE
+The roadmap item below, now BUILT (and larger than first scoped — the Integrated Filing carries ALL
+sectors on `in-capmkt`, not only insurers). `IntegratedFilings <: FilingSource` over
+`/api/integrated-filing-results`; `vocab_incapmkt.jl` + five bundled `in-capmkt` presentation linkbases
+(INDAS/Banking/NBFC/LI/GI); entity via SEBI ScripCode; namespace-agnostic period handling (in-capmkt dates
+are already correct). Verified live across sectors (TCS/INDAS, SBI Life & HDFC Life/LI, ICICI Lombard/GI).
+**REITs/InvITs** remain open — a third `in-capmkt` format whose live feed endpoint was not located.
+
+## Roadmap — the Integrated Filing / `in-capmkt` seam (insurers, REITs/InvITs) — ✅ IMPLEMENTED as I5 (REITs open)
 
 Investigated 2026-07 (in response to "do insurers/REITs use `NBFC_INDAS_`?" — they do NOT). The adapter's
 current seam (`corporates-financial-results` + the `in-bse-fin` taxonomy, phases I0–I3) covers the general

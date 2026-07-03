@@ -234,33 +234,54 @@ const _INDIA_DATA_DIR = joinpath(@__DIR__, "data")
 # Two taxonomy families, routed by the filename prefix (both preserved in `f.document` by discovery):
 #   • `INTEGRATED_FILING_…` — SEBI's CURRENT Integrated Filing framework, on the `in-capmkt` taxonomy
 #     (`vocab_incapmkt`). One combined taxonomy covers every sector, so each `INTEGRATED_FILING_{INDAS,
-#     BANKING,NBFC_INDAS,LI,GI}_…` prefix selects its own `in-capmkt` presentation linkbase — including
-#     the insurers (Life/General), which the old `in-bse-fin` feed never carried.
+#     BANKING,NBFC_INDAS,LI,GI}_…` prefix selects its own `in-capmkt` linkbases — including the insurers
+#     (Life/General), which the old `in-bse-fin` feed never carried.
 #   • everything else — the frozen `in-bse-fin` results feed (`vocab_indas`), routed as before.
-function _india_pre_file(f::Filing)
+#
+# Both the presentation (`_india_pre_file`) and label (`_india_lab_file`) linkbases key off ONE format
+# discriminator (`_india_format`), so the two stay in lock-step: every format resolves to a matching
+# `pre`/`label` pair bundled in `data/`.
+function _india_format(f::Filing)
     doc = uppercase(f.document)
-    if startswith(doc, "INTEGRATED_FILING")                                   # in-capmkt (Integrated Filing)
-        occursin("BANKING", doc)                       && return "in-capmkt-pre-banking-2025-01-31.xml"
-        occursin("NBFC", doc)                          && return "in-capmkt-pre-nbfc-2025-01-31.xml"
-        (occursin("_LI_", doc) || occursin("_LI", doc)) && return "in-capmkt-pre-li-2025-01-31.xml"  # Life insurance
-        occursin("_GI", doc)                           && return "in-capmkt-pre-gi-2025-01-31.xml"    # General insurance
-        return "in-capmkt-pre-indas-2025-01-31.xml"                           # general Ind-AS (default)
+    if startswith(doc, "INTEGRATED_FILING")               # in-capmkt (Integrated Filing) — by sector prefix
+        occursin("BANKING", doc) && return :cap_banking
+        occursin("NBFC", doc)    && return :cap_nbfc
+        occursin("_LI", doc)     && return :cap_li         # Life insurance
+        occursin("_GI", doc)     && return :cap_gi         # General insurance
+        return :cap_indas                                  # general Ind-AS (default)
     end
-    startswith(doc, "BANKING") && return "in-bse-fin-pre-2019-09-30.xml"       # banks
-    startswith(doc, "NBFC")    && return "in-bse-fin-pre-nbfc-2020-03-31.xml"  # NBFCs
-    startswith(doc, "INDAS")   && return "in-bse-fin-pre-2020-03-31.xml"       # general Ind-AS
+    startswith(doc, "BANKING") && return :bse_banking
+    startswith(doc, "NBFC")    && return :bse_nbfc
+    startswith(doc, "INDAS")   && return :bse_indas
     m = match(r"(?is)schemaRef\b[^>]*\bhref=\"([^\"]+)\"", f.content)          # offline fallback (entry point)
     ep = m === nothing ? "" : lowercase(m.captures[1])
-    occursin("other_than_banks", ep) && return "in-bse-fin-pre-other-2019-09-30.xml"  # other-than-banks (non-Ind-AS)
-    occursin("banking", ep)          && return "in-bse-fin-pre-2019-09-30.xml"
-    return "in-bse-fin-pre-2020-03-31.xml"                                     # default: general Ind-AS
+    occursin("other_than_banks", ep) && return :bse_other
+    occursin("banking", ep)          && return :bse_banking
+    return :bse_indas                                                         # default: general Ind-AS
 end
 
-# India method of the per-system linkbase fetcher (core/extract_xbrl.jl). Returns the bundled BSE
-# presentation linkbase for the filing's format; "" for other suffixes (the label linkbase — human-readable
-# labels — is I4). Classification (`statement_map_multi`) parses this to place every fact.
+# format => (presentation linkbase, label linkbase) — the bundled `data/` file pair for each format.
+const _INDIA_LINKBASES = Dict(
+    :cap_indas   => ("in-capmkt-pre-indas-2025-01-31.xml",   "in-capmkt-lab-indas-2025-01-31.xml"),
+    :cap_banking => ("in-capmkt-pre-banking-2025-01-31.xml", "in-capmkt-lab-banking-2025-01-31.xml"),
+    :cap_nbfc    => ("in-capmkt-pre-nbfc-2025-01-31.xml",    "in-capmkt-lab-nbfc-2025-01-31.xml"),
+    :cap_li      => ("in-capmkt-pre-li-2025-01-31.xml",      "in-capmkt-lab-li-2025-01-31.xml"),
+    :cap_gi      => ("in-capmkt-pre-gi-2025-01-31.xml",      "in-capmkt-lab-gi-2025-01-31.xml"),
+    :bse_indas   => ("in-bse-fin-pre-2020-03-31.xml",        "in-bse-fin-label-2020-03-31.xml"),
+    :bse_banking => ("in-bse-fin-pre-2019-09-30.xml",        "in-bse-fin-label-2019-09-30.xml"),
+    :bse_nbfc    => ("in-bse-fin-pre-nbfc-2020-03-31.xml",   "in-bse-fin-label-nbfc-2020-03-31.xml"),
+    :bse_other   => ("in-bse-fin-pre-other-2019-09-30.xml",  "in-bse-fin-label-other-2019-09-30.xml"),
+)
+
+_india_pre_file(f::Filing) = _INDIA_LINKBASES[_india_format(f)][1]
+_india_lab_file(f::Filing) = _INDIA_LINKBASES[_india_format(f)][2]
+
+# India method of the per-system linkbase fetcher (core/extract_xbrl.jl). Returns the bundled BSE/SEBI
+# presentation linkbase (`classify`) or label linkbase (`labels`) for the filing's format; "" otherwise.
+# Labels are English-only (India files in English) — no `lang` split, unlike EDINET/DART.
 function _fetch_linkbase(::India, f::Filing, suffix::AbstractString; lang=nothing)
-    suffix == "pre" || return ""
-    path = joinpath(_INDIA_DATA_DIR, _india_pre_file(f))
+    file = suffix == "pre" ? _india_pre_file(f) : suffix == "lab" ? _india_lab_file(f) : ""
+    isempty(file) && return ""
+    path = joinpath(_INDIA_DATA_DIR, file)
     isfile(path) ? read(path, String) : ""
 end

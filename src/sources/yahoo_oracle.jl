@@ -36,26 +36,39 @@ struct Metric
     name::String
     usgaap::Vector{String}
     ifrs::Vector{String}
+    india::Vector{String}     # India: in-capmkt (Integrated Filing) then in-bse-fin (old feed) — same local names
     yahoo::Vector{String}
     statement::Symbol
 end
 
 _instant(m::Metric) = m.statement === :bs    # balance-sheet items are point-in-time
 
+# India note (see the india-nse-xbrl-quirks memo / manual §13.5): net income is the OWNERS-OF-PARENT
+# figure Yahoo reports (not ProfitLossForPeriod, which includes minority interest); revenue is
+# RevenueFromOperations (which for some filers carries a small excise/GST definitional gap vs Yahoo —
+# an approximate check, hence the 1% tolerance may flag those). Concepts are listed for BOTH India
+# taxonomies (in-capmkt current, in-bse-fin old); the same-local-name pairs are tried in order.
 const METRICS = [
-    Metric("Assets",     ["us-gaap:Assets"], ["ifrs-full:Assets"], ["TotalAssets"], :bs),
+    Metric("Assets",     ["us-gaap:Assets"], ["ifrs-full:Assets"],
+                         ["in-capmkt:Assets", "in-bse-fin:Assets"], ["TotalAssets"], :bs),
     Metric("Equity",     ["us-gaap:StockholdersEquity", "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
                          ["ifrs-full:EquityAttributableToOwnersOfParent", "ifrs-full:Equity"],
+                         ["in-capmkt:EquityAttributableToOwnersOfParent", "in-capmkt:Equity",
+                          "in-bse-fin:EquityAttributableToOwnersOfParent", "in-bse-fin:Equity"],
                          ["StockholdersEquity", "TotalEquityGrossMinorityInterest", "CommonStockEquity"], :bs),
     Metric("Revenue",    ["us-gaap:Revenues", "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"],
                          ["ifrs-full:Revenue", "ifrs-full:RevenueFromContractsWithCustomers"],
+                         ["in-capmkt:RevenueFromOperations", "in-bse-fin:RevenueFromOperations"],
                          ["TotalRevenue", "OperatingRevenue"], :is),
     Metric("NetIncome",  ["us-gaap:NetIncomeLoss"],
                          ["ifrs-full:ProfitLossAttributableToOwnersOfParent", "ifrs-full:ProfitLoss"],
+                         ["in-capmkt:ProfitOrLossAttributableToOwnersOfParent", "in-capmkt:ProfitLossForPeriod",
+                          "in-bse-fin:ProfitOrLossAttributableToOwnersOfParent", "in-bse-fin:ProfitLossForPeriod"],
                          ["NetIncome", "NetIncomeCommonStockholders"], :is),
     Metric("OperCashFlow", ["us-gaap:NetCashProvidedByUsedInOperatingActivities",
                             "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
                          ["ifrs-full:CashFlowsFromUsedInOperatingActivities"],
+                         ["in-capmkt:CashFlowsFromUsedInOperatingActivities", "in-bse-fin:CashFlowsFromUsedInOperatingActivities"],
                          ["OperatingCashFlow", "CashFlowFromContinuingOperatingActivities"], :cf),
 ]
 
@@ -81,16 +94,28 @@ function _edgar_rows(system::Symbol, locator::AbstractString)
         # separate-company facts — so the shared consolidated/undimensioned metric picker finds them.
         isface(d) = isempty(d) || d == "{}" || (occursin("ConsolidatedMember", d) && !occursin(",", d))
         return [merge(r, (dimensions = "{}",)) for r in rows if isface(r.dimensions)]
+    elseif system === :india
+        # `locator` is the NSE ticker. Prefer the CURRENT Integrated Filing (in-capmkt); its annual column
+        # is the >300-day duration the metric picker selects. Fall back to the frozen results feed (in-bse-fin).
+        hs = try discover(IntegratedFilings(); symbol = locator, consolidated = true) catch; FilingHandle[] end
+        isempty(hs) && (hs = try discover(NSEFilings(); symbol = locator, consolidated = true) catch; FilingHandle[] end)
+        isempty(hs) && return nothing
+        return EDGAR.facts(fetch_filing(first(hs)); classify = true)
     end
     return nothing                       # :edinet not implemented yet
 end
 
+# The metric's candidate concepts for a system's taxonomy (SEC → us-gaap, India → in-capmkt/in-bse-fin,
+# everything else → IFRS, the ESEF/most-jurisdictions default).
+_metric_concepts(m::Metric, system::Symbol) =
+    system === :sec ? m.usgaap : system === :india ? m.india : m.ifrs
+
 # EDGAR.jl's (value, period_end) for a metric: consolidated (undimensioned), annual, most-recent.
 # Candidates are tried in order, so the first listed concept wins when a filing tags several (e.g. IFRS
 # net income prefers profit attributable to owners of parent — what Yahoo reports — over total profit).
-function _edgar_metric(rows, m::Metric, sec::Bool)
+function _edgar_metric(rows, m::Metric, system::Symbol)
     nodim(r) = r.dimensions == "{}" || isempty(r.dimensions)
-    for c in (sec ? m.usgaap : m.ifrs)
+    for c in _metric_concepts(m, system)
         cand = [r for r in rows if r.concept == c && nodim(r) && r.is_instant == _instant(m)]
         _instant(m) || (cand = [r for r in cand if r.period_start !== nothing && (r.period_end - r.period_start) > Day(300)])
         isempty(cand) && continue
@@ -120,10 +145,11 @@ const TOL = 0.01   # 1% (Yahoo rounds / standardizes)
     validate(system::Symbol, locator, ticker) -> Vector{Row}
 
 Validate EDGAR.jl's extraction against Yahoo Finance for one filer, across the three statements.
-`system` is `:sec` or `:esef`, `locator` is the CIK (SEC) or LEI (ESEF), and `ticker` is the Yahoo
-symbol (e.g. `"AAPL"`, `"CTY1S.HE"`) — needed because a filing knows only the CIK/LEI, not the
-exchange symbol. Returns one [`Row`](@ref) per metric (tagged `:bs`/`:is`/`:cf`): EDGAR's value,
-Yahoo's, the `rel_diff`, and whether they `match` within 1%.
+`system` is `:sec`, `:esef`, `:dart`, or `:india`; `locator` is the CIK (SEC), LEI (ESEF), corp/stock
+code (DART), or NSE ticker (India); and `ticker` is the Yahoo symbol (e.g. `"AAPL"`, `"CTY1S.HE"`,
+`"TCS.NS"`) — needed because a filing knows only its own identifier, not the exchange symbol. Returns
+one [`Row`](@ref) per metric (tagged `:bs`/`:is`/`:cf`): EDGAR's value, Yahoo's, the `rel_diff`, and
+whether they `match` within 1%.
 """
 function validate(system::Symbol, locator::AbstractString, ticker::AbstractString)
     rows = Row[]
@@ -133,7 +159,7 @@ function validate(system::Symbol, locator::AbstractString, ticker::AbstractStrin
              is = _yahoo_fund(ticker, "income_statement"),
              cf = _yahoo_fund(ticker, "cash_flow"))
     for m in METRICS
-        e = _edgar_metric(edgar, m, system === :sec)
+        e = _edgar_metric(edgar, m, system)
         if e === nothing
             push!(rows, (statement = m.statement, metric = m.name, period_end = nothing,
                          edgar = nothing, yahoo = nothing, rel_diff = Inf, match = false)); continue
@@ -152,6 +178,12 @@ const FIRMS = [
     ("Microsoft Corp.", :sec,  "789019",               "MSFT",     "US"),
     ("Citycon Oyj",     :esef, "549300P8N0P6KDGTJ206", "CTY1S.HE", "EU"),
     ("Nokia Oyj",       :esef, "549300A0JPRWG1KI7U06", "NOKIA.HE", "EU"),
+    # India — NSE ticker as locator, Yahoo `.NS` symbol. General (Ind-AS) filers so Revenue/NetIncome map
+    # cleanly (insurers' premium accounts have no single Yahoo-comparable revenue line).
+    # (avoid dual-listed ADR names like Infosys — Yahoo serves their fundamentals in USD, not INR.)
+    ("Tata Consultancy", :india, "TCS",      "TCS.NS",      "IN"),
+    ("Maruti Suzuki",    :india, "MARUTI",   "MARUTI.NS",   "IN"),
+    ("Reliance Inds.",   :india, "RELIANCE", "RELIANCE.NS", "IN"),
 ]
 
 const _STMT_LABEL = Dict(:bs => "BalanceSheet", :is => "IncomeStatement", :cf => "CashFlow")

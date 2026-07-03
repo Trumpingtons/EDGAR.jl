@@ -1373,6 +1373,33 @@ end
     @test pre("BANKING_1_2.xml") == "in-bse-fin-pre-2019-09-30.xml"
 end
 
+@testset "India: native labels from bundled linkbases (I4, offline)" begin
+    # I4.1: India instances carry NO label linkbase, so `label` comes from the bundled BSE/SEBI label
+    # linkbase — one per format, selected by `_india_lab_file` in lock-step with the presentation linkbase.
+    # Every fact gets a human label offline, for BOTH taxonomy families. (I4.2's Yahoo oracle is a
+    # standalone network tool, not part of the suite.)
+
+    # in-capmkt (Integrated Filing, Life Insurance) — the SEBI label linkbase.
+    fi = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "INTEGRATED_FILING_LI_sbilife-fy2026.xml"))
+    @test EDGAR._india_lab_file(fi) == "in-capmkt-lab-li-2025-01-31.xml"
+    ri = facts(fi; classify = true, labels = true)
+    @test all(r -> !isempty(r.label), ri)                              # every fact labelled
+    lab(rows, c) = (i = findfirst(r -> r.concept == c, rows); i === nothing ? "" : rows[i].label)
+    @test lab(ri, "in-capmkt:GrossPremiumIncome") == "Gross premium income"
+    @test occursin("surplus", lowercase(lab(ri, "in-capmkt:NetSurplusDeficit")))  # "(deficit)" wording from the linkbase
+
+    # in-bse-fin (old results feed) — the BSE label linkbase; a different format routes to a different file.
+    fb = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "reliance-fy2024.xml"))
+    @test EDGAR._india_lab_file(fb) == "in-bse-fin-label-2020-03-31.xml"
+    rb = facts(fb; classify = true, labels = true)
+    @test all(r -> !isempty(r.label), rb)
+    @test lab(rb, "in-bse-fin:RevenueFromOperations") == "Revenue from operations"
+    # the NBFC format selects its OWN label linkbase (pairs with its own presentation linkbase).
+    fn = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "nbfc-bajaj-fy2024.xml"))
+    @test EDGAR._india_lab_file(fn) == "in-bse-fin-label-nbfc-2020-03-31.xml"
+    @test all(r -> !isempty(r.label), facts(fn; labels = true))
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →
