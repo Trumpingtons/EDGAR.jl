@@ -4789,28 +4789,22 @@ Every filing self-declares its shape through metadata concepts: \texttt{NatureOf
 \texttt{LevelOfRoundingUsedInFinancialStatements} (e.g.\ \texttt{"Crores"}) and
 \texttt{DescriptionOfPresentationCurrency} (e.g.\ \texttt{"INR"}).
 
-\subsection{Reporting periods and the column convention}\label{sec:india-periods}
-An NSE results instance has an \textbf{unreliable period structure} that \texttt{EDGAR.jl} normalises at
-fetch time. NSE stamps \emph{every} duration context with the \emph{same} quarter-end dates: in Reliance's
-FY2024 filing both the current-quarter context (\texttt{OneD}) and the year-to-date context (\texttt{FourD})
-declare \texttt{2024-01-01}$\to$\texttt{2024-03-31}, even though \texttt{FourD} is the full 12-month year.
-The actual reporting \emph{column} is carried not in the dates but in the \textbf{context-id prefix}:
-\texttt{One} = current quarter (3 months), \texttt{Four} = year-to-date / full year (12 months), with
-\texttt{Two}/\texttt{Three}/\texttt{Five}\ldots{} the comparative columns. A na\"ive reader of
-\texttt{<xbrli:period>} therefore \emph{cannot} tell a quarterly figure from an annual one.
+\subsection{Reporting periods --- normalised to the standard interface}\label{sec:india-periods}
+This subsection documents an \emph{internal} adapter step; it changes nothing about how an Indian filing is
+used. NSE's raw XBRL carries \textbf{unreliable} period dates --- every duration context is stamped with the
+same quarter-end dates, so on the face of it a 12-month annual figure and a 3-month quarterly figure are
+indistinguishable. The correct period is, however, present as explicit
+\texttt{in-bse-fin:DateOf\{Start,End\}OfReportingPeriod} facts inside each context, so
+\texttt{fetch\_filing(India(),\ \ldots)} rewrites every context's period to those authoritative dates at
+fetch time --- the same fetch-time normalisation as the Companies House namespace canonicalisation
+(\S\ref{sys:companieshouse}), and equally invisible to the caller.
 
-The true period is nonetheless present, as \textbf{explicit facts inside each context}:
-\texttt{in-bse-fin:DateOfStartOfReportingPeriod} / \texttt{DateOfEndOfReportingPeriod} (and
-\texttt{DateOf\{Start,End\}OfFinancialYear}). So \texttt{FourD} carries \texttt{DateOfStartOfReportingPeriod
-= 2023-04-01} (the financial-year start) while \texttt{OneD} carries \texttt{2024-01-01} (the quarter start)
---- the distinction the \texttt{<xbrli:period>} dates lose. \texttt{fetch\_filing(India(),\ \ldots)}
-therefore \textbf{rewrites each duration context's period to the authoritative dates its own
-\texttt{DateOf\ldots ReportingPeriod} facts declare}, before the shared extractor runs --- the same
-fetch-time content-rewrite pattern as the Companies House namespace canonicalisation (\S\ref{sys:companieshouse}).
-The result: \texttt{facts(f)} reports the correct 3-month vs 12-month period per fact, with no change to the
-shared extractor (verified on Reliance and Infosys FY2024). \textbf{Consequence for analysis:} select the
-annual figure by its 12-month period (the \texttt{Four} column); the quarterly figure is the 3-month
-\texttt{One} column. The Yahoo reconciliation (\S\ref{sec:india-yahoo}) uses the annual column throughout.
+The result is the point: \texttt{facts(f)} carries \textbf{standard 3-month and 12-month periods}, so
+\textbf{an Indian filing is worked exactly like an SEC, ESEF or DART one} --- the annual figure is simply
+the 12-month fact and the quarter the 3-month fact, selected by their period as anywhere else. A user never
+sees, and never has to reason about, the NSE period encoding (verified on Reliance and Infosys FY2024). The
+Yahoo reconciliation (\S\ref{sec:india-yahoo}) accordingly works with the ordinary annual (12-month)
+figures.
 
 \subsection{Statement classification: a dedicated \texttt{vocab\_indas}}\label{sec:india-classify}
 All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
