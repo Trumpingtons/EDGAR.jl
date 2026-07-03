@@ -4693,6 +4693,15 @@ therefore classifies India through a \textbf{dedicated \texttt{vocab\_indas.jl}}
 set re-keyed under \texttt{in-bse-fin}, plus the genuinely India-specific extensions. (This is phase~I3; the
 offline parse and raw \texttt{facts} already work without it.)
 
+\medskip\noindent \textbf{Two national namespaces, one pattern.} The Reliance example above is
+\texttt{in-bse-fin} (the old \texttt{corporates-financial-results} feed). SEBI's current \textbf{Integrated
+Filing} framework re-namespaces the \emph{same} IFRS-derived concepts once more, under \texttt{in-capmkt}
+(\texttt{www.sebi.gov.in/xbrl/2025-01-31/in-capmkt}) --- so India has \emph{two} national taxonomy families,
+not one. \texttt{EDGAR.jl} classifies each by its namespace: \texttt{vocab\_indas} for \texttt{in-bse-fin},
+a parallel \texttt{vocab\_incapmkt} for \texttt{in-capmkt} (which also anchors the insurers' premium-based
+revenue accounts). The per-sector templates of both families are Table~\ref{tab:india-formats}
+(\S\ref{sec:india-formats}).
+
 \section{Entities covered}\label{sec:india-entities}
 
 Unlike EDINET or DART --- one regulator, one inclusion rule --- ``which companies can I reach?'' has a
@@ -4835,48 +4844,63 @@ its own; they do not map onto another jurisdiction's shapes.
 \begin{table}[h]
 \centering
 \small
-\caption{The three SEBI \texttt{in-bse-fin} results formats \texttt{EDGAR.jl} classifies --- each a distinct
-XBRL template, keyed by the instance filename prefix. ``Verified'' = confirmed against a real filing;
-``linkbase bundled'' = its presentation linkbase ships with \texttt{EDGAR.jl} for full statement
-classification.}
+\caption{The SEBI results formats \texttt{EDGAR.jl} classifies, across the \emph{two} India taxonomy
+families --- each a distinct XBRL template, keyed by the instance filename prefix. ``bundled'' = the
+format's presentation, label \emph{and} calculation linkbases ship with \texttt{EDGAR.jl} for full offline
+classification, labels and roll-up checks; ``verified'' = confirmed against a real filing.}
 \label{tab:india-formats}
-\begin{tabular}{@{}p{0.17\textwidth}p{0.22\textwidth}p{0.27\textwidth}p{0.17\textwidth}@{}}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.18\textwidth}p{0.28\textwidth}p{0.13\textwidth}@{}}
 \toprule
 \textbf{Template (prefix)} & \textbf{Company class} & \textbf{Characteristic top-line concepts} & \textbf{Status} \\
 \midrule
-\texttt{INDAS\_} & General --- manufacturing, services (Ind-AS) & \texttt{RevenueFromOperations}; Ind-AS P\&L, BS, cash-flow, segment & verified; linkbase bundled \\
-\texttt{BANKING\_} & Banks & \texttt{InterestEarned} / \texttt{InterestExpended}; \texttt{Deposits}, \texttt{Advances} & verified; linkbase bundled \\
-\texttt{NBFC\_INDAS\_} & Non-banking financial companies & Ind-AS on the NBFC schedule & verified; linkbase bundled \\
+\multicolumn{4}{@{}l}{\textbf{\texttt{in-bse-fin}} --- the \texttt{corporates-financial-results} feed (\texttt{NSEFilings}), frozen $\sim$FY2024} \\
+\midrule
+\texttt{INDAS\_} & General (Ind-AS) & \texttt{RevenueFromOperations}; Ind-AS P\&L, BS, cash-flow, segment & verified; bundled \\
+\texttt{BANKING\_} & Banks & \texttt{InterestEarned} / \texttt{InterestExpended}; \texttt{Deposits}, \texttt{Advances} & verified; bundled \\
+\texttt{NBFC\_INDAS\_} & Non-banking financial companies & Ind-AS on the NBFC schedule & verified; bundled \\
+\texttt{(schemaRef-routed)} & Other than Banks (legacy) & pre-Ind-AS results shape & bundled; unvalidated \\
+\midrule
+\multicolumn{4}{@{}l}{\textbf{\texttt{in-capmkt}} --- SEBI \textbf{Integrated Filing} (\texttt{IntegratedFilings}), the current framework, all sectors} \\
+\midrule
+\texttt{INTEGRATED\_FILING\_INDAS\_} & General (Ind-AS) & \texttt{RevenueFromOperations} & verified; bundled \\
+\texttt{INTEGRATED\_FILING\_BANKING\_} & Banks & \texttt{InterestEarned}, \texttt{Deposits}, \texttt{Advances} & bundled \\
+\texttt{INTEGRATED\_FILING\_NBFC\_INDAS\_} & NBFCs & Ind-AS on the NBFC schedule & bundled \\
+\texttt{INTEGRATED\_FILING\_LI\_} & Life insurers & \texttt{GrossPremiumIncome}, \texttt{NetSurplusDeficit} & verified; bundled \\
+\texttt{INTEGRATED\_FILING\_GI\_} & General insurers & \texttt{GrossPremiumsWritten}, \texttt{UnderwritingProfitOrLoss} & verified; bundled \\
+\texttt{INTEGRATED\_FILING\_RESULTIR\_} & REITs / InvITs & \texttt{RevenueFromOperations}, \texttt{NetDistributableCashFlows} & verified; bundled \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent A fourth \texttt{in-bse-fin} format, \textbf{``Other than Banks''} (the legacy pre-Ind-AS results
-format), shares the taxonomy family; its presentation linkbase is bundled and routed by the \texttt{schemaRef}
-entry point, but no live filer has been observed to confirm a prefix or validate it --- most companies are on
-Ind-AS, so the format is likely dormant.
-
-\paragraph{Insurers and REITs --- a separate \texttt{in-capmkt} XBRL seam.} General and life insurers and
-REITs/InvITs do \emph{not} appear in the \texttt{corporates-financial-results} feed this adapter uses (it
-returns nothing for all fourteen probed --- seven insurers, seven REITs/InvITs, across index and period
-variants, with symbols confirmed against NSE's \texttt{REITS\_L}/\texttt{INVITS\_L} master lists). They file
-under a \emph{different} taxonomy, \textbf{\texttt{in-capmkt}} (not \texttt{in-bse-fin}), so
-\texttt{vocab\_indas} does not apply. Insurers file it \emph{as XBRL} through SEBI's newer \textbf{Integrated
-Filing} framework, served on a \emph{separate} NSE endpoint (\texttt{integrated-filing-results}): an
-SBI~Life instance, for instance, is an \texttt{INTEGRATED\_FILING\_LI} XBRL (plus iXBRL) on
-\texttt{in-capmkt}. REITs/InvITs likewise file on \texttt{in-capmkt}, through a dedicated REIT/InvIT feed
-(endpoint not yet located). Either way these are a \textbf{separate XBRL seam} --- a second discovery source
-plus an \texttt{in-capmkt} vocabulary --- \emph{not yet handled}, and distinctly \emph{not} the
-\texttt{NBFC\_INDAS\_} / \texttt{in-bse-fin} formats above; no \texttt{in-capmkt} linkbase is bundled here.
+\paragraph{Insurers and REITs --- the \texttt{in-capmkt} Integrated Filing seam (handled).} The
+\texttt{corporates-financial-results} feed above is the \emph{old} channel, frozen at $\sim$FY2024; SEBI's
+current \textbf{Integrated Filing} framework serves \emph{every} sector on a \emph{different} taxonomy,
+\textbf{\texttt{in-capmkt}} (\texttt{www.sebi.gov.in/xbrl/2025-01-31/in-capmkt}) --- including insurers and
+REITs/InvITs, which the old feed never carried. \texttt{EDGAR.jl} handles it as a second discovery source,
+\texttt{IntegratedFilings} (\S\ref{sec:india-retrieve}), over the \texttt{integrated-filing-results}
+endpoint, with a dedicated \texttt{vocab\_incapmkt} and bundled \texttt{in-capmkt} presentation/label/
+calculation linkbases (one per sector). Life (\texttt{INTEGRATED\_FILING\_LI\_}) and general
+(\texttt{INTEGRATED\_FILING\_GI\_}) insurers report a premium-driven revenue account
+(\texttt{GrossPremiumIncome} / \texttt{GrossPremiumsWritten}) with no \texttt{in-bse-fin} equivalent, verified
+against SBI~Life, HDFC~Life and ICICI~Lombard. \textbf{REITs/InvITs} are the one sector that stayed on the
+\emph{old} \texttt{corporates-financial-results} endpoint --- reached with \texttt{index=reitsinvits} (not the
+integrated-filing endpoint, which returns nothing for them) --- but file the Integrated Filing taxonomy all
+the same, as \texttt{INTEGRATED\_FILING\_RESULTIR\_} XBRL on \texttt{in-capmkt} \emph{2026-01-31}; verified
+against Embassy~REIT and IndiGrid~InvIT. Their P\&L uses the general Ind-AS concepts
+(\texttt{RevenueFromOperations}), so \texttt{vocab\_incapmkt} already anchors it, with
+\texttt{NetDistributableCashFlows} landing in the cash-flow statement.
 
 \subsection{Taxonomies}\label{sec:india-taxonomies}
-Every format tags under the same national namespace, \texttt{in-bse-fin} (\S\ref{sec:india-taxonomy}), but
-at a \emph{version} that varies by template: the general Ind-AS template binds
-\texttt{.../2020-03-31/in-bse-fin}, the banking template \texttt{.../2019-09-30/in-bse-fin}. So ``the Indian
-taxonomy'' is really a small \emph{family} of BSE-published templates that share IFRS-identical local names.
-Classification keys on the namespace --- not the version or the prefix --- so a single
-\texttt{vocab\_indas} spans them (\S\ref{sec:india-classify}); but code that resolves labels or the schema
-must use the exact version the instance declares.
+Each family's formats share a national namespace but at a \emph{version} that varies by template. Within
+\texttt{in-bse-fin} the general Ind-AS template binds \texttt{.../2020-03-31/in-bse-fin}, the banking
+template \texttt{.../2019-09-30/in-bse-fin}; within \texttt{in-capmkt} the sector templates bind
+\texttt{.../2025-01-31/in-capmkt} (REITs/InvITs, \texttt{.../2026-01-31/in-capmkt}). So ``the Indian
+taxonomy'' is really \emph{two} small families of BSE/SEBI-published templates, each sharing IFRS-identical
+local names. Classification keys on the namespace --- not the version or the prefix --- so one
+\texttt{vocab\_indas} spans every \texttt{in-bse-fin} format and one \texttt{vocab\_incapmkt} spans every
+\texttt{in-capmkt} format (\S\ref{sec:india-classify}); but code that resolves labels or the calculation
+linkbase must use the exact version \emph{and} sector the instance declares (the linkbases are bundled
+per-format, routed by the filename prefix).
 
 \subsection{Statement types and classification}\label{sec:india-statements}\label{sec:india-classify}
 A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
@@ -4896,16 +4920,17 @@ both the current-quarter and the full-year figures, so \texttt{facts(f)} returns
 12-month fact for each flow concept (just as an SEC 10-Q carries the quarter and the year-to-date); select
 the one you want by its period, exactly as in any other jurisdiction.
 
-\medskip\noindent All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
-(\S\ref{sec:india-taxonomy}); because \texttt{EDGAR.jl} classifies by \emph{namespace}, not prefix, India is
-classified through a dedicated \texttt{vocab\_indas.jl} keyed on \texttt{in-bse-fin} --- the inverse of DART,
-which needed no vocabulary at all (\S\ref{sec:dart-kifrs}). The vocabulary supplies the key-anchor concepts
-per format (the general Ind-AS lines \emph{and} the banking interest-based lines); for the \emph{full}
-statement --- every line item, not just the anchors --- \texttt{EDGAR.jl} bundles the BSE Financial Results
-\textbf{presentation linkbase} (selected by the instance's \texttt{schemaRef} version, Ind-AS \texttt{2020-03-31}
-or banking \texttt{2019-09-30}), since NSE instances carry none and BSE does not host it resolvably. Together
-they place the whole balance sheet, income statement and cash-flow statement (verified: Reliance 243 of 294
-facts classified, the rest being segment/dimensional). Two Ind-AS
+\medskip\noindent Every format tags under a national namespace with IFRS-identical local names ---
+\texttt{in-bse-fin} for the old feed, \texttt{in-capmkt} for Integrated Filing (\S\ref{sec:india-taxonomy}).
+Because \texttt{EDGAR.jl} classifies by \emph{namespace}, not prefix, India is classified through two
+dedicated national vocabularies --- \texttt{vocab\_indas.jl} keyed on \texttt{in-bse-fin} and
+\texttt{vocab\_incapmkt.jl} keyed on \texttt{in-capmkt} --- the inverse of DART, which needed no vocabulary
+at all (\S\ref{sec:dart-kifrs}). Each supplies the key-anchor concepts per format (the general Ind-AS lines,
+the banking interest-based lines \emph{and} the insurers' premium lines); for the \emph{full} statement ---
+every line item, not just the anchors --- \texttt{EDGAR.jl} bundles the BSE/SEBI \textbf{presentation
+linkbase} (one per format, selected by the filename prefix), since the instances carry none and neither BSE
+nor SEBI hosts them resolvably. Together they place the whole balance sheet, income statement and cash-flow
+statement (verified: Reliance 243 of 294 facts classified, the rest being segment/dimensional). Two Ind-AS
 presentation choices in the \emph{general}-format income statement --- revenue reported \emph{gross of
 excise duty}, and a broad \emph{finance-costs} bucket --- are where our figures legitimately differ from
 third-party sources; \S\ref{sec:india-yahoo} is the reconciliation map (for the general format; banks reconcile on
