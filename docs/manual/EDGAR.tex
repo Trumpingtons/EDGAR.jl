@@ -2115,13 +2115,20 @@ bad = filter(r -> !r.consistent, check_calculations(f))   # empty ⇒ every roll
 \end{lstlisting}
 
 \noindent It works for every jurisdiction whose taxonomy publishes a calculation linkbase ---
-\textbf{SEC, ESEF, India, EDINET and DART}. \textbf{Companies House is the exception:} the FRC's UK
-taxonomy (FRS~101/102/105) defines \emph{no calculation linkbase} at all --- its discoverable
-taxonomy set carries only presentation, definition, label and reference linkbases. There are
-therefore no roll-up relationships to check, and \texttt{check\_calculations} returns an empty table
-for a UK filing --- correctly, as a faithful reflection of the source, not an unfilled gap. A UK
-filing's arithmetic consistency instead rests on the balance-sheet identity (net assets equal total
-equity), which the accounts satisfy directly.
+\textbf{SEC, ESEF, India, EDINET and DART}. \textbf{Companies House is the exception, by the FRC's
+deliberate design.} The FRC's UK taxonomies (FRS~101/102/105) carry \emph{no calculation linkbase} at
+all --- only presentation, definition (dimensions, hypercubes), label and reference linkbases. This is
+an explicit architectural choice, stated in the FRC's \emph{Accounts Taxonomies Design} document
+(\S11, ``Summation and checking of tagging''): ``The taxonomies do not include XBRL calculation
+linkbases.'' The FRC's rationale is that calculation linkbases can express only simple arithmetic
+summations --- they cannot represent aggregations \emph{across dimensions and contexts}, nor the
+\emph{alternative summation pathways} real accounts take --- so ``proper formulae are the only
+effective means of representing a broad range of calculations in accounts.'' In their place the FRC
+publishes a separate set of \emph{formula-based} consistency checks (advisory quality checks, not part
+of the taxonomy) that software may apply. Consequently \texttt{check\_calculations} returns an empty
+table for a UK filing --- correctly, as a faithful reflection of the source, not an unfilled gap ---
+and a UK filing's arithmetic consistency rests instead on those formulae and on the balance-sheet
+identity (net assets equal total equity), which the accounts satisfy directly.
 
 \paragraph{A note on DART (redundant calculation roles).} \texttt{check\_calculations} is deliberately
 \emph{strict}: each calculation role is a separate arithmetic assertion, validated on its own (the same
