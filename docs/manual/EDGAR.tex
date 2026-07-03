@@ -4516,13 +4516,14 @@ pattern as Japan and the UK; \S\ref{sec:india-taxonomy}). Identity is the compan
 (\texttt{EntityId(:isin,\ "INE002A01018")}), with the NSE ticker symbol and BSE scrip code as secondary
 schemes.
 
-\emph{Status:} the seam (I0) and the \textbf{offline parse} (I1) are \textbf{implemented and tested} ---
-\texttt{fetch\_filing(India(),\ \ldots)} builds an \texttt{:xbrl} filing and \texttt{facts(f)} extracts its
-Ind-AS facts (and \texttt{narratives(f)} its section text, below), verified against a real filing (Reliance
-Industries, FY2023--24; 294 facts, all \texttt{in-bse-fin}). Live NSE \emph{discovery} (I2), the
-\texttt{vocab\_indas.jl} \emph{classification} (I3) and human-readable \emph{labels} (I4) are the remaining
-phases. This \textbf{supersedes} the earlier ``India MCA21 --- paid'' note in the portability survey: MCA21
-(the registrar) is indeed paid, but that is the \emph{wrong} channel --- the \textbf{exchanges publish the
+\emph{Status:} the seam (I0), the \textbf{offline parse} (I1) and \textbf{live NSE discovery} (I2) are
+\textbf{implemented and tested}. \texttt{discover(NSEFilings();\ symbol=\ldots)} lists a company's filings
+and \texttt{fetch\_filing} downloads the Ind-AS XBRL (\S\ref{sec:india-retrieve}); \texttt{facts(f)} extracts
+its Ind-AS facts and \texttt{narratives(f)} its section text --- verified end-to-end against real filings
+(Reliance, TCS, Maruti, \ldots). The dedicated \texttt{vocab\_indas.jl} \emph{classification} (I3) and
+human-readable \emph{labels} plus the same-document BSE oracle (I4) are the remaining phases. This
+\textbf{supersedes} the earlier ``India MCA21 --- paid'' note in the portability survey: MCA21 (the
+registrar) is indeed paid, but that is the \emph{wrong} channel --- the \textbf{exchanges publish the
 results XBRL keyless}.
 
 \paragraph{Facts \emph{and} section text.} An NSE filing yields both. \texttt{facts(f)} returns the numeric
@@ -4836,8 +4837,40 @@ must cover \emph{every} company-type format (the general Ind-AS lines \emph{and}
 lines), the inverse of DART, which needed no vocabulary at all (\S\ref{sec:dart-kifrs}). Two Ind-AS
 presentation choices in the \emph{general}-format income statement --- revenue reported \emph{gross of
 excise duty}, and a broad \emph{finance-costs} bucket --- are where our figures legitimately differ from
-third-party sources; the next section is the reconciliation map (for the general format; banks reconcile on
+third-party sources; \S\ref{sec:india-yahoo} is the reconciliation map (for the general format; banks reconcile on
 different lines).
+
+\section{Retrieving filings}\label{sec:india-retrieve}
+
+Discovery is \textbf{keyless}. \texttt{discover(NSEFilings();\ symbol=\ldots)} lists a listed company's
+financial-results filings by its NSE ticker; each returned \texttt{FilingHandle} carries the Ind-AS XBRL URL,
+which \texttt{fetch\_filing} downloads into the same \texttt{Filing} every other system produces. The whole
+flow is three lines:
+
+\begin{lstlisting}
+hs = discover(NSEFilings(); symbol = "RELIANCE")   # annual, consolidated, audited (the defaults)
+f  = fetch_filing(first(hs))                        # newest filing; downloads the Ind-AS XBRL
+facts(f)                                            # the statements  (narratives(f) for the Reg. 30 notes)
+\end{lstlisting}
+
+\noindent A few notes:
+
+\begin{itemize}
+  \item \textbf{No key, no setup.} NSE's public JSON API sits behind bot protection that requires a browser
+    session; \texttt{EDGAR.jl} bootstraps and refreshes that session automatically, so there is nothing to
+    configure --- unlike EDINET, Companies House or DART, India needs no credential.
+  \item \textbf{By ticker.} Discovery keys off the NSE \texttt{symbol} (e.g.\ \texttt{"RELIANCE"},
+    \texttt{"TCS"}). The narrowing keywords are \texttt{period} (\texttt{"Annual"} or \texttt{"Quarterly"})
+    and \texttt{consolidated} / \texttt{audited} (\texttt{true} / \texttt{false}, or \texttt{nothing} to
+    keep both); the defaults return the annual, consolidated, audited filings.
+  \item \textbf{Handles, newest first.} Each handle's identity is the filing's \textbf{ISIN}
+    (\texttt{EntityId(:isin,\ "INE002A01018")}) and its \texttt{period\_end} the financial-year end, so
+    \texttt{first(hs)} is the most recent; pick any other by period.
+  \item \textbf{Same API as everywhere.} \texttt{fetch\_filing(h)} $\to$ \texttt{facts(f)} /
+    \texttt{narratives(f)} is identical to SEC, ESEF or DART --- nothing about working an Indian filing
+    differs for the caller. (\texttt{facts(f;\ classify=true)} awaits the \texttt{vocab\_indas} of I3;
+    until then \texttt{facts(f)} returns the raw, un-classified \texttt{in-bse-fin} facts.)
+\end{itemize}
 
 \section{Reconciling income-statement figures with Yahoo Finance}\label{sec:india-yahoo}
 
