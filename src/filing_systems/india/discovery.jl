@@ -16,10 +16,11 @@ struct NSEFilings <: FilingSource end
 
 const _NSE_RESULTS_API = "https://www.nseindia.com/api/corporates-financial-results"
 
-# "31-Mar-2024" → Date(2024, 3, 31); nothing on absent/unparseable input.
+# "31-Mar-2024" (results feed) or "31-MAR-2026" (integrated filing) → Date; nothing on absent/unparseable.
+# `titlecase` normalises the month case ("MAR" → "Mar") so one parser handles both feeds.
 function _nse_date(v)
-    (v === nothing || isempty(string(v))) && return nothing
-    try Date(string(v), dateformat"d-u-y") catch; nothing end
+    s = strip(string(v === nothing ? "" : v)); isempty(s) && return nothing
+    try Date(titlecase(s), dateformat"d-u-y") catch; nothing end
 end
 
 # A record field as a String, with null/absent → "".
@@ -82,3 +83,79 @@ end
 # Fetch from a discovered handle: download the Ind-AS XBRL at `h.url` (with the NSE session) and route to
 # the offline parser, carrying the discovered identity (the ISIN) and reference.
 fetch_filing(::India, h::FilingHandle) = fetch_filing(India(), h.url; entity = h.entity, ref = h.ref)
+
+# ── Integrated Filing — the CURRENT results feed (SEBI Integrated Filing framework) ─────────────────
+#
+# SEBI's Integrated Filing (Financial) framework (~2024-25) is the newer combined filing; the old
+# `corporates-financial-results` feed (NSEFilings) is frozen at ~FY2024, so recent results (2025+) live
+# ONLY here. It is a SEPARATE endpoint (`integrated-filing-results`), covers every sector (filename prefix
+# `INTEGRATED_FILING_{INDAS,BANKING,NBFC_INDAS,LI,GI,GOVERNANCE}`), and — unlike NSEFilings — is on the
+# SEBI `in-capmkt` taxonomy (NOT `in-bse-fin`), with BOTH a classic XBRL (`.xml`) and an iXBRL (`.html`).
+# This source covers filers NSEFilings cannot, notably insurers (verified: SBI Life). Statement
+# classification for `in-capmkt` needs its own vocabulary/linkbases (a later step); raw `facts` work now.
+
+"""
+    IntegratedFilings <: FilingSource
+
+SEBI's **Integrated Filing** results feed as a [`FilingSource`](@ref) — the current filing framework
+(the `corporates-financial-results` feed behind [`NSEFilings`](@ref) is frozen at ~FY2024). Keyless,
+cookie-gated (the NSE session is bootstrapped automatically). Discovery is **by ticker symbol**; each
+result carries the `in-capmkt` XBRL (and an iXBRL) URL that [`fetch_filing`](@ref) downloads.
+"""
+struct IntegratedFilings <: FilingSource end
+
+const _NSE_INTFILING_API = "https://www.nseindia.com/api/integrated-filing-results"
+
+# Turn the parsed integrated-filing array into FilingHandles (PURE — testable offline). Keeps only the
+# **Financials** filings (skips the `Governance` type), narrowed by consolidated/audited (`nothing` = keep
+# both). `prefer_ixbrl` picks the inline-XBRL (`.html`) URL over the classic XBRL (`.xml`). Identity is the
+# queried `sym` (NSE ticker); ref is the `seq_Id`; `period_end` is the `qe_Date` (quarter end). Newest first.
+function _intfiling_handles(records, sym::AbstractString;
+                            consolidated::Union{Bool,Nothing}, audited::Union{Bool,Nothing},
+                            prefer_ixbrl::Bool=false)
+    handles = FilingHandle[]
+    for r in records
+        occursin("financ", lowercase(_nse_str(r, :type))) || continue        # Financials only (not Governance)
+        consolidated === nothing || (_nse_flag(r, :consolidated) == "consolidated") == consolidated || continue
+        audited === nothing      || (_nse_flag(r, :audited)      == "audited")      == audited      || continue
+        url = prefer_ixbrl ? _nse_str(r, :ixbrl) : _nse_str(r, :xbrl)
+        isempty(url) && (url = _nse_str(r, :xbrl))                            # fall back to classic XBRL
+        isempty(url) && continue
+        ref = _nse_str(r, :seq_Id); isempty(ref) && (ref = basename(url))
+        push!(handles, FilingHandle(; system = India(), entity = EntityId(:nse_symbol, sym), ref = ref,
+              url = url, period_end = _nse_date(_nse_str(r, :qe_Date)), country = "IN"))
+    end
+    sort!(handles; by = h -> something(h.period_end, Date(0)), rev = true)
+    return handles
+end
+
+"""
+    discover(::IntegratedFilings; symbol, consolidated=nothing, audited=nothing, prefer_ixbrl=false)
+        -> Vector{FilingHandle}
+
+List a company's **Integrated Filing** financial results (the current SEBI framework) by ticker `symbol`.
+`consolidated` / `audited` narrow the results (`true`/`false`, or `nothing` to keep both); `prefer_ixbrl`
+picks the inline-XBRL over the classic XBRL. Returns [`FilingHandle`](@ref)s tagged `India()`, newest
+first (by quarter-end); fetch one with [`fetch_filing`](@ref). Keyless (cookie-gated automatically). These
+filings are on the `in-capmkt` taxonomy.
+
+```julia
+hs = discover(IntegratedFilings(); symbol = "SBILIFE")   # insurers appear here, not in NSEFilings
+f  = fetch_filing(first(hs))
+facts(f)
+```
+"""
+function discover(::IntegratedFilings; symbol=nothing, consolidated::Union{Bool,Nothing}=nothing,
+                  audited::Union{Bool,Nothing}=nothing, prefer_ixbrl::Bool=false)
+    symbol === nothing && throw(ArgumentError("discover(IntegratedFilings(); …) needs a ticker `symbol`"))
+    sym = uppercase(strip(String(symbol)))
+    url = string(_NSE_INTFILING_API, "?index=equities&symbol=", HTTP.URIs.escapeuri(sym))
+    resp = try
+        _get_json(url; headers = _nse_headers(), use_cache = false)
+    catch
+        _get_json(url; headers = _nse_headers(; force = true), use_cache = false)
+    end
+    records = get(resp, :data, ())
+    return _intfiling_handles(records, sym; consolidated = consolidated, audited = audited,
+                             prefer_ixbrl = prefer_ixbrl)
+end

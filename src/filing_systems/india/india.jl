@@ -110,13 +110,19 @@ _nse_reset!() = (_NSE_COOKIE[] = ""; _NSE_COOKIE_TS[] = 0.0; nothing)
 # and units. Raw `facts(f; classify=false)` needs no taxonomy; classification is the dedicated
 # `vocab_indas.jl` (I3) and human labels are the remote BSE label linkbase (I4).
 
-# Identity carried INSIDE the instance: the context entity `<identifier>` whose scheme is NSE's symbol
-# URI (`http://www.nseindia.com/NSESymbol`), e.g. `RELIANCE` — the NSE ticker, NOT the ISIN. The ISIN is
-# supplied by discovery (I2) from the results-API record, so a caller-given `entity` always wins over
-# this. Returns `EntityId(:nse_symbol, sym)`, or an empty `:isin` id when no NSE identifier is present.
+# Identity carried INSIDE the instance: the context entity `<identifier>` and its `scheme`. The two India
+# taxonomy families identify differently — the `in-bse-fin` results feed uses NSE's symbol URI
+# (`http://www.nseindia.com/NSESymbol`, value = the ticker `RELIANCE`), while the `in-capmkt` Integrated
+# Filing uses SEBI's ScripCode URI (`http://www.sebi.gov.in/in-capmkt/ScripCode`, value = the BSE scrip
+# code). Discovery supplies the identity from the feed record, so a caller-given `entity` always wins over
+# this; it is the offline fallback. Returns `:nse_symbol` / `:scrip_code` accordingly, else an empty `:isin`.
 function _india_entity(content::AbstractString)
-    m = match(r"(?is)<(?:\w+:)?identifier\b[^>]*\bscheme=\"[^\"]*nseindia\.com[^\"]*\"[^>]*>\s*([^<\s]+)", content)
-    return m === nothing ? EntityId(:isin, "") : EntityId(:nse_symbol, String(m.captures[1]))
+    m = match(r"(?is)<(?:\w+:)?identifier\b[^>]*\bscheme=\"([^\"]*)\"[^>]*>\s*([^<\s]+)", content)
+    m === nothing && return EntityId(:isin, "")
+    scheme, val = m.captures[1], String(m.captures[2])
+    occursin("nseindia.com", scheme) && return EntityId(:nse_symbol, val)
+    occursin(r"(?i)sebi\.gov\.in.*ScripCode", scheme) && return EntityId(:scrip_code, val)
+    return EntityId(:isin, "")
 end
 
 # ── Period normalisation ────────────────────────────────────────────────────────────────────────
@@ -141,7 +147,9 @@ end
 # start for context `FourD`; the matching End fact contributes its end. Only contexts with BOTH are kept.
 function _india_reporting_periods(content::AbstractString)
     starts = Dict{String,String}(); ends = Dict{String,String}()
-    for m in eachmatch(r"(?is)<in-bse-fin:DateOf(Start|End)OfReportingPeriod\b[^>]*\bcontextRef=\"([^\"]+)\"[^>]*>\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", content)
+    # Namespace-agnostic (`in-bse-fin:` results feed OR `in-capmkt:` Integrated Filing); a filing with no
+    # such date facts yields an empty map, so `_india_normalize_periods` is a no-op for it.
+    for m in eachmatch(r"(?is)<[\w.-]+:DateOf(Start|End)OfReportingPeriod\b[^>]*\bcontextRef=\"([^\"]+)\"[^>]*>\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", content)
         (m.captures[1] == "Start" ? starts : ends)[m.captures[2]] = m.captures[3]
     end
     periods = Dict{String,Tuple{String,String}}()
@@ -193,7 +201,10 @@ function fetch_filing(::India, src::AbstractString;
     end
     content = _india_normalize_periods(String(raw))
     ent = entity === nothing ? _india_entity(content) : entity
-    return Filing(India(), ent, isempty(ref) ? basename(src) : String(ref), basename(src), src, :xbrl, content)
+    # Integrated Filing serves BOTH a classic XBRL (`.xml`) and an inline XBRL (`.html`); tag the kind from
+    # the extension so `facts` uses the right extractor. Ind-AS results-feed instances are always `.xml`.
+    kind = endswith(lowercase(basename(src)), r"\.x?html?") ? :ixbrl : :xbrl
+    return Filing(India(), ent, isempty(ref) ? basename(src) : String(ref), basename(src), src, kind, content)
 end
 
 # ── Standard-taxonomy linkbase (BSE Financial Results taxonomy, bundled) ────────────────────────
@@ -220,11 +231,21 @@ const _INDIA_DATA_DIR = joinpath(@__DIR__, "data")
 # `f.document`; offline instances that lack it fall back to the `schemaRef` entry-point name, and a general
 # Ind-AS default catches the rest.
 #
-# Scope: these are the `in-bse-fin` taxonomy formats. Insurers (General/Life) and REITs/InvITs use a
-# DIFFERENT taxonomy (`in-capmkt`), are not reachable through the results feed, and are not covered by
-# `vocab_indas` — so they are deliberately NOT bundled here (a separate concern; see the data NOTICE).
+# Two taxonomy families, routed by the filename prefix (both preserved in `f.document` by discovery):
+#   • `INTEGRATED_FILING_…` — SEBI's CURRENT Integrated Filing framework, on the `in-capmkt` taxonomy
+#     (`vocab_incapmkt`). One combined taxonomy covers every sector, so each `INTEGRATED_FILING_{INDAS,
+#     BANKING,NBFC_INDAS,LI,GI}_…` prefix selects its own `in-capmkt` presentation linkbase — including
+#     the insurers (Life/General), which the old `in-bse-fin` feed never carried.
+#   • everything else — the frozen `in-bse-fin` results feed (`vocab_indas`), routed as before.
 function _india_pre_file(f::Filing)
     doc = uppercase(f.document)
+    if startswith(doc, "INTEGRATED_FILING")                                   # in-capmkt (Integrated Filing)
+        occursin("BANKING", doc)                       && return "in-capmkt-pre-banking-2025-01-31.xml"
+        occursin("NBFC", doc)                          && return "in-capmkt-pre-nbfc-2025-01-31.xml"
+        (occursin("_LI_", doc) || occursin("_LI", doc)) && return "in-capmkt-pre-li-2025-01-31.xml"  # Life insurance
+        occursin("_GI", doc)                           && return "in-capmkt-pre-gi-2025-01-31.xml"    # General insurance
+        return "in-capmkt-pre-indas-2025-01-31.xml"                           # general Ind-AS (default)
+    end
     startswith(doc, "BANKING") && return "in-bse-fin-pre-2019-09-30.xml"       # banks
     startswith(doc, "NBFC")    && return "in-bse-fin-pre-nbfc-2020-03-31.xml"  # NBFCs
     startswith(doc, "INDAS")   && return "in-bse-fin-pre-2020-03-31.xml"       # general Ind-AS

@@ -1309,6 +1309,70 @@ end
     @test !isempty(select_statement(rn, "BalanceSheet")) && !isempty(select_statement(rn, "IncomeStatement"))
 end
 
+@testset "India: Integrated Filing discovery + in-capmkt classification (I5, offline)" begin
+    # I5 adds the SECOND India taxonomy family: SEBI's CURRENT Integrated Filing framework (in-capmkt),
+    # reached by the `IntegratedFilings` source. It supersedes the frozen in-bse-fin feed and — unlike it —
+    # carries insurers (Life/General). Two offline pieces are pinned: the pure results→handles parser, and
+    # full in-capmkt classification of a real Life-Insurance instance through the bundled linkbase + vocab.
+
+    # ── Discovery: the pure integrated-filing results parser (no network) ──
+    recs = get(EDGAR.JSON3.read(read(joinpath(@__DIR__, "data", "india", "integrated-filing-min.json"))), :data)
+    @test length(recs) == 4
+
+    # Financials only (the Governance record is skipped), newest-first, identity = the queried symbol,
+    # period_end from the UPPERCASE-month `qe_Date`, url = the in-capmkt XBRL.
+    hs = EDGAR._intfiling_handles(recs, "SBILIFE"; consolidated = nothing, audited = nothing)
+    @test length(hs) == 3                                            # 3 Financials, Governance dropped
+    @test all(h -> h.system isa India, hs)
+    @test all(h -> h.entity == EntityId(:nse_symbol, "SBILIFE"), hs)
+    @test all(h -> h.country == "IN", hs)
+    @test issorted(hs; by = h -> h.period_end, rev = true)
+    @test hs[1].period_end == Date(2026, 3, 31)                     # "31-MAR-2026" parsed (uppercase month)
+    @test occursin("INTEGRATED_FILING_LI_", hs[1].url) && endswith(hs[1].url, ".xml")
+    @test hs[1].ref == "152152"                                     # the NSE sequence id
+
+    # consolidated / audited narrowing (each `nothing` = keep both).
+    @test length(EDGAR._intfiling_handles(recs, "SBILIFE"; consolidated = true,  audited = nothing)) == 1
+    @test length(EDGAR._intfiling_handles(recs, "SBILIFE"; consolidated = false, audited = nothing)) == 2
+    @test length(EDGAR._intfiling_handles(recs, "SBILIFE"; consolidated = nothing, audited = true))  == 2
+    # prefer_ixbrl picks the inline-XBRL (.html) url instead of the classic XBRL.
+    @test endswith(EDGAR._intfiling_handles(recs, "SBILIFE"; consolidated = true, audited = nothing,
+                                            prefer_ixbrl = true)[1].url, ".html")
+
+    # ── Parse: a real in-capmkt Life-Insurance instance (offline) ──
+    f = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "INTEGRATED_FILING_LI_sbilife-fy2026.xml"))
+    @test f.kind == :xbrl
+    @test f.entity == EntityId(:scrip_code, "540719")               # SEBI ScripCode scheme (not the NSE symbol)
+    rows = facts(f; classify = true)
+    @test all(r -> startswith(r.concept, "in-capmkt:"), rows)       # the whole instance is in-capmkt
+    # in-capmkt periods are correct as-is (no stamping quirk): both a full-year and a quarter are present.
+    durs = unique((r.period_start, r.period_end) for r in rows if !r.is_instant)
+    @test (Date(2025, 4, 1), Date(2026, 3, 31)) in durs            # FY26 (12 months)
+    @test (Date(2026, 1, 1), Date(2026, 3, 31)) in durs            # Q4 FY26 (3 months)
+
+    # ── Classify: the insurer statements land through the bundled LI linkbase + vocab_incapmkt ──
+    @test EDGAR._india_pre_file(f) == "in-capmkt-pre-li-2025-01-31.xml"
+    is = select_statement(rows, "IncomeStatement")
+    bs = select_statement(rows, "BalanceSheet")
+    cf = select_statement(rows, "CashFlow")
+    @test !isempty(is) && !isempty(bs) && !isempty(cf)
+    isc = Set(r.concept for r in is); bsc = Set(r.concept for r in bs)
+    @test "in-capmkt:GrossPremiumIncome" in isc                    # premium-driven revenue account (Life)
+    @test "in-capmkt:NetSurplusDeficit" in isc || "in-capmkt:ProfitLossBeforeTax" in isc
+    @test "in-capmkt:ShareholdersFunds" in bsc || "in-capmkt:PolicyLiabilities" in bsc
+    @test !("in-capmkt:GrossPremiumIncome" in bsc)                 # no cross-statement leakage
+
+    # ── Routing: every INTEGRATED_FILING_ prefix selects its own in-capmkt linkbase ──
+    pre(doc) = EDGAR._india_pre_file(Filing(India(), EntityId(:isin, ""), doc, doc, doc, :xbrl, ""))
+    @test pre("INTEGRATED_FILING_INDAS_1_2.xml")      == "in-capmkt-pre-indas-2025-01-31.xml"
+    @test pre("INTEGRATED_FILING_BANKING_1_2.xml")    == "in-capmkt-pre-banking-2025-01-31.xml"
+    @test pre("INTEGRATED_FILING_NBFC_INDAS_1_2.xml") == "in-capmkt-pre-nbfc-2025-01-31.xml"
+    @test pre("INTEGRATED_FILING_LI_1_2.xml")         == "in-capmkt-pre-li-2025-01-31.xml"
+    @test pre("INTEGRATED_FILING_GI_1_2.xml")         == "in-capmkt-pre-gi-2025-01-31.xml"
+    # the OLD in-bse-fin feed is unaffected (routes to its own linkbases).
+    @test pre("BANKING_1_2.xml") == "in-bse-fin-pre-2019-09-30.xml"
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →
