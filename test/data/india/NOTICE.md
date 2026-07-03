@@ -34,3 +34,12 @@ older consolidated FY2023 filing, and one consolidated FY2024 record with an **e
 be skipped). Only the fields the parser reads are kept (`consolidated`, `audited`, `isin`, `seqNumber`,
 `xbrl`, `toDate`, …). It exercises `_nse_result_handles` — the pure results→[`FilingHandle`] parser that
 the live `discover(NSEFilings(); …)` wraps around one cookie-gated GET — with no network.
+
+# `nbfc-bajaj-fy2024.xml`
+
+A **real** NSE Ind-AS results instance — **Bajaj Finance Limited**, consolidated, FY ending 31 March 2024 —
+in the **NBFC** format (NSE filename prefix `NBFC_INDAS_`; the fixture keeps an `nbfc-` prefix so the
+format-aware linkbase selector routes it offline). Downloaded 2026-07 via
+`discover(NSEFilings(); symbol="BAJFINANCE")`. It pins that the NBFC format classifies **fully** through its
+own bundled presentation linkbase (`in-bse-fin-pre-nbfc-2020-03-31.xml`) — which shares the 2020-03-31
+version tag with, but differs from, the general Ind-AS linkbase.

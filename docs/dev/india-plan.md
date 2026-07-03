@@ -123,12 +123,20 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked. **Nothing coded 
   and Maruti (₹1,41,858 cr), both real values, ISIN identity. Offline discovery testset (11/11) +
   `nse-results-min.json` fixture committed.
 
-### I3 — Vocab: canonicalize `in-bse-fin` → `ifrs-full` (the design fork above) ☐
-- ☐ I3.1 `_india_canonicalize`: rewrite `in-bse-fin`-namespace concepts with an `ifrs-full` local-name
-  twin → `ifrs-full`. **Empirically measure the residue** (in-bse-fin local names absent from ifrs-full)
-  on ≥2 filers before deciding whether a `vocab_indas.jl` is needed at all (DART lesson: it may not be).
-- ☐ I3.2 🚦 **GATE:** BS/IS/CF classify + `select_statement` round-trips on 2 filers (consolidated +
-  standalone). Report the canonicalized-vs-residue split with counts.
+### I3 — Vocab + classification (dedicated `vocab_indas` + bundled linkbases) ✅ DONE
+Decision was Strategy C (dedicated vocab, NOT canonicalize). Two pieces together give FULL classification:
+- ✅ I3.1 `vocab_indas.jl` — national vocabulary keyed on `in-bse-fin`, key-anchor concepts per format
+  (general Ind-AS + banking interest lines), registered in the merged classify registry. Classifies by
+  namespace (the Companies House pattern), not prefix.
+- ✅ I3.1b **Bundled BSE presentation linkbases** (`src/filing_systems/india/data/`) for the FULL statement
+  grouping the vocab anchors alone can't give — NSE instances carry none, and BSE doesn't host the taxonomy
+  resolvably, so the linkbases are extracted from NSE's keyless taxonomy packages and bundled (EDINET
+  pattern). Four `in-bse-fin` formats: general Ind-AS (2020-03-31), Banking (2019-09-30), NBFC
+  (nbfc-2020-03-31, different file/same version → routed by filename prefix), Other-than-Banks (entry-point
+  routed, unvalidated). `_fetch_linkbase(::India,"pre")` selects by prefix/`schemaRef`.
+- ✅ I3.2 GATE met (offline testset, full classification): Reliance 243/294, IOC 242/281, HDFC~Bank 160/218,
+  Bajaj NBFC 252/252; `select_statement` round-trips; balance sheet balances. Full suite green (no regression
+  from the one-line classify_engine registry addition — in-bse-fin can't collide with other jurisdictions).
 
 ### I4 — Labels + validation ☐
 - ☐ I4.1 Labels: Ind-AS instances don't bundle a label linkbase → use the standard BSE taxonomy labels
@@ -137,6 +145,41 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked. **Nothing coded 
 - ☐ I4.2 Oracle: wire `_edgar_rows(:india,…)` + Yahoo `.NS`/`.BO` cross-check; map the BSE second channel
   for the same-document cross-check.
 - ☐ I4.3 🚦 **GATE (run tests + commit):** offline fixture test + commit.
+
+## Roadmap — the Integrated Filing / `in-capmkt` seam (insurers, REITs/InvITs) — a FUTURE phase
+
+Investigated 2026-07 (in response to "do insurers/REITs use `NBFC_INDAS_`?" — they do NOT). The adapter's
+current seam (`corporates-financial-results` + the `in-bse-fin` taxonomy, phases I0–I3) covers the general
+Ind-AS / Banking / NBFC / (Other-than-Banks) formats. **Insurers and REITs/InvITs are a SEPARATE seam** on a
+DIFFERENT taxonomy — a self-contained future phase (a 2nd discovery source + an `in-capmkt` vocabulary +
+`in-capmkt` presentation linkbases). Facts established (so it starts from evidence, not guesses):
+
+- **Two taxonomy families.** `in-bse-fin` = Ind AS / Banking / NBFC / Other-than-Banks (what we handle).
+  `in-capmkt` (`http://www.sebi.gov.in/xbrl/2025-01-31/in-capmkt`, SEBI *IntegratedFinance*) = General
+  Insurance, Life Insurance, REITs/InvITs. `vocab_indas` does NOT apply to `in-capmkt`.
+- **SEBI Integrated Filing** is a newer combined-filing framework (taxonomy dated 2025-01-31), exposed on a
+  SEPARATE NSE endpoint: **`GET /api/integrated-filing-results?index=equities&symbol=…`** → `{data:[…]}`,
+  each record carrying `xbrl`, `ixbrl`, `pdf_attach` URLs, `type`/`type_Sub`, `qe_Date`, `consolidated`,
+  `audited`. It covers ALL sectors, keyed by filename prefix `INTEGRATED_FILING_{INDAS,BANKING,NBFC_INDAS,LI,GI,GOVERNANCE}`.
+  So it is a newer parallel to the old results feed (both currently return data; whether it supersedes the
+  old feed over time is unconfirmed).
+- **Insurers — VERIFIED reachable and XBRL** (correcting an earlier wrong "PDF-only" note). SBI~Life
+  (symbol `SBILIFE`) files `INTEGRATED_FILING_LI_*.xml` on `in-capmkt` via `integrated-filing-results`;
+  fetched a real instance (`~/EDGAR-Reports/IN-SBILife-IntegratedFiling-LI-incapmkt.xml`, 662 KB XBRL +
+  a 227 KB iXBRL). They also file a PDF board-meeting `BMFR` results doc; the `hasXbrl:true` flag on the
+  `corporate-announcements` record is the tell.
+- **REITs/InvITs — reachable per SEBI (exchange announcement sections), endpoint NOT located.** Symbols
+  CONFIRMED from NSE masters: `REITS_L.csv` → `EMBASSY`, `MINDSPACE`, `BIRET`; `INVITS_L.csv` → `INDIGRID`,
+  `PGINVIT`, `IRBINVIT`, `OSEINTRUST`, `INDINFR` (series RR / IV). With confirmed symbols they return ZERO
+  from `corporates-financial-results`, `integrated-filing-results` AND `corporate-announcements` across every
+  index (`equities`/`debt`/`reits`/`invits`/`reit`/`invit`) — so NSE serves them through a dedicated REIT/InvIT
+  endpoint not reachable by URL-guessing (would need a browser network-capture of the NSE REIT filings page).
+  Taxonomy: `in-capmkt` (`Financial_Results_REITs_InvITs` package, `in-capmkt-pre-2026-01-31.xml`).
+- **What the phase needs:** `IntegratedFilings <: FilingSource` over `integrated-filing-results` (+ the REIT
+  endpoint once found); an `in-capmkt` vocabulary and its bundled presentation linkbases (stashed:
+  `~/EDGAR-Reports/IN-taxonomy-{GeneralInsurance,LifeInsurance,REIT-InvIT}-incapmkt.zip`); iXBRL parse
+  already works (the shared extractor). The `INTEGRATED_FILING_INDAS/BANKING/NBFC_INDAS` variants are the
+  newer path for companies we already do via the old feed — worth watching if the old feed is retired.
 
 ## Open questions / risks
 - **NSE bot-defense / cookies.** NSE is aggressive with bot detection; the cookie bootstrap worked

@@ -196,8 +196,50 @@ function fetch_filing(::India, src::AbstractString;
     return Filing(India(), ent, isempty(ref) ? basename(src) : String(ref), basename(src), src, :xbrl, content)
 end
 
-# India method of the per-system linkbase fetcher (core/extract_xbrl.jl). NSE instances bundle NO
-# linkbases — they reference the published BSE standard taxonomy by URL — so at I1 this returns "" for
-# every suffix: raw facts need no linkbase, and classification will use `vocab_indas.jl` (I3). Fetching
-# the remote BSE label linkbase for human-readable labels is I4.
-_fetch_linkbase(::India, f::Filing, suffix::AbstractString; lang=nothing) = ""
+# ── Standard-taxonomy linkbase (BSE Financial Results taxonomy, bundled) ────────────────────────
+#
+# NSE instances carry NO bundled linkbase — they reference the published BSE Financial Results taxonomy
+# by a RELATIVE `schemaRef` (e.g. `Ind-AS_entry_point_2020-03-31.xsd`). BSE does not host that taxonomy
+# at a resolvable URL (its namespace URL serves the exchange homepage), but NSE publishes the taxonomy
+# packages on its keyless archive; since the taxonomy is dated and stable, we bundle its PRESENTATION
+# linkbase as a repo data file (the EDINET pattern) rather than fetch it per filing. That linkbase groups
+# every concept into its statement role (`StatementOfAssetsAndLiabilitiesIndAS` → BalanceSheet, the
+# results P&L role → IncomeStatement, `CashFlowStatementIndirect` → CashFlow, …), so `facts(f;
+# classify=true)` classifies the FULL statements, not just the `vocab_indas` key anchors.
+#
+# SEBI's per-company-class formats bind different taxonomy versions (Ind-AS general 2020-03-31, banking
+# 2019-09-30, …), each with its own presentation linkbase; the instance's `schemaRef` entry-point name
+# selects which bundled linkbase to use.
+
+const _INDIA_DATA_DIR = joinpath(@__DIR__, "data")
+
+# The bundled presentation-linkbase file for a filing, chosen by its SEBI company-class FORMAT. The four
+# `in-bse-fin` formats each need their OWN linkbase — several share a version tag but differ (an NBFC or a
+# bank balance sheet is not a general one), so the version alone cannot choose. The authoritative signal is
+# the instance FILENAME PREFIX (`INDAS_` / `BANKING_` / `NBFC_INDAS_`), which discovery preserves in
+# `f.document`; offline instances that lack it fall back to the `schemaRef` entry-point name, and a general
+# Ind-AS default catches the rest.
+#
+# Scope: these are the `in-bse-fin` taxonomy formats. Insurers (General/Life) and REITs/InvITs use a
+# DIFFERENT taxonomy (`in-capmkt`), are not reachable through the results feed, and are not covered by
+# `vocab_indas` — so they are deliberately NOT bundled here (a separate concern; see the data NOTICE).
+function _india_pre_file(f::Filing)
+    doc = uppercase(f.document)
+    startswith(doc, "BANKING") && return "in-bse-fin-pre-2019-09-30.xml"       # banks
+    startswith(doc, "NBFC")    && return "in-bse-fin-pre-nbfc-2020-03-31.xml"  # NBFCs
+    startswith(doc, "INDAS")   && return "in-bse-fin-pre-2020-03-31.xml"       # general Ind-AS
+    m = match(r"(?is)schemaRef\b[^>]*\bhref=\"([^\"]+)\"", f.content)          # offline fallback (entry point)
+    ep = m === nothing ? "" : lowercase(m.captures[1])
+    occursin("other_than_banks", ep) && return "in-bse-fin-pre-other-2019-09-30.xml"  # other-than-banks (non-Ind-AS)
+    occursin("banking", ep)          && return "in-bse-fin-pre-2019-09-30.xml"
+    return "in-bse-fin-pre-2020-03-31.xml"                                     # default: general Ind-AS
+end
+
+# India method of the per-system linkbase fetcher (core/extract_xbrl.jl). Returns the bundled BSE
+# presentation linkbase for the filing's format; "" for other suffixes (the label linkbase — human-readable
+# labels — is I4). Classification (`statement_map_multi`) parses this to place every fact.
+function _fetch_linkbase(::India, f::Filing, suffix::AbstractString; lang=nothing)
+    suffix == "pre" || return ""
+    path = joinpath(_INDIA_DATA_DIR, _india_pre_file(f))
+    isfile(path) ? read(path, String) : ""
+end

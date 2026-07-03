@@ -43,6 +43,7 @@ include("core/taxonomy/vocab_usgaap.jl")    # 🟢 us-gaap classification vocabu
 include("core/taxonomy/vocab_ifrs.jl")      # 🟢 ifrs-full classification vocabulary (shared across IFRS regimes)
 include("core/taxonomy/vocab_ukgaap.jl")    # 🟢 UK GAAP / FRC classification vocabulary (Companies House FRS 101/102/105)
 include("core/taxonomy/vocab_jpgaap.jl")    # 🟢 Japanese GAAP classification vocabulary (EDINET jppfs_cor)
+include("core/taxonomy/vocab_indas.jl")     # 🟢 Ind-AS (in-bse-fin) classification vocabulary (India NSE/BSE; INDAS/BANKING/NBFC formats)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("filing_systems/sec/xbrl.jl")       # 🔵 SEC linkbase access: statement_map/label_map/calculations

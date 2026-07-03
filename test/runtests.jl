@@ -1248,7 +1248,7 @@ end
     # see the NOTICE): consolidated/standalone filtering, ISIN identity, period_end from `toDate`, skipping
     # records with no XBRL url, newest-first. The live `discover(NSEFilings(); …)` wraps this around one
     # cookie-gated GET; the cookie session itself is exercised in the live (network) testset.
-    recs = JSON3.read(read(joinpath(@__DIR__, "data", "india", "nse-results-min.json")))
+    recs = EDGAR.JSON3.read(read(joinpath(@__DIR__, "data", "india", "nse-results-min.json")))
     @test length(recs) == 4
 
     # consolidated + audited (the default): the FY24 and FY23 consolidated filings carry an XBRL; the
@@ -1267,6 +1267,46 @@ end
     # XBRL-bearing record (3 — the empty-`xbrl` one is always skipped).
     @test length(EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = false, audited = true)) == 1
     @test length(EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = nothing, audited = nothing)) == 3
+end
+
+@testset "India: full statement classification (I3, offline)" begin
+    # India classifies by NAMESPACE (in-bse-fin) through TWO wired pieces: the dedicated vocab_indas
+    # key-anchor concepts (merged registry) AND the BSE Financial Results presentation linkbase bundled in
+    # src/filing_systems/india/data/ (selected by the instance's schemaRef). Together they place the FULL
+    # statements — not just the anchors — with no network. Verified on the general (INDAS_) format
+    # (Reliance FY24).
+    f = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "reliance-fy2024.xml"))
+    rows = facts(f; classify = true)
+
+    bs = select_statement(rows, "BalanceSheet")
+    is = select_statement(rows, "IncomeStatement")
+    cf = select_statement(rows, "CashFlow")
+    # full statements, not just anchors: dozens of line items each
+    @test length(bs) > 30 && length(is) > 30 && length(cf) > 30
+    @test count(r -> !isempty(r.statement), rows) > 200          # ~243/294 classified (rest are segments)
+
+    concepts(stmt) = Set(r.concept for r in stmt)
+    @test "in-bse-fin:Assets" in concepts(bs)
+    @test "in-bse-fin:RevenueFromOperations" in concepts(is)
+    @test "in-bse-fin:CashFlowsFromUsedInOperatingActivities" in concepts(cf)
+    # a non-anchor line item lands on the right statement (only the linkbase can place these):
+    @test "in-bse-fin:EmployeeBenefitExpense" in concepts(is)
+    @test "in-bse-fin:CashAndCashEquivalents" in concepts(bs) || "in-bse-fin:PropertyPlantAndEquipment" in concepts(bs)
+    @test !("in-bse-fin:Assets" in concepts(is))                 # concepts do not leak across statements
+
+    # the classified balance sheet balances: Assets == EquityAndLiabilities (the annual instant, OneI)
+    inst(c) = first(r.value for r in rows if r.concept == c && r.context_ref == "OneI")
+    @test inst("in-bse-fin:Assets") ≈ inst("in-bse-fin:EquityAndLiabilities")
+
+    # Format-aware linkbase selection: the NBFC format shares the 2020-03-31 version with general Ind-AS
+    # but needs its OWN presentation linkbase (an NBFC balance sheet differs). The selector routes by the
+    # filename prefix; Bajaj Finance then classifies fully through the NBFC linkbase.
+    fn = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "nbfc-bajaj-fy2024.xml"))
+    @test EDGAR._india_pre_file(fn) == "in-bse-fin-pre-nbfc-2020-03-31.xml"
+    @test EDGAR._india_pre_file(f)  == "in-bse-fin-pre-2020-03-31.xml"      # general Ind-AS (Reliance)
+    rn = facts(fn; classify = true)
+    @test count(r -> !isempty(r.statement), rn) > 240                       # ~252/252, full
+    @test !isempty(select_statement(rn, "BalanceSheet")) && !isempty(select_statement(rn, "IncomeStatement"))
 end
 
 @testset "ESEF: discovery + handle fetch (B2)" begin
