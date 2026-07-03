@@ -261,28 +261,32 @@ function _india_format(f::Filing)
     return :bse_indas                                                         # default: general Ind-AS
 end
 
-# format => (presentation linkbase, label linkbase) — the bundled `data/` file pair for each format.
+# format => (presentation, label, calculation) linkbases — the bundled `data/` file triple for each format.
+# All three are extracted from the SAME taxonomy package, so a format's pre/lab/cal versions agree.
 const _INDIA_LINKBASES = Dict(
-    :cap_indas   => ("in-capmkt-pre-indas-2025-01-31.xml",   "in-capmkt-lab-indas-2025-01-31.xml"),
-    :cap_banking => ("in-capmkt-pre-banking-2025-01-31.xml", "in-capmkt-lab-banking-2025-01-31.xml"),
-    :cap_nbfc    => ("in-capmkt-pre-nbfc-2025-01-31.xml",    "in-capmkt-lab-nbfc-2025-01-31.xml"),
-    :cap_li      => ("in-capmkt-pre-li-2025-01-31.xml",      "in-capmkt-lab-li-2025-01-31.xml"),
-    :cap_gi      => ("in-capmkt-pre-gi-2025-01-31.xml",      "in-capmkt-lab-gi-2025-01-31.xml"),
-    :cap_reit    => ("in-capmkt-pre-reit-2026-01-31.xml",    "in-capmkt-lab-reit-2026-01-31.xml"),  # REITs/InvITs (v2026-01-31)
-    :bse_indas   => ("in-bse-fin-pre-2020-03-31.xml",        "in-bse-fin-label-2020-03-31.xml"),
-    :bse_banking => ("in-bse-fin-pre-2019-09-30.xml",        "in-bse-fin-label-2019-09-30.xml"),
-    :bse_nbfc    => ("in-bse-fin-pre-nbfc-2020-03-31.xml",   "in-bse-fin-label-nbfc-2020-03-31.xml"),
-    :bse_other   => ("in-bse-fin-pre-other-2019-09-30.xml",  "in-bse-fin-label-other-2019-09-30.xml"),
+    :cap_indas   => ("in-capmkt-pre-indas-2025-01-31.xml",   "in-capmkt-lab-indas-2025-01-31.xml",   "in-capmkt-cal-indas-2025-01-31.xml"),
+    :cap_banking => ("in-capmkt-pre-banking-2025-01-31.xml", "in-capmkt-lab-banking-2025-01-31.xml", "in-capmkt-cal-banking-2025-01-31.xml"),
+    :cap_nbfc    => ("in-capmkt-pre-nbfc-2025-01-31.xml",    "in-capmkt-lab-nbfc-2025-01-31.xml",    "in-capmkt-cal-nbfc-2025-01-31.xml"),
+    :cap_li      => ("in-capmkt-pre-li-2025-01-31.xml",      "in-capmkt-lab-li-2025-01-31.xml",      "in-capmkt-cal-li-2025-01-31.xml"),
+    :cap_gi      => ("in-capmkt-pre-gi-2025-01-31.xml",      "in-capmkt-lab-gi-2025-01-31.xml",      "in-capmkt-cal-gi-2025-01-31.xml"),
+    :cap_reit    => ("in-capmkt-pre-reit-2026-01-31.xml",    "in-capmkt-lab-reit-2026-01-31.xml",    "in-capmkt-cal-reit-2026-01-31.xml"),  # REITs/InvITs (v2026-01-31)
+    :bse_indas   => ("in-bse-fin-pre-2020-03-31.xml",        "in-bse-fin-label-2020-03-31.xml",      "in-bse-fin-cal-2020-03-31.xml"),
+    :bse_banking => ("in-bse-fin-pre-2019-09-30.xml",        "in-bse-fin-label-2019-09-30.xml",      "in-bse-fin-cal-2019-09-30.xml"),
+    :bse_nbfc    => ("in-bse-fin-pre-nbfc-2020-03-31.xml",   "in-bse-fin-label-nbfc-2020-03-31.xml", "in-bse-fin-cal-nbfc-2020-03-31.xml"),
+    :bse_other   => ("in-bse-fin-pre-other-2019-09-30.xml",  "in-bse-fin-label-other-2019-09-30.xml","in-bse-fin-cal-other-2019-09-30.xml"),
 )
 
 _india_pre_file(f::Filing) = _INDIA_LINKBASES[_india_format(f)][1]
 _india_lab_file(f::Filing) = _INDIA_LINKBASES[_india_format(f)][2]
+_india_cal_file(f::Filing) = _INDIA_LINKBASES[_india_format(f)][3]
 
 # India method of the per-system linkbase fetcher (core/extract_xbrl.jl). Returns the bundled BSE/SEBI
-# presentation linkbase (`classify`) or label linkbase (`labels`) for the filing's format; "" otherwise.
-# Labels are English-only (India files in English) — no `lang` split, unlike EDINET/DART.
+# presentation (`classify`), label (`labels`), or calculation (`check_calculations`) linkbase for the
+# filing's format; "" otherwise. Labels are English-only (India files in English) — no `lang` split.
 function _fetch_linkbase(::India, f::Filing, suffix::AbstractString; lang=nothing)
-    file = suffix == "pre" ? _india_pre_file(f) : suffix == "lab" ? _india_lab_file(f) : ""
+    file = suffix == "pre" ? _india_pre_file(f) :
+           suffix == "lab" ? _india_lab_file(f) :
+           suffix == "cal" ? _india_cal_file(f) : ""
     isempty(file) && return ""
     path = joinpath(_INDIA_DATA_DIR, file)
     isfile(path) ? read(path, String) : ""

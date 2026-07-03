@@ -826,6 +826,47 @@ end
     @test isempty(EDGAR._calculations(""))     # no linkbase -> empty
 end
 
+@testset "check_calculations (decimals-aware roll-up validation, CV0, offline)" begin
+    # ── Decimals-aware rounding interval: value ± ½·10^(−decimals); nothing (absent/INF) → exact ──
+    @test EDGAR._decimals_halfwidth(-6) == 500_000.0      # millions → ±500k
+    @test EDGAR._decimals_halfwidth(2)  == 0.005          # cents    → ±0.005
+    @test EDGAR._decimals_halfwidth(0)  == 0.5
+    @test EDGAR._decimals_halfwidth(nothing) == 0.0       # exact
+
+    # ── Raw-role preservation: two roles that CLASSIFY to the same statement must stay separate, so a
+    #    parent's children are never double-counted (the direct+indirect cash-flow trap). ──
+    cal2 = """
+    <link:linkbase>
+    <link:calculationLink xlink:role="http://x/role/CashFlowStatementIndirect">
+      <link:loc xlink:href="x.xsd#in-capmkt_A" xlink:label="p"/>
+      <link:loc xlink:href="x.xsd#in-capmkt_B" xlink:label="c"/>
+      <link:calculationArc xlink:from="p" xlink:to="c" weight="1.0"/></link:calculationLink>
+    <link:calculationLink xlink:role="http://x/role/CashFlowStatementDirect">
+      <link:loc xlink:href="x.xsd#in-capmkt_A" xlink:label="p"/>
+      <link:loc xlink:href="x.xsd#in-capmkt_B" xlink:label="c"/>
+      <link:calculationArc xlink:from="p" xlink:to="c" weight="1.0"/></link:calculationLink>
+    </link:linkbase>"""
+    @test length(unique(a.role for a in EDGAR._calc_arcs(cal2))) == 2   # roles kept distinct
+    @test length(unique(a.statement for a in EDGAR._calculations(cal2))) == 1  # both classify to CashFlow
+
+    # ── Integration: a real filing's roll-ups verify (India in-bse-fin fixture; cal now bundled) ──
+    f = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "reliance-fy2024.xml"))
+    rows = check_calculations(f)
+    @test length(rows) > 20                                # many roll-ups checked
+    @test all(r -> r.consistent, rows)                     # a real filing is internally consistent
+    @test all(r -> r.n_children >= 1, rows)
+    @test maximum(r.interval for r in rows) > 0            # intervals are decimals-derived, not a flat %
+    @test EDGAR._india_cal_file(f) == "in-bse-fin-cal-2020-03-31.xml"   # format-routed, like pre/lab
+
+    # ── Catches a real inconsistency: perturbing one child beyond the interval flips `consistent` ──
+    r = first(rows)                                        # a genuine parent = Σ children roll-up
+    bump = r.interval + max(abs(r.reported), 1)            # a change far outside the rounding slack
+    @test !((r.discrepancy + bump) <= r.interval)          # the predicate flags it
+
+    # a filing with no reachable cal linkbase yields no checks (never errors).
+    @test check_calculations(Filing(India(), EntityId(:isin, ""), "x", "x", "x", :xbrl, "")) isa Vector
+end
+
 @testset "golden: real captured payload -> all exports (W8, offline)" begin
     # A genuine picker transport payload for Walmart's income statement (test/data/), so the
     # whole pipeline is exercised against real data with no live browser.

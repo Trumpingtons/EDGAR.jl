@@ -280,13 +280,23 @@ function _add_intrinsic_statements!(cmap::AbstractDict)
     return cmap
 end
 
+# Convert a linkbase locator's element-id fragment (`prefix_localname`, from a `xlink:href` after the `#`)
+# to the concept QName (`prefix:localname`) that the instance's facts carry. The namespace prefix joins the
+# local name by an underscore; XBRL concept LOCAL names are underscore-free camelCase, but some taxonomy
+# PREFIXES contain underscores (EDINET's `jpigp_cor`, `jppfs_cor`, `jpcrp_cor`, …), so we split on the LAST
+# underscore. For every hyphenated-prefix taxonomy (us-gaap, ifrs-full, in-capmkt, uk-core) the element-id
+# has exactly one underscore, so last == first — this is a no-op there and fixes the multi-underscore case.
+_locref_qname(frag::AbstractString) =
+    (i = findlast('_', frag); i === nothing ? String(frag) :
+        string(frag[1:prevind(frag, i)], ':', frag[nextind(frag, i):end]))
+
 # Parse a presentation-linkbase XML into a `concept => Vector{statement}` map — EVERY statement section
 # the concept appears in, priority-sorted so the first is the primary. A concept is commonly multi-homed
 # (e.g. StockholdersEquity ∈ BalanceSheet + Equity; NetIncomeLoss ∈ IncomeStatement + CashFlow + Equity).
 function _concept_statements(pre_xml::AbstractString)
     cmap = Dict{String,Vector{String}}()
     for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
-        concepts = String[replace(String(loc.captures[1]), "_" => ":"; count = 1)
+        concepts = String[_locref_qname(loc.captures[1])
                           for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])]
         stmt = _classify_role(m.captures[1], concepts)
         isempty(stmt) && continue
@@ -314,7 +324,7 @@ function _concept_negations(pre_xml::AbstractString)
             a = _attrs(l.captures[1]); href = get(a, "xlink:href", ""); lbl = get(a, "xlink:label", "")
             i = findfirst('#', href)
             (isempty(lbl) || i === nothing) && continue
-            loc[lbl] = replace(href[nextind(href, i):end], "_" => ":"; count = 1)
+            loc[lbl] = _locref_qname(href[nextind(href, i):end])
         end
         stmt = _classify_role(role, unique(collect(values(loc))))
         isempty(stmt) && continue
@@ -353,7 +363,7 @@ function reconstruct_from_notes(pre_xml::AbstractString, rows, statement::Abstra
     rolefor = Dict{String,String}()          # concept -> the note role it is reconstructed from
     for m in eachmatch(r"(?is)<(?:link:)?presentationLink\b[^>]*\brole=\"([^\"]+)\"[^>]*>(.*?)</(?:link:)?presentationLink>", pre_xml)
         role = m.captures[1]
-        concepts = unique(String[replace(String(loc.captures[1]), "_" => ":"; count = 1)
+        concepts = unique(String[_locref_qname(loc.captures[1])
                                  for loc in eachmatch(r"xlink:href=\"[^\"#]*#([^\"]+)\"", m.captures[2])])
         _classify_role(role, concepts; relaxed = true) == statement || continue   # the role's intent
         isempty(_classify_role(role, concepts)) || continue                       # but NOT a face section
@@ -398,7 +408,7 @@ function _concept_labels(lab_xml::AbstractString; lang::Union{AbstractString,Not
         (isempty(href) || isempty(label)) && continue
         i = findlast('#', href)
         i === nothing && continue
-        locmap[label] = replace(href[nextind(href, i):end], "_" => ":"; count = 1)
+        locmap[label] = _locref_qname(href[nextind(href, i):end])
     end
     arcs = Dict{String,String}()                            # label-resource label -> concept
     for arc in eachmatch(r"(?is)<(?:link:)?labelArc\b([^>]*)>", lab_xml)
@@ -430,10 +440,15 @@ end
 # locator labels; the loc elements map those labels back to concepts. Note we do NOT use the
 # weights to rewrite stored fact values — those are XBRL-canonical and validated against the SEC
 # API — the weight is exposed as the contribution sign / for summation checks.
-function _calculations(cal_xml::AbstractString)
-    rows = @NamedTuple{statement::String, parent::String, child::String, weight::Float64}[]
+# Role-preserving parse of the calculation linkbase: one `(role, parent, child, weight)` per arc, keeping
+# the RAW role URI. `_calculations` maps this to the classified statement for the public API; the roll-up
+# checker (`check_calculations`) needs the raw role, because two roles that classify to the SAME statement
+# (notably `CashFlowStatementDirect` + `CashFlowStatementIndirect` → "CashFlow") must NOT have their arcs
+# merged — that would double-count a parent's children.
+function _calc_arcs(cal_xml::AbstractString)
+    rows = @NamedTuple{role::String, parent::String, child::String, weight::Float64}[]
     for link in eachmatch(r"(?is)<(?:link:)?calculationLink\b([^>]*)>(.*?)</(?:link:)?calculationLink>", cal_xml)
-        stmt = _classify_role(get(_attrs(link.captures[1]), "xlink:role", ""))
+        role = get(_attrs(link.captures[1]), "xlink:role", "")
         body = link.captures[2]
         locmap = Dict{String,String}()
         for loc in eachmatch(r"(?is)<(?:link:)?loc\b([^>]*)>", body)
@@ -442,18 +457,104 @@ function _calculations(cal_xml::AbstractString)
             (isempty(href) || isempty(label)) && continue
             i = findlast('#', href)
             i === nothing && continue
-            locmap[label] = replace(href[nextind(href, i):end], "_" => ":"; count = 1)
+            locmap[label] = _locref_qname(href[nextind(href, i):end])
         end
         for arc in eachmatch(r"(?is)<(?:link:)?calculationArc\b([^>]*)>", body)
             a = _attrs(arc.captures[1])
             parent = get(locmap, get(a, "xlink:from", ""), "")
             child = get(locmap, get(a, "xlink:to", ""), "")
             (isempty(parent) || isempty(child)) && continue
-            push!(rows, (statement = stmt, parent = parent, child = child,
+            push!(rows, (role = role, parent = parent, child = child,
                          weight = something(tryparse(Float64, get(a, "weight", "")), 1.0)))
         end
     end
     return rows
+end
+
+_calculations(cal_xml::AbstractString) =
+    [(statement = _classify_role(a.role), parent = a.parent, child = a.child, weight = a.weight)
+     for a in _calc_arcs(cal_xml)]
+
+# ── Decimals-aware calculation validation (roll-up checks) ────────────────────
+# Verify that each summation the calculation linkbase declares actually holds in the reported facts:
+# for a parent concept and its DIRECT children (`parent = Σ weight·child`), does the reported parent equal
+# the weighted sum of the reported children? The comparison is **decimals-aware**, per the XBRL 2.1
+# calculation-consistency rule: a fact reported with `@decimals=d` denotes the interval `value ± ½·10^(−d)`
+# (e.g. `d=-6`, millions → ±500 000; `d=2` → ±0.005). A summation is consistent when the reported parent's
+# interval overlaps the computed sum's — i.e. `|reported − computed| ≤ ½·10^(−d_parent) + Σ ½·10^(−d_child)`.
+# So rounding never counts as an error, and no arbitrary percentage tolerance is needed. `@decimals` absent
+# or `INF` (stored as `nothing`) means an exact value → zero interval contribution.
+
+# Half-unit rounding interval for a fact reported at `decimals` (nothing = exact → 0).
+_decimals_halfwidth(d::Union{Int,Nothing}) = d === nothing ? 0.0 : 0.5 * exp10(-Float64(d))
+
+# Short, human role name (the last path segment of the role URI) for display.
+_role_shortname(role::AbstractString) = isempty(role) ? "" : String(last(split(role, '/')))
+
+"""
+    check_calculations(f::Filing) -> Vector{NamedTuple}
+
+Validate a filing's **calculation roll-ups** against its own reported facts — a decimals-aware,
+per-context internal-consistency check (system-agnostic: any filing whose `cal` linkbase is reachable).
+
+For every parent concept in the calculation linkbase and each context the parent is reported in, if **all**
+of the parent's direct children are also reported in that same context, the weighted child sum is compared
+to the reported parent. The check is **decimals-aware**: values are treated as XBRL rounding intervals
+(`value ± ½·10^(−decimals)`), so `consistent` is `true` when `|reported − computed|` does not exceed the
+combined interval — rounding is never flagged, and there is no arbitrary tolerance.
+
+Returns one row per checked `(role, parent, context)` — `role` (the raw calculation role, so the direct and
+indirect cash-flow roll-ups stay separate), `parent`, `context_ref`, `period_end`, `reported`, `computed`,
+`discrepancy` (`|reported − computed|`), `interval` (the allowed rounding slack), `n_children`, and
+`consistent`. Matching is **within a single `context_ref`** (same period AND same dimensional members), so a
+segment breakdown is never summed against a consolidated parent. Parents whose children are not all present
+in a context are skipped (a legitimately omitted line is not an error). Filter `r -> !r.consistent` for the
+exceptions.
+
+```julia
+f = fetch_filing(India(), first(discover(IntegratedFilings(); symbol = "TCS")).url)
+bad = filter(r -> !r.consistent, check_calculations(f))
+```
+"""
+function check_calculations(f::Filing)
+    Row = @NamedTuple{role::String, parent::String, context_ref::String,
+                      period_end::Union{Date,Nothing}, reported::Float64, computed::Float64,
+                      discrepancy::Float64, interval::Float64, n_children::Int, consistent::Bool}
+    cal = _fetch_linkbase(f, "cal")
+    isempty(cal) && return Row[]
+    arcs = _calc_arcs(cal)
+    isempty(arcs) && return Row[]
+
+    # Index reported facts by context, keeping the value / decimals / period per concept.
+    byctx = Dict{String,Dict{String,@NamedTuple{value::Float64, decimals::Union{Int,Nothing}, period_end::Union{Date,Nothing}}}}()
+    for r in facts(f)
+        d = get!(byctx, r.context_ref, Dict{String,@NamedTuple{value::Float64, decimals::Union{Int,Nothing}, period_end::Union{Date,Nothing}}}())
+        haskey(d, r.concept) || (d[r.concept] = (value = r.value, decimals = r.decimals, period_end = r.period_end))
+    end
+
+    # Group arcs by (raw role, parent) → its direct children.
+    groups = Dict{Tuple{String,String},Vector{@NamedTuple{child::String, weight::Float64}}}()
+    for a in arcs
+        push!(get!(groups, (a.role, a.parent), @NamedTuple{child::String, weight::Float64}[]),
+              (child = a.child, weight = a.weight))
+    end
+
+    out = Row[]
+    for ((role, parent), kids) in groups, (ctx, cmap) in byctx
+        haskey(cmap, parent) || continue
+        all(k -> haskey(cmap, k.child), kids) || continue
+        computed = sum(k.weight * cmap[k.child].value for k in kids)
+        reported = cmap[parent].value
+        interval = _decimals_halfwidth(cmap[parent].decimals) +
+                   sum(_decimals_halfwidth(cmap[k.child].decimals) for k in kids)
+        disc = abs(reported - computed)
+        push!(out, (role = _role_shortname(role), parent = parent, context_ref = ctx,
+                    period_end = cmap[parent].period_end, reported = reported, computed = computed,
+                    discrepancy = disc, interval = interval, n_children = length(kids),
+                    consistent = disc <= interval))
+    end
+    sort!(out; by = r -> (r.consistent, -r.discrepancy))     # exceptions first, largest discrepancy first
+    return out
 end
 
 """

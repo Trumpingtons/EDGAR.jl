@@ -2089,6 +2089,56 @@ statement-specific. For Walmart, \texttt{us-gaap:OperatingIncomeLoss} =
 \texttt{Revenues}\,(+1)\,$-$\,\texttt{CostOfRevenue}\,(-1)\,$-$\,\texttt{SGA}\,(-1), and the
 children indeed sum to the reported operating income.
 
+\noindent \emph{Validating} those roll-ups is \texttt{check\_calculations}: for each parent concept
+and each context it is reported in, it sums the reported children and flags any summation that
+disagrees. The comparison is \textbf{decimals-aware} rather than a fixed percentage --- a fact
+reported at \texttt{@decimals=d} denotes the rounding interval $\text{value}\pm\tfrac{1}{2}\cdot
+10^{-d}$, and a roll-up is consistent when $|\text{reported}-\text{computed}|$ does not exceed the
+combined interval of the parent and its children, so rounding is never mistaken for an error.
+
+\sig{check\_calculations(f::Filing) -> Vector\{NamedTuple\}}
+
+\noindent Each row is one checked \texttt{(role, parent, context)}: the calculation \texttt{role} the
+roll-up comes from, the \texttt{parent} concept, its \texttt{context\_ref} and \texttt{period\_end}, the
+\texttt{reported} value, the \texttt{computed} weighted child sum, their \texttt{discrepancy}, the allowed
+rounding \texttt{interval}, the child count \texttt{n\_children}, and the \texttt{consistent} verdict.
+Matching is \emph{within a single context} (same period \emph{and} dimensional members), so a segment
+breakdown is never summed against a consolidated parent; a parent whose children are not all reported in a
+context is skipped rather than flagged (an omitted line is not an error). Grouping is by the \emph{raw}
+calculation role, so roll-ups that classify to the same statement --- e.g.\ the direct and indirect
+cash-flow roles --- are never merged (which would double-count a parent's children). Filter for the
+exceptions:
+
+\begin{lstlisting}
+f   = fetch_filing(India(), first(discover(IntegratedFilings(); symbol = "TCS")).url)
+bad = filter(r -> !r.consistent, check_calculations(f))   # empty ⇒ every roll-up holds
+\end{lstlisting}
+
+\noindent It works for every jurisdiction whose taxonomy publishes a calculation linkbase ---
+\textbf{SEC, ESEF, India, EDINET and DART}. \textbf{Companies House is the exception:} the FRC's UK
+taxonomy (FRS~101/102/105) defines \emph{no calculation linkbase} at all --- its discoverable
+taxonomy set carries only presentation, definition, label and reference linkbases. There are
+therefore no roll-up relationships to check, and \texttt{check\_calculations} returns an empty table
+for a UK filing --- correctly, as a faithful reflection of the source, not an unfilled gap. A UK
+filing's arithmetic consistency instead rests on the balance-sheet identity (net assets equal total
+equity), which the accounts satisfy directly.
+
+\paragraph{A note on DART (redundant calculation roles).} \texttt{check\_calculations} is deliberately
+\emph{strict}: each calculation role is a separate arithmetic assertion, validated on its own (the same
+faithful, per-role semantics Arelle applies), and roll-ups are grouped by the raw role so they are never
+merged across roles. Korean \textbf{DART} entity-extension taxonomies exploit this in an unusual way ---
+they routinely ship \emph{redundant, incomplete duplicate} calculation roles: a role \texttt{...-Dnnnn05}
+that is the complete role \texttt{...-Dnnnn00} with one or two children silently dropped (e.g.\
+\texttt{ComprehensiveIncome} wired to two of its OCI leaves instead of the \texttt{OtherComprehensiveIncome}
+subtotal). The incomplete role's declared children genuinely do not sum to the parent, so it is
+\emph{correctly} reported as an exception --- even though the same subtotal is confirmed by the complete
+role. This is a property of those filings' linkbases, not of the extraction: the reported figures are
+sound. Observed on two large filers, SK~Hynix (37 per-role exceptions, all but 6 corroborated by a parallel
+role) and Kia (26 exceptions, \emph{all} corroborated). When the goal is data-quality triage rather than
+per-role fidelity, group the result by \texttt{(parent, context\_ref)} and keep only the subtotals that are
+consistent in \emph{no} role --- those are the totals no calculation confirms (for SK~Hynix, only the six
+statement-of-changes-in-equity owner-transaction lines).
+
 \paragraph{Concept standardization (pluggable).} Each fact row carries a
 \texttt{standard\_concept}: the issuer's \texttt{concept} mapped to a common name so facts can be
 grouped and compared across companies (the original \texttt{concept} and \texttt{label} are
