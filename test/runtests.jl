@@ -1371,6 +1371,29 @@ end
     @test pre("INTEGRATED_FILING_GI_1_2.xml")         == "in-capmkt-pre-gi-2025-01-31.xml"
     # the OLD in-bse-fin feed is unaffected (routes to its own linkbases).
     @test pre("BANKING_1_2.xml") == "in-bse-fin-pre-2019-09-30.xml"
+
+    # ── REITs / InvITs: a THIRD in-capmkt format (INTEGRATED_FILING_RESULTIR_), served through the OLD
+    #    corporates-financial-results endpoint (index=reitsinvits), on the 2026-01-31 taxonomy ──
+    # Discovery handles the REIT record schema (consNoncons / auditedUnaudited / periodEnded, and the
+    # hyphenated "Un-Audited"; no ISIN → nse_symbol identity).
+    rr = EDGAR.JSON3.read(read(joinpath(@__DIR__, "data", "india", "reitsinvits-results-min.json")))
+    hr = EDGAR._nse_result_handles(rr, "EMBASSY"; consolidated = nothing, audited = nothing)
+    @test length(hr) == 3
+    @test all(h -> h.entity == EntityId(:nse_symbol, "EMBASSY"), hr)      # REIT records carry no ISIN
+    @test hr[1].period_end == Date(2026, 3, 31)                          # from `periodEnded`
+    @test length(EDGAR._nse_result_handles(rr, "EMBASSY"; consolidated = true,  audited = nothing)) == 2  # consNoncons
+    @test length(EDGAR._nse_result_handles(rr, "EMBASSY"; consolidated = false, audited = nothing)) == 1
+    @test length(EDGAR._nse_result_handles(rr, "EMBASSY"; consolidated = nothing, audited = false)) == 1  # "Un-Audited"
+
+    # A real REIT instance routes to the REIT linkbase (v2026-01-31) and classifies the core statements.
+    freit = fetch_filing(India(), joinpath(@__DIR__, "data", "india", "INTEGRATED_FILING_RESULTIR_embassy-fy2026.xml"))
+    @test EDGAR._india_pre_file(freit) == "in-capmkt-pre-reit-2026-01-31.xml"
+    @test EDGAR._india_lab_file(freit) == "in-capmkt-lab-reit-2026-01-31.xml"
+    rrows = facts(freit; classify = true, labels = true)
+    @test all(r -> startswith(r.concept, "in-capmkt:"), rrows)
+    @test all(r -> !isempty(r.label), rrows)                             # REIT label linkbase bundled too
+    @test !isempty(select_statement(rrows, "BalanceSheet")) && !isempty(select_statement(rrows, "IncomeStatement"))
+    @test "in-capmkt:RevenueFromOperations" in Set(r.concept for r in select_statement(rrows, "IncomeStatement"))
 end
 
 @testset "India: native labels from bundled linkbases (I4, offline)" begin

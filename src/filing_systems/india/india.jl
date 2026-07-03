@@ -244,10 +244,11 @@ const _INDIA_DATA_DIR = joinpath(@__DIR__, "data")
 function _india_format(f::Filing)
     doc = uppercase(f.document)
     if startswith(doc, "INTEGRATED_FILING")               # in-capmkt (Integrated Filing) — by sector prefix
-        occursin("BANKING", doc) && return :cap_banking
-        occursin("NBFC", doc)    && return :cap_nbfc
-        occursin("_LI", doc)     && return :cap_li         # Life insurance
-        occursin("_GI", doc)     && return :cap_gi         # General insurance
+        occursin("RESULTIR", doc) && return :cap_reit      # REITs / InvITs (INTEGRATED_FILING_RESULTIR_)
+        occursin("BANKING", doc)  && return :cap_banking
+        occursin("NBFC", doc)     && return :cap_nbfc
+        occursin("_LI", doc)      && return :cap_li        # Life insurance
+        occursin("_GI", doc)      && return :cap_gi        # General insurance
         return :cap_indas                                  # general Ind-AS (default)
     end
     startswith(doc, "BANKING") && return :bse_banking
@@ -267,6 +268,7 @@ const _INDIA_LINKBASES = Dict(
     :cap_nbfc    => ("in-capmkt-pre-nbfc-2025-01-31.xml",    "in-capmkt-lab-nbfc-2025-01-31.xml"),
     :cap_li      => ("in-capmkt-pre-li-2025-01-31.xml",      "in-capmkt-lab-li-2025-01-31.xml"),
     :cap_gi      => ("in-capmkt-pre-gi-2025-01-31.xml",      "in-capmkt-lab-gi-2025-01-31.xml"),
+    :cap_reit    => ("in-capmkt-pre-reit-2026-01-31.xml",    "in-capmkt-lab-reit-2026-01-31.xml"),  # REITs/InvITs (v2026-01-31)
     :bse_indas   => ("in-bse-fin-pre-2020-03-31.xml",        "in-bse-fin-label-2020-03-31.xml"),
     :bse_banking => ("in-bse-fin-pre-2019-09-30.xml",        "in-bse-fin-label-2019-09-30.xml"),
     :bse_nbfc    => ("in-bse-fin-pre-nbfc-2020-03-31.xml",   "in-bse-fin-label-nbfc-2020-03-31.xml"),

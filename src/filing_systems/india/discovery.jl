@@ -26,51 +26,70 @@ end
 # A record field as a String, with null/absent → "".
 _nse_str(r, k) = (v = get(r, k, nothing); v === nothing ? "" : string(v))
 
-# A yes/no flag ("Consolidated"/"Audited"/…) lower-cased for comparison; "" when absent.
-_nse_flag(r, k) = (v = get(r, k, nothing); v === nothing ? "" : lowercase(strip(string(v))))
+# A yes/no flag ("Consolidated"/"Audited"/…) normalised for comparison: lower-cased with hyphens and
+# spaces removed, so the two record schemas agree ("Non-Consolidated"→"nonconsolidated",
+# "Un-Audited"→"unaudited" like the equity feed's "Unaudited"). "" when absent.
+_nse_norm(s) = replace(lowercase(strip(string(s))), r"[-\s]" => "")
+_nse_flag(r, ks...) = (v = _nse_first(r, ks...); _nse_norm(v))
+
+# First non-empty string value among several candidate keys (the two result schemas name the same field
+# differently — equity `consolidated`/`audited`/`toDate` vs REIT/InvIT `consNoncons`/`auditedUnaudited`/
+# `periodEnded`). "" when none present.
+function _nse_first(r, ks...)
+    for k in ks
+        v = _nse_str(r, k); isempty(v) || return v
+    end
+    return ""
+end
 
 # Turn the parsed results-API array into FilingHandles. PURE (no network) — testable offline against a
 # saved results JSON. Keeps only records that carry an XBRL url, narrowed by consolidated/audited (each
-# `nothing` = don't filter). Identity is the record's ISIN (falling back to the queried `sym`), the ref
-# is the NSE sequence number, and `period_end` is the results' `toDate`. Newest first.
+# `nothing` = don't filter). Handles BOTH result schemas: equity (`consolidated`/`audited`/`isin`/
+# `seqNumber`/`toDate`) and REIT/InvIT (`consNoncons`/`auditedUnaudited`/`periodEnded`, no ISIN/seq).
+# Identity is the record's ISIN (falling back to the queried `sym`); `period_end` is the results' end date.
+# Newest first.
 function _nse_result_handles(records, sym::AbstractString;
                              consolidated::Union{Bool,Nothing}, audited::Union{Bool,Nothing})
     handles = FilingHandle[]
     for r in records
         url = _nse_str(r, :xbrl); isempty(url) && continue
-        consolidated === nothing || _nse_flag(r, :consolidated) == (consolidated ? "consolidated" : "non-consolidated") || continue
-        audited === nothing      || _nse_flag(r, :audited)      == (audited ? "audited" : "unaudited")               || continue
+        consolidated === nothing || _nse_flag(r, :consolidated, :consNoncons) == (consolidated ? "consolidated" : "nonconsolidated") || continue
+        audited === nothing      || _nse_flag(r, :audited, :auditedUnaudited) == (audited ? "audited" : "unaudited")                 || continue
         isin = _nse_str(r, :isin)
         ent  = isempty(isin) ? EntityId(:nse_symbol, sym) : EntityId(:isin, isin)
         ref  = _nse_str(r, :seqNumber); isempty(ref) && (ref = basename(url))
         push!(handles, FilingHandle(; system = India(), entity = ent, ref = ref, url = url,
-              period_end = _nse_date(_nse_str(r, :toDate)), country = "IN"))
+              period_end = _nse_date(_nse_first(r, :toDate, :periodEnded)), country = "IN"))
     end
     sort!(handles; by = h -> something(h.period_end, Date(0)), rev = true)
     return handles
 end
 
 """
-    discover(::NSEFilings; symbol, period="Annual", consolidated=true, audited=true) -> Vector{FilingHandle}
+    discover(::NSEFilings; symbol, period="Annual", index="equities", consolidated=true, audited=true)
+        -> Vector{FilingHandle}
 
 List a company's financial-results filings from the NSE corporate-filings API, by ticker `symbol` (e.g.
-`"RELIANCE"`). `period` is `"Annual"` or `"Quarterly"`. `consolidated` / `audited` narrow the results
-(`true` / `false`, or `nothing` to keep both). Returns [`FilingHandle`](@ref)s tagged `India()`, each
-carrying the Ind-AS XBRL URL and the record's ISIN as identity, newest first; fetch one with
-[`fetch_filing`](@ref). Keyless, but cookie-gated — the NSE session is bootstrapped (and refreshed on a
-failed call) automatically.
+`"RELIANCE"`). `period` is `"Annual"` or `"Quarterly"`. `index` is the instrument class: `"equities"`
+(the default — Ind-AS / Banking / NBFC, on the `in-bse-fin` taxonomy) or `"reitsinvits"` (REITs / InvITs,
+which file `INTEGRATED_FILING_RESULTIR_` XBRL on the `in-capmkt` taxonomy through this same endpoint).
+`consolidated` / `audited` narrow the results (`true` / `false`, or `nothing` to keep both). Returns
+[`FilingHandle`](@ref)s tagged `India()`, newest first; fetch one with [`fetch_filing`](@ref). Keyless,
+but cookie-gated — the NSE session is bootstrapped (and refreshed on a failed call) automatically.
 
 ```julia
-hs = discover(NSEFilings(); symbol = "RELIANCE")   # annual, consolidated, audited
+hs = discover(NSEFilings(); symbol = "RELIANCE")                       # annual, consolidated, audited
+hs = discover(NSEFilings(); symbol = "EMBASSY", index = "reitsinvits", period = "Quarterly")   # a REIT
 f  = fetch_filing(first(hs))
 facts(f)
 ```
 """
 function discover(::NSEFilings; symbol=nothing, period::AbstractString="Annual",
+                  index::AbstractString="equities",
                   consolidated::Union{Bool,Nothing}=true, audited::Union{Bool,Nothing}=true)
     symbol === nothing && throw(ArgumentError("discover(NSEFilings(); …) needs a ticker `symbol`"))
     sym = uppercase(strip(String(symbol)))
-    url = string(_NSE_RESULTS_API, "?index=equities",
+    url = string(_NSE_RESULTS_API, "?index=", HTTP.URIs.escapeuri(index),
                  "&symbol=", HTTP.URIs.escapeuri(sym), "&period=", HTTP.URIs.escapeuri(period))
     records = try
         _get_json(url; headers = _nse_headers(), use_cache = false)

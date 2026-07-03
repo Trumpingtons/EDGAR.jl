@@ -158,12 +158,20 @@ Decision was Strategy C (dedicated vocab, NOT canonicalize). Two pieces together
 ### I5 — Integrated Filing seam + `in-capmkt` classification ✅ DONE
 The roadmap item below, now BUILT (and larger than first scoped — the Integrated Filing carries ALL
 sectors on `in-capmkt`, not only insurers). `IntegratedFilings <: FilingSource` over
-`/api/integrated-filing-results`; `vocab_incapmkt.jl` + five bundled `in-capmkt` presentation linkbases
-(INDAS/Banking/NBFC/LI/GI); entity via SEBI ScripCode; namespace-agnostic period handling (in-capmkt dates
-are already correct). Verified live across sectors (TCS/INDAS, SBI Life & HDFC Life/LI, ICICI Lombard/GI).
-**REITs/InvITs** remain open — a third `in-capmkt` format whose live feed endpoint was not located.
+`/api/integrated-filing-results`; `vocab_incapmkt.jl` + bundled `in-capmkt` presentation linkbases;
+entity via SEBI ScripCode; namespace-agnostic period handling (in-capmkt dates are already correct).
+Verified live across sectors (TCS/INDAS, SBI Life & HDFC Life/LI, ICICI Lombard/GI).
 
-## Roadmap — the Integrated Filing / `in-capmkt` seam (insurers, REITs/InvITs) — ✅ IMPLEMENTED as I5 (REITs open)
+**REITs / InvITs ✅ DONE** — the third `in-capmkt` format (`INTEGRATED_FILING_RESULTIR_`, taxonomy
+v2026-01-31). The feed was located: they file through the OLD `corporates-financial-results` endpoint with
+**`index=reitsinvits`** (NOT the integrated-filing endpoint, which returns 0 for them). `discover(NSEFilings())`
+gained an `index` kwarg and the handle parser is now tolerant of the REIT record schema (`consNoncons` /
+`auditedUnaudited` / `periodEnded`, hyphenated `Un-Audited`, no ISIN). The REIT presentation + label linkbases
+are bundled and routed via `:cap_reit`; REIT P&L uses the general Ind-AS concepts (RevenueFromOperations), so
+`vocab_incapmkt` already anchors it. Verified live (Embassy REIT, IndiGrid InvIT). Note the endpoint also
+exposes `index=insurance` — a second route to insurers, redundant with the LI/GI integrated-filing path.
+
+## Roadmap — the Integrated Filing / `in-capmkt` seam — ✅ FULLY IMPLEMENTED as I5 (all sectors incl. REITs/InvITs)
 
 Investigated 2026-07 (in response to "do insurers/REITs use `NBFC_INDAS_`?" — they do NOT). The adapter's
 current seam (`corporates-financial-results` + the `in-bse-fin` taxonomy, phases I0–I3) covers the general
