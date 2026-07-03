@@ -107,19 +107,21 @@ Status icons: ☐ todo · ▶ doing · ✅ done · ⏸ blocked. **Nothing coded 
   `cookies=true`) — **pin HTTP 1.10, never 2** (Reseau TLS breaks cross-host redirects; see memory).
 - ☐ I0.3 `include` + `export India, NSEFilings, ...`; `using EDGAR` precompiles + loads clean.
 
-### I1 — Offline parse ☐
-- ☐ I1.1 `fetch_filing(::India, src)` over a single Ind-AS `.xml` instance (linkbases absent → the
-  Companies House standard-taxonomy-only path, NOT the report-package reader).
-- ☐ I1.2 🚦 **GATE (fixture):** commit a minimal fixture (`test/data/india/…`) with a real (trimmed) NSE
-  `INDAS_*.xml` + a passing offline testset. (Reliance FY23-24 instance already downloaded to scratch.)
+### I1 — Offline parse ✅ DONE
+- ✅ I1.1 `fetch_filing(::India, src)` over a single Ind-AS `.xml` instance (standard-taxonomy-only path,
+  NOT the report-package reader); classic `:xbrl` filing; `_india_normalize_periods` rewrites the unreliable
+  NSE context dates from each context's `DateOf…ReportingPeriod` facts. `facts()` + `narratives()` both work.
+- ✅ I1.2 GATE met: `test/data/india/reliance-fy2024.xml` fixture + offline testset (15/15). Committed.
 
-### I2 — Discovery + keyless fetch (`NSEFilings`) ☐
-- ☐ I2.1 `NSEFilings <: FilingSource`; `discover(::NSEFilings; symbol=…, isin=…, period="Annual",
-  consolidated=true, audited=true)` → the results API → `FilingHandle`s (url = the `xbrl` field;
-  country="IN"). Filter records by `consolidated`/`audited`/`period`.
-- ☐ I2.2 `fetch_filing(::India, h)` downloads the instance with the cookie session; routes to I1.
-- ☐ I2.3 🚦 **GATE (live):** discover→fetch→`facts` on **2 fresh filers** (NOT Reliance — validate on new
-  filers each time; see memory). Confirm the cookie session, `xbrl` URL fetch, and raw `facts` end-to-end.
+### I2 — Discovery + keyless fetch (`NSEFilings`) ✅ DONE
+- ✅ I2.1 `NSEFilings <: FilingSource`; `discover(::NSEFilings; symbol, period="Annual", consolidated=true,
+  audited=true)` → the results API → `FilingHandle`s (ISIN identity, url = the `xbrl` field, `toDate`
+  period, country="IN", newest-first) via the pure `_nse_result_handles`. **Cookie session** (`_nse_cookies`
+  /`_nse_headers` in india.jl) bootstraps past Akamai with browser NAVIGATION headers — see [[nse-akamai-session]].
+- ✅ I2.2 `fetch_filing(::India, h::FilingHandle)` downloads the instance with the cookie session; routes to I1.
+- ✅ I2.3 GATE met (live): discover→fetch→`facts` end-to-end on **2 fresh filers** — TCS (rev ₹2,40,893 cr)
+  and Maruti (₹1,41,858 cr), both real values, ISIN identity. Offline discovery testset (11/11) +
+  `nse-results-min.json` fixture committed.
 
 ### I3 — Vocab: canonicalize `in-bse-fin` → `ifrs-full` (the design fork above) ☐
 - ☐ I3.1 `_india_canonicalize`: rewrite `in-bse-fin`-namespace concepts with an `ifrs-full` local-name

@@ -1,0 +1,58 @@
+[
+ {
+  "companyName": "Reliance Industries Limited",
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "consolidated": "Consolidated",
+  "audited": "Audited",
+  "period": "Annual",
+  "financialYear": "01-Apr-2023 To 31-Mar-2024",
+  "fromDate": "01-Apr-2023",
+  "toDate": "31-Mar-2024",
+  "seqNumber": "1169209",
+  "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_104634_1106038_22042024074704.xml",
+  "indAs": "Ind-AS New"
+ },
+ {
+  "companyName": "Reliance Industries Limited",
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "consolidated": "Non-Consolidated",
+  "audited": "Audited",
+  "period": "Annual",
+  "financialYear": "01-Apr-2023 To 31-Mar-2024",
+  "fromDate": "01-Apr-2023",
+  "toDate": "31-Mar-2024",
+  "seqNumber": "1169207",
+  "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_104633_1106029_22042024074028.xml",
+  "indAs": "Ind-AS New"
+ },
+ {
+  "companyName": "Reliance Industries Limited",
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "consolidated": "Consolidated",
+  "audited": "Audited",
+  "period": "Annual",
+  "financialYear": "01-Apr-2022 To 31-Mar-2023",
+  "fromDate": "01-Apr-2022",
+  "toDate": "31-Mar-2023",
+  "seqNumber": "1145211",
+  "xbrl": "https://nsearchives.nseindia.com/corporate/xbrl/INDAS_90782_831396_21042023075933.xml",
+  "indAs": "Ind-AS New"
+ },
+ {
+  "companyName": "Reliance Industries Limited",
+  "symbol": "RELIANCE",
+  "isin": "INE002A01018",
+  "consolidated": "Consolidated",
+  "audited": "Audited",
+  "period": "Annual",
+  "financialYear": "01-Apr-2023 To 31-Mar-2024",
+  "fromDate": "01-Apr-2023",
+  "toDate": "31-Mar-2024",
+  "seqNumber": "0000000",
+  "xbrl": "",
+  "indAs": "Ind-AS New"
+ }
+]

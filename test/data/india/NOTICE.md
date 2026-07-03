@@ -23,3 +23,14 @@ building an `:xbrl` filing, the shared classic-instance extractor (`_classic_fac
   `http://www.nseindia.com/NSESymbol` with value `RELIANCE` — the NSE ticker, **not** the ISIN (the ISIN
   `INE002A01018` comes from the discovery API record, I2).
 - Linkbases are **not** bundled (standard-taxonomy-only, the Companies House shape).
+
+# `nse-results-min.json`
+
+A **trimmed** copy of the real NSE corporate-filings *financial-results* listing for Reliance Industries
+(downloaded 2026-07 from `/api/corporates-financial-results?symbol=RELIANCE&period=Annual`), used for the
+offline discovery test (I2). Reduced to **four records** covering the cases the handle parser must get
+right: a consolidated+audited FY2024 filing, a standalone (non-consolidated)+audited FY2024 filing, an
+older consolidated FY2023 filing, and one consolidated FY2024 record with an **empty `xbrl`** field (must
+be skipped). Only the fields the parser reads are kept (`consolidated`, `audited`, `isin`, `seqNumber`,
+`xbrl`, `toDate`, …). It exercises `_nse_result_handles` — the pure results→[`FilingHandle`] parser that
+the live `discover(NSEFilings(); …)` wraps around one cookie-gated GET — with no network.

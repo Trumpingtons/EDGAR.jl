@@ -1243,6 +1243,32 @@ end
     @test any(n -> occursin("GST recovered", n.text), ns)     # the Segments note prose
 end
 
+@testset "India: NSE discovery handle parsing (I2, offline)" begin
+    # The pure results→handles parser (no network) against a trimmed real NSE results listing (Reliance;
+    # see the NOTICE): consolidated/standalone filtering, ISIN identity, period_end from `toDate`, skipping
+    # records with no XBRL url, newest-first. The live `discover(NSEFilings(); …)` wraps this around one
+    # cookie-gated GET; the cookie session itself is exercised in the live (network) testset.
+    recs = JSON3.read(read(joinpath(@__DIR__, "data", "india", "nse-results-min.json")))
+    @test length(recs) == 4
+
+    # consolidated + audited (the default): the FY24 and FY23 consolidated filings carry an XBRL; the
+    # empty-`xbrl` record is skipped.
+    hs = EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = true, audited = true)
+    @test length(hs) == 2
+    @test all(h -> h.system isa India, hs)
+    @test all(h -> h.entity == EntityId(:isin, "INE002A01018"), hs)     # identity from the record's ISIN
+    @test all(h -> h.country == "IN", hs)
+    @test issorted(hs; by = h -> h.period_end, rev = true)              # newest first
+    @test hs[1].period_end == Date(2024, 3, 31)
+    @test startswith(hs[1].url, "https://nsearchives.nseindia.com/corporate/xbrl/")
+    @test hs[1].ref == "1169209"                                        # the NSE sequence number
+
+    # standalone (consolidated=false) keeps only the Non-Consolidated record; no filter keeps every
+    # XBRL-bearing record (3 — the empty-`xbrl` one is always skipped).
+    @test length(EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = false, audited = true)) == 1
+    @test length(EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = nothing, audited = nothing)) == 3
+end
+
 @testset "ESEF: discovery + handle fetch (B2)" begin
     # ── Offline: the discovery nouns (FilingHandle, FilingSource) and handle-based fetch ──
     # A FilingHandle whose `url` is the LOCAL fixture exercises `fetch_filing(h)` →

@@ -37,8 +37,68 @@ system_tag(::India) = :india
 const _INDIA_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " *
                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-system_headers(::India) = ["User-Agent" => _INDIA_UA,
-                           "Accept"     => "application/json, text/html, */*"]
+system_headers(::India) = ["User-Agent"      => _INDIA_UA,
+                           "Accept"          => "application/json, text/plain, */*",
+                           "Accept-Language" => "en-US,en;q=0.9"]
+
+# ── NSE session (cookie bootstrap) ──────────────────────────────────────────────────────────────
+#
+# NSE's public JSON endpoints reject a cookieless client: a request must carry cookies minted by first
+# loading the homepage in a browser-like session. We bootstrap once (GET the homepage, collect its
+# `Set-Cookie` headers), cache the resulting Cookie header in-process, and attach it --- plus a
+# `Referer` --- to every NSE request. The cookies are short-lived, so the cache has a short TTL and the
+# discovery layer re-bootstraps on a failed call. The archive host (`nsearchives.nseindia.com`) shares
+# the `.nseindia.com` cookie domain, so the same header serves both discovery and the XBRL download.
+
+const _NSE_HOME       = "https://www.nseindia.com/"
+const _NSE_COOKIE     = Ref{String}("")
+const _NSE_COOKIE_TS  = Ref{Float64}(0.0)
+const _NSE_COOKIE_TTL = 600.0   # seconds — NSE session cookies are short-lived
+
+# Browser \emph{navigation} headers for the homepage bootstrap. The richer set (a document `Accept`,
+# `Accept-Language`, `Upgrade-Insecure-Requests` and the `Sec-Fetch-*` navigation hints) is what gets
+# NSE's Akamai edge to serve the page and set session cookies; the leaner API `system_headers(India())`
+# alone is refused (403). These are used ONLY to mint cookies.
+const _NSE_NAV_HEADERS = [
+    "User-Agent"                => _INDIA_UA,
+    "Accept"                    => "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language"           => "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests" => "1",
+    "Sec-Fetch-Dest"            => "document",
+    "Sec-Fetch-Mode"            => "navigate",
+    "Sec-Fetch-Site"            => "none",
+]
+
+# Mint (or reuse) the NSE Cookie header. `force=true` always re-bootstraps (refresh-on-failure). Cookies
+# are harvested even from a non-200 (Akamai's challenge response still carries `Set-Cookie`), deduped by
+# name (last wins). `status_exception=false` so a 403 does not abort before we read the cookies.
+function _nse_cookies(; force::Bool=false)
+    (!force && !isempty(_NSE_COOKIE[]) && time() - _NSE_COOKIE_TS[] < _NSE_COOKIE_TTL) && return _NSE_COOKIE[]
+    r = try
+        http_get(_NSE_HOME; headers = _NSE_NAV_HEADERS, read_idle_timeout = 15,
+                 cookies = false, status_exception = false, redirect = true)
+    catch e
+        error("NSE cookie bootstrap failed ($_NSE_HOME): $e")
+    end
+    names = String[]; vals = Dict{String,String}()          # dedup by name, preserve first-seen order
+    for (k, v) in r.headers
+        lowercase(k) == "set-cookie" || continue
+        nv = String(first(split(v, ';')))                    # "name=value" before the first ';'
+        nm = String(first(split(nv, '=')))
+        haskey(vals, nm) || push!(names, nm)
+        vals[nm] = nv
+    end
+    isempty(names) && error("NSE cookie bootstrap returned no cookies ($_NSE_HOME; status $(r.status))")
+    _NSE_COOKIE[] = join((vals[n] for n in names), "; "); _NSE_COOKIE_TS[] = time()
+    return _NSE_COOKIE[]
+end
+
+# HTTP headers for an authenticated NSE request: the browser headers + a `Referer` + the session Cookie.
+_nse_headers(; referer::AbstractString = _NSE_HOME, force::Bool=false) =
+    [system_headers(India())..., "Referer" => String(referer), "Cookie" => _nse_cookies(; force = force)]
+
+# Drop the cached NSE session (forces a fresh bootstrap on the next call).
+_nse_reset!() = (_NSE_COOKIE[] = ""; _NSE_COOKIE_TS[] = 0.0; nothing)
 
 # ── I1: offline parse of a single Ind-AS XBRL instance ──────────────────────────────────────────
 #
@@ -125,7 +185,7 @@ facts(f)                       # raw Ind-AS facts (classification is I3; needs v
 function fetch_filing(::India, src::AbstractString;
                       entity::Union{EntityId,Nothing}=nothing, ref::AbstractString="")
     raw = if startswith(src, "http://") || startswith(src, "https://")
-        b = fetch_url(src; headers = system_headers(India()))
+        b = fetch_url(src; headers = _nse_headers())   # NSE archive needs the session cookie + Referer
         b === nothing && error("could not fetch India XBRL instance $(repr(src))")
         Vector{UInt8}(b)
     else
