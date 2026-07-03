@@ -4694,8 +4694,8 @@ A listed Indian company discloses a whole \emph{universe} of documents to the ex
 \texttt{EDGAR.jl} extracts the one that is XBRL-tagged financial data --- the \textbf{periodic financial
 results} --- and reaches the rest for discovery. This section introduces the regulator and the
 results \emph{format templates} (\S\ref{sec:india-sebi}), the other disclosure families
-(\S\ref{sec:india-other-forms}), the taxonomies (\S\ref{sec:india-taxonomies}), what each format contains
-(\S\ref{sec:india-statements}) and statement classification (\S\ref{sec:india-classify}).
+(\S\ref{sec:india-other-forms}), the taxonomies (\S\ref{sec:india-taxonomies}), and what each format
+contains and how it is classified (\S\ref{sec:india-statements}).
 
 \subsection{SEBI and the periodic-results format templates}\label{sec:india-sebi}
 \textbf{SEBI} --- the Securities and Exchange Board of India --- is India's capital-markets regulator, the
@@ -4773,7 +4773,7 @@ Classification keys on the namespace --- not the version or the prefix --- so a 
 \texttt{vocab\_indas} spans them (\S\ref{sec:india-classify}); but code that resolves labels or the schema
 must use the exact version the instance declares.
 
-\subsection{Statement types by format class}\label{sec:india-statements}
+\subsection{Statement types and classification}\label{sec:india-statements}\label{sec:india-classify}
 A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
 (\texttt{INDAS\_}) format it carries the \textbf{balance sheet} (\texttt{Assets},
 \texttt{EquityAndLiabilities}), the \textbf{statement of profit and loss} including \textbf{other
@@ -4791,8 +4791,7 @@ both the current-quarter and the full-year figures, so \texttt{facts(f)} returns
 12-month fact for each flow concept (just as an SEC 10-Q carries the quarter and the year-to-date); select
 the one you want by its period, exactly as in any other jurisdiction.
 
-\subsection{Statement classification: a dedicated \texttt{vocab\_indas}}\label{sec:india-classify}
-All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
+\medskip\noindent All formats tag under the single national \texttt{in-bse-fin} namespace with IFRS-identical local names
 (\S\ref{sec:india-taxonomy}); because \texttt{EDGAR.jl} classifies by \emph{namespace}, not prefix, India is
 classified through a dedicated \texttt{vocab\_indas.jl} keyed on \texttt{in-bse-fin} (phase~I3) --- which
 must cover \emph{every} company-type format (the general Ind-AS lines \emph{and} the banking interest-based
