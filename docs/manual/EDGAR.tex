@@ -2676,7 +2676,7 @@ is the overview; the financial statements those reports carry are described unde
 \toprule
 \textbf{Group ($\to$ subsection)} & \textbf{Main forms} & \textbf{In \texttt{EDGAR.jl}} \\
 \midrule
-Periodic \& current reports & 10-K, 10-Q, 8-K; 20-F, 6-K, 40-F & financial statements + section text extracted \\
+Periodic reports \& material-event disclosures & 10-K, 10-Q, 8-K; 20-F, 6-K, 40-F & financial statements + section text extracted \\
 Corporate governance & DEF 14A & fetch + section text; structured extraction \emph{not yet} \\
 Tender offers \& mergers & Schedule TO & fetch only --- \emph{not yet} \\
 Securities offerings & S-1, S-3 & fetch only --- \emph{not yet} \\
@@ -2686,7 +2686,7 @@ Institutional holdings \& fund portfolios & 13F-HR, NPORT-P, N-MFP & fetch + met
 \end{tabular}
 \end{table}
 
-\subsection{Periodic and Current Reports}\label{big3}
+\subsection{Periodic Reports}\label{big3}
 
 \subsubsection{10-K: Annual Report}
 The annual report, denoted 10-K, provides a comprehensive overview of a company's business and financial performance for the fiscal year.
@@ -2695,9 +2695,9 @@ The annual report, denoted 10-K, provides a comprehensive overview of a company'
 			
 The quarterly report, denoted 10-Q, updates investors on the company's performance during a fiscal quarter. There is typically no Q4 10-Q because the annual 10-K covers the full year. Unlike a 10-K, the financial statements are usually reviewed but not fully audited.
 
-\subsubsection{8-K: Current Report}
+\subsection{Material-Event Disclosures}\label{sec:edgar-material-events}
 
-The current report, denoted 8-K, is filed whenever a material event occurs that investors should know about. Unlike 10-K and 10-Q filings, 8-K filings are event-driven and can be filed at any time. Common triggers include:
+Material-event disclosures are event-driven, ad-hoc filings of material corporate developments --- entirely different in nature from the scheduled periodic reports above. SEC EDGAR names them \textbf{Current Reports} (Form 8-K). The 8-K is filed whenever a material event occurs that investors should know about; unlike 10-K and 10-Q filings, it is event-driven and can be filed at any time. Common triggers include:
 \begin{itemize}
   \item Acquisitions or mergers
   \item Bankruptcy
