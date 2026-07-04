@@ -5130,9 +5130,9 @@ fund-industry association that collects mutual- and private-fund disclosures. \t
 
 \section{Entities covered}\label{sec:china-entities}
 
-Because CNINFO is a single portal over all three exchanges, ``which companies can I reach?'' has one answer:
-the \textbf{A-share listed universe} --- every company listed on the Shanghai, Shenzhen or Beijing exchange
-(Table~\ref{tab:china-entities}). This is simpler than India, where the three channels covered
+Because CNINFO is a single portal over all three exchanges, ``which filers can I reach?'' has a simple answer:
+the \textbf{A-share listed universe} --- every company listed on the Shanghai, Shenzhen or Beijing exchange ---
+plus the publicly-offered funds and REITs disclosed through the same portal (Table~\ref{tab:china-entities}). This is simpler than India, where the three channels covered
 \emph{different} universes; here the \texttt{column} parameter of the discovery query selects the board, but
 all three resolve through the same endpoint and the same identity scheme. A filer is identified by its
 six-digit exchange code together with CNINFO's \texttt{orgId} (\texttt{EntityId(:cninfo,\ "code,orgId")}).
@@ -5149,6 +5149,7 @@ six-digit exchange code together with CNINFO's \texttt{orgId} (\texttt{EntityId(
 \textbf{SSE} (\texttt{sse}) & Equity listed on the Shanghai Stock Exchange --- main board plus the STAR Market & $\sim$2{,}200 issuers & \textbf{covered} via CNINFO \\
 \textbf{SZSE} (\texttt{szse}) & Equity listed on the Shenzhen Stock Exchange --- main board plus ChiNext & $\sim$2{,}800 issuers & \textbf{covered} via CNINFO \\
 \textbf{BSE} (\texttt{bj}) & Equity listed on the Beijing Stock Exchange (SME/innovation board) & $\sim$260 issuers & \textbf{covered} via CNINFO \\
+\textbf{Funds \& REITs} (\texttt{fund}) & Publicly-offered collective vehicles disclosed through the same portal --- ETFs, LOFs, open-end funds and infrastructure REITs & $\sim$10{,}000+ funds, $\sim$60 REITs & \textbf{covered} via CNINFO \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -5162,6 +5163,30 @@ CAS. A company is reached by its six-digit code and CNINFO \texttt{orgId} --- e.
 Dual A$+$H-listed companies (also listed in Hong~Kong) appear here through their A-share code; their separate
 HKEX filing is a different repository and is not covered.
 
+\subsection{Public funds and REITs (\texttt{column=fund})}\label{sec:china-funds}
+Beyond listed \emph{companies}, CNINFO's \texttt{fund} feed carries the annual reports of publicly-offered
+collective vehicles, and \texttt{EDGAR.jl} extracts these too --- they resolve through the same discovery
+query (with \texttt{column\ =\ "fund"}) and the same \texttt{orgId} identity scheme, but note that they are
+\emph{not} indexed by the listed-company name resolver, so they are reached by code or by browsing the fund
+category rather than through \texttt{cninfo\_org}.
+\begin{itemize}
+  \item \textbf{Public infrastructure REITs} (\cncjk{公募REITs}{}) --- roughly 60 listed on the SSE (codes
+    \texttt{508xxx}) and SZSE (\texttt{180xxx}) since 2021. A REIT \emph{consolidates} its operating
+    project-companies, so it files corporate-shaped statements --- a real income statement with revenue, a
+    cash-flow statement, and both \cncjk{合并}{} (consolidated) and \cncjk{个别}{} (standalone) sets --- and
+    therefore rides the \emph{same} CAS extraction path as an operating company, cross-footing on the
+    consolidated statements. Example: the SF~Express logistics REIT (\texttt{180305}).
+  \item \textbf{Securities investment funds} --- ETFs, LOFs and open-end funds. These use \emph{fund}
+    accounting: equity is net assets (\cncjk{净资产}{}, the fund's NAV) rather than shareholders' equity, the
+    income statement is investment- and interest-income driven with no operating-revenue line, and no
+    cash-flow statement is filed. A small dedicated label profile maps these (net-assets total to equity;
+    \cncjk{投资收益}{}/\cncjk{公允价值变动收益}{} as the income components) so the balance sheet still
+    cross-foots and the net result is captured. Example: an equity-index ETF's annual report.
+\end{itemize}
+The private-fund channel (\textbf{AMAC}) --- non-public mutual and private funds disclosed to the
+asset-management association rather than to an exchange --- remains out of scope; the publicly-offered
+vehicles above are reached precisely because they disclose on CNINFO like any listed issuer.
+
 \subsection{US-listed issuers --- reachable via the SEC today (no new code)}\label{sec:china-adr}
 A distinct slice of the largest Chinese companies does \emph{not} need the CNINFO/PDF path at all: those
 cross-listed in the United States as \textbf{American Depositary Receipts (ADRs)} --- Alibaba, PDD, JD,
@@ -5174,10 +5199,11 @@ China-specific code, on the \texttt{us-gaap}/\texttt{ifrs-full} vocabularies the
 reach it through the SEC (\texttt{fetch\_filing(cik, accession)}); reserve the CNINFO PDF channel for the
 A-share universe that files \emph{only} in the mainland.
 
-\paragraph{Boundary.} The scope is A-share \textbf{listed issuers'} annual reports on CNINFO (with US-listed
-names better reached through the SEC, above). B-shares and purely Hong-Kong-listed (H-share) entities, the
-interim/quarterly reports, and the SOE (MOF/SASAC) and fund (AMAC) channels are outside the current China
-scope; interim reports and the second statement types follow as later phases (C3+) land. \textbf{Non-listed}
+\paragraph{Boundary.} The scope is the \textbf{annual reports} CNINFO carries --- A-share listed issuers plus
+the publicly-offered funds and REITs above (\S\ref{sec:china-funds}), with US-listed names better reached
+through the SEC. B-shares and purely Hong-Kong-listed (H-share) entities, the interim/quarterly reports, and
+the SOE (MOF/SASAC) and private-fund (AMAC) channels are outside the current China scope; interim reports and
+the second statement types follow as later phases land. \textbf{Non-listed}
 companies are effectively out of reach: the SAMR company registry (\texttt{gsxt.gov.cn}) holds every firm's
 statutory annual filing but publishes little financial detail and offers no keyless API (it is CAPTCHA-gated),
 and the commercial aggregators that resell it are paid --- so, as with India's MCA21 registrar, the
