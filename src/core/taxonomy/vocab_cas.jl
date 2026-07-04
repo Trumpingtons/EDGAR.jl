@@ -65,6 +65,9 @@ const CAS_CONCEPTS = Dict{String,_CASConcept}(
     "所有者权益(或股东权益)合计"   => (concept="cas:Equity",                     statement="BalanceSheet", instant=true),
     "负债和所有者权益总计"         => (concept="cas:LiabilitiesAndEquity",       statement="BalanceSheet", instant=true),
     "负债和股东权益总计"           => (concept="cas:LiabilitiesAndEquity",       statement="BalanceSheet", instant=true),
+    "净资产合计"                   => (concept="cas:Equity",                     statement="BalanceSheet", instant=true),  # securities investment funds (基金净值)
+    "负债和净资产总计"             => (concept="cas:LiabilitiesAndEquity",       statement="BalanceSheet", instant=true),  # funds
+    "负债和净资产合计"             => (concept="cas:LiabilitiesAndEquity",       statement="BalanceSheet", instant=true),
     # ── Income statement (利润表) — duration ─────────────────────────────────────────────────────
     "营业总收入"                   => (concept="cas:TotalRevenue",               statement="IncomeStatement", instant=false),
     "营业收入"                     => (concept="cas:Revenue",                    statement="IncomeStatement", instant=false),
@@ -83,6 +86,10 @@ const CAS_CONCEPTS = Dict{String,_CASConcept}(
     "净利息收入"                   => (concept="cas:NetInterestIncome",          statement="IncomeStatement", instant=false),
     "手续费及佣金净收入"           => (concept="cas:NetFeeAndCommissionIncome",  statement="IncomeStatement", instant=false),
     "净手续费及佣金收入"           => (concept="cas:NetFeeAndCommissionIncome",  statement="IncomeStatement", instant=false),
+    "利息收入"                     => (concept="cas:InterestIncome",             statement="IncomeStatement", instant=false),  # funds (gross); also a bank sub-line
+    "投资收益"                     => (concept="cas:InvestmentIncome",           statement="IncomeStatement", instant=false),  # funds / brokers — a primary income line
+    "公允价值变动收益"             => (concept="cas:FairValueChangeIncome",      statement="IncomeStatement", instant=false),
+    "营业总支出"                   => (concept="cas:TotalOperatingCost",         statement="IncomeStatement", instant=false),  # funds' expense total (cf. 营业总成本)
     "已赚保费"                     => (concept="cas:NetEarnedPremiums",          statement="IncomeStatement", instant=false),  # insurers (pre-2023 standard)
     "保险服务收入"                 => (concept="cas:InsuranceServiceRevenue",    statement="IncomeStatement", instant=false),  # insurers (new insurance-contract standard)
     "少数股东损益"                 => (concept="cas:MinorityInterestIncome",     statement="IncomeStatement", instant=false),
