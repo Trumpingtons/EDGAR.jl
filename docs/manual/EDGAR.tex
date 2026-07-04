@@ -3081,7 +3081,7 @@ avoid clashing with the \texttt{EDGAR} module); a filer's identity is a CIK
 Companies House, EDINET, DART --- which reuse the same jurisdiction-agnostic core
 (\S\ref{sec:architecture}) but are at earlier stages.
 
-\section{Entities covered}\label{sec:edgar-entities}
+\section{Entities Covered}\label{sec:edgar-entities}
 
 Every filer on EDGAR --- whoever submits a filing --- is an \textbf{entity}, identified by a \textbf{CIK}
 (Central Index Key, Appendix~\ref{sec:glossary}). An entity is not always an operating company: the SEC tags each
@@ -3152,7 +3152,7 @@ julia> profile(id).entityType
 julia> reports = filings_by_cik(id; forms = "10-K");
 \end{lstlisting}
 
-\section{Forms and statement types}\label{sec:edgar-forms}
+\section{Forms and Statement Types}\label{sec:edgar-forms}
 
 For most corporate analysis, the core periodic and current reports (10-K, 10-Q, and 8-K) provide the majority of the useful information. However, several other SEC forms can be extremely valuable depending on what we are researching and analysing.
 
@@ -3277,7 +3277,7 @@ Reports purchases and sales of company securities by directors, officers, and be
 \subsubsection{Form 13F}
 An aggregated portfolio disclosure by an institutional investment manager. It primarily reports the holdings managed by the filing institutional investment manager, rather than a detailed fund-by-fund portfolio breakdown. The EDGAR form code is \texttt{"13F-HR"} (the holdings report; \texttt{"13F-NT"} is a notice that another manager reports the holdings).
 
-\subsubsection{Form N-PORT}
+\subsubsection{Form N-PORT}\label{N-PORT}
 Individual registered fund portfolio disclosure, providing monthly portfolio reports required for registered open-end investment companies, including most mutual funds and ETFs \footnote{Main exemptions/exceptions include: (1) money market funds, which are primarily regulated under Form N-MFP instead (\S\ref{N-MFP}); (2) exchange-traded products that are not 1940 Act funds; (3) funds relying on master-feeder or umbrella structures; (4) newly formed or liquidating funds may benefit from transitional relief and reduced or modified reporting, respectively; (5) small fund conditional exemptions (limited scope).}. Each filing corresponds to a single registered investment fund. N-PORT filings are typically made public with a delay (generally $\sim$60 days after month-end), and therefore are not real-time.
 
 The public EDGAR form code is \texttt{"NPORT-P"}. N-PORT is highly granular compared to Form 13F:
@@ -3307,7 +3307,7 @@ The public EDGAR form code is \texttt{"NPORT-P"}. N-PORT is highly granular comp
 \subsubsection{Form N-MFP}\label{N-MFP}
 Most money market funds are not required to file N-PORT in the same way as other mutual funds. They are primarily regulated under Form N-MFP instead, which is tailored specifically to money market instruments. The current EDGAR form code is \texttt{"N-MFP2"} (\texttt{"N-MFP3"} from the 2024 amendments).
 
-\subsection{Statement types}\label{sec:edgar-statements}
+\subsection{Statement Types}\label{sec:edgar-statements}
 
 The periodic reports (10-K, 10-Q) and their foreign equivalents (20-F, 40-F) carry the issuer's financial
 statements as \textbf{inline XBRL}: the \textbf{balance sheet}, \textbf{income statement}, \textbf{statement
@@ -5212,7 +5212,7 @@ bond issuers} (many large SOEs and financing vehicles), which must publish audit
 bond-market disclosure channels (the interbank market via NAFMII/ChinaMoney and exchange bonds via CNINFO);
 that channel is a possible later extension, not part of the current equity scope.
 
-\section{Forms and statement types}\label{sec:china-forms}
+\section{Forms and Statement Types}\label{sec:china-forms}
 
 Chinese listed companies disclose to the exchanges (and thus to CNINFO) under CSRC rules and the exchanges'
 listing rules --- the analogue of the SEC's periodic-reporting regime. Disclosure spans a wide document
@@ -5240,7 +5240,7 @@ Governance \& ownership & shareholding-change, share-pledge, buy-back announceme
 \end{tabular}
 \end{table}
 
-\subsection{Periodic reports}
+\subsection{Periodic Reports}
 The annual report, semi-annual report and the first- and
 third-quarter reports --- China's analogue of the 10-K/10-Q, carrying the CAS financial
 statements. \texttt{EDGAR.jl} targets the \textbf{annual report}; every CNINFO annual-report query also
@@ -5248,7 +5248,7 @@ returns a paired \textbf{summary}, a shorter PDF the adapter distinguishes from 
 proper and skips. Interim (semi-annual, quarterly) reports use the same CNINFO seam and CAS shape and are a
 straightforward later extension.
 
-\subsection{Statement types under CAS}\label{sec:china-statements}
+\subsection{Statement Types under CAS}\label{sec:china-statements}
 A CAS annual report carries \textbf{four} primary statements, each typically presented \emph{twice} --- a
 \textbf{consolidated} set and the \textbf{parent-company} set; \texttt{EDGAR.jl} takes the consolidated by
 default, as elsewhere:
@@ -5268,9 +5268,38 @@ and securities firms file the MOF's \emph{financial-institution} CAS formats ---
 with loans and advances and deposits rather than inventory and trade receivables, exactly the
 Banking-Regulation shape seen at India's \texttt{BANKING\_} template. Classification (C3) must therefore
 branch on sector, which in the PDF path means recognising the sector's characteristic line labels, not a
-filename prefix.
+filename prefix. In all, seven CAS formats are handled and cross-foot: general-industry (in \cncjk{元}{}/
+\cncjk{千元}{}), the combined \cncjk{合并及公司}{} layout, bank, insurer, securities/brokerage, REIT (which
+consolidates its project-companies onto the corporate statements), and the securities investment fund
+(net-asset accounting, \S\ref{sec:china-funds}).
 
-\section{Taxonomy --- CAS labels, not concepts}\label{sec:china-taxonomy}
+\subsection{Fund Portfolios (\cncjk{投资组合报告}{})}\label{sec:china-fund-portfolio}
+A public fund's annual report carries something a company's does not: a \textbf{portfolio report} (\S8,
+\cncjk{投资组合报告}{}) --- the fund's \emph{holdings}. This is the CNINFO analogue of the SEC's N-PORT
+(\S\ref{N-PORT}), and it is a different artefact from the financial statements: a list of \emph{positions},
+not classified statement facts. \texttt{EDGAR.jl} extracts it with a dedicated function separate from the CAS
+statement path:
+\begin{lstlisting}[language=Julia]
+pf = extract_fund_portfolio(path)   # -> FundPortfolio
+pf.holdings                         # Vector{FundHolding}: category, code, name, quantity, fair_value, pct_nav
+pf.asset_composition                # 8.1: assets by class (equity / fixed income / cash), amount + % of assets
+pf.industry                         # 8.2: equity exposure by CSRC sector, summed across index/active sub-books
+\end{lstlisting}
+The \S8 pages are located from the PDF outline and parsed with Docling; tables are classified by \emph{shape}
+(so multi-page holdings continuations, which carry no repeated title, still parse). A useful internal check:
+the holdings' fair values sum to the balance sheet's stock line (on the validation ETF, \cncjk{股票}{}
+$=$ RMB~838.76\,M, matched to rounding by the 79 extracted positions).
+
+\paragraph{Coverage is uneven by security type --- by regulation, not omission.} The equity schedule (\S8.3)
+lists \textbf{every} stock position, but bonds, asset-backed securities, precious metals and warrants
+(\S8.6--8.9) are disclosed only as the \textbf{top five} by fair value. So for a bond fund \texttt{holdings}
+is the top-5 bonds, \emph{not} the full book --- the fund-wide fixed-income total lives in
+\texttt{asset\_composition} instead. \texttt{EDGAR.jl} extracts what is disclosed and does not silently imply
+completeness where the filing itself stops at five. A \textbf{REIT} has no such section: it holds operating
+infrastructure projects, not securities, so its \S8 is an operating-management report and its ``portfolio''
+is per-project operating and valuation data --- a separate artefact, not reached by this function.
+
+\section{Taxonomy: CAS Labels, Not Concepts}\label{sec:china-taxonomy}
 
 China inverts the taxonomy story of every prior system, and this is the chapter's core technical point.
 DART needed \emph{no} vocabulary because K-IFRS tags bare \texttt{ifrs-full} (\S\ref{sec:dart-kifrs}); India
@@ -5330,7 +5359,7 @@ check against a third-party source (which usually reports the parent figure) mus
 same net-income-attribution subtlety documented for India's NSE filings (\S\ref{sec:india-yahoo}). The CAS
 oracle (C4) reconciles on the parent line.
 
-\section{Retrieving filings}\label{sec:china-retrieve}
+\section{Retrieving Filings}\label{sec:china-retrieve}
 
 Discovery is \textbf{keyless} --- a browser \texttt{User-Agent} and a CNINFO \texttt{Referer}, no API key and
 (unlike NSE) no cookie bootstrap. The API mirrors every other system, with the one difference that
