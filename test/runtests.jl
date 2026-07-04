@@ -582,6 +582,55 @@ end
     @test V("ifrs-full:ProfitLoss")  == -5_000 * 1e6       # credit line: a loss keeps its reported sign
 end
 
+@testset "English-PDF extractor: scanned UK Companies House (net-assets, GBP £m, offline)" begin
+    # A UK statutory account (FRS 101/102) is the OTHER consumer of the shared English-PDF path. It exercises
+    # what HK does not: (1) the statement NAME sits in a SEPARATE section heading from the table's own section
+    # (which is just the period line), so classification must look at sibling headings on the table's page;
+    # (2) UK-GAAP vocab (Net assets / Total shareholders' funds -> Equity; "…before taxation" -> PBT; "Profit
+    # for the financial year" -> ProfitLoss, OCR-tolerant); (3) per-table £m scale + GBP; (4) the year-end
+    # month/day taken from a fiscal-period phrase in a heading, not a stray prose date. Modelled on Vodafone
+    # Limited (60pp OCR'd scan). Note the deliberate "Prfit" OCR typo and a distractor "30 April" prose date.
+    S(id, title, pg) = EDGAR.DocSection(id, nothing, 1, title, "en", 0, pg, pg, nothing)
+    secs = EDGAR.DocSection[
+        S("s_isn", "INCOME STATEMENT", 19),
+        S("s_isd", "FOR THE YEAR ENDED 31 MARCH 2025", 19),                 # the table's own section = the date
+        S("s_bsn", "STATEMENT OF FINANCIAL POSITION", 21),
+        S("s_bsd", "AS AT 31 MARCH 2025", 21),
+    ]
+    Cs(pairs) = EDGAR.TableCell[EDGAR.TableCell(r, c, 1, 1, r == 0, t) for (r, c, t) in pairs]
+    is_cells = Cs([(0,1,"2025 £m"), (0,2,"2024 £m"),                        # unit rides in the header cell
+                   (1,0,"Revenue"), (1,1,"5,851.8"), (1,2,"5,816.0"),
+                   (2,0,"Cost of sales"), (2,1,"(3,796.0)"), (2,2,"(3,919.5)"),
+                   (3,0,"Gross profit"), (3,1,"2,055.8"), (3,2,"1,896.5"),
+                   (4,0,"Operating profit"), (4,1,"124.5"), (4,2,"8.3"),
+                   (5,0,"Profit on ordinary activities before taxation"), (5,1,"111.6"), (5,2,"43.5"),
+                   (6,0,"Prfit for the financial year"), (6,1,"99.3"), (6,2,"11.3")])
+    bs_cells = Cs([(0,1,"2025 £m"), (0,2,"2024 £m"),
+                   (1,0,"NET ASSETS"), (1,1,"6,339.1"), (1,2,"6,238.2"),
+                   (2,0,"Total shareholders' funds"), (2,1,"6,339.1"), (2,2,"6,238.2")])
+    # caption/statement_type deliberately empty -> classification MUST come from the same-page section heading
+    is_tbl = EDGAR.DocTable("t_is", "s_isd", 0, "unknown", nothing, nothing, "en", 19, 19, nothing, 7, 3, is_cells)
+    bs_tbl = EDGAR.DocTable("t_bs", "s_bsd", 0, "unknown", nothing, nothing, "en", 21, 21, nothing, 3, 3, bs_cells)
+    dist = EDGAR.TextBlock("b1", nothing, 0, "paragraph",
+                           "These financial statements were approved on 30 April 2025.", "en", 22, nothing, 0)
+    meta = EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false)
+    sd = EDGAR.StructuredDocument("1.0", meta, secs, [dist], [is_tbl, bs_tbl],
+                                  EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+
+    @test EDGAR._ifrs_period(sd) == (3, 31, [2025, 2024])   # 31 March (fiscal phrase), NOT the "30 April" prose date
+    rows = EDGAR._ifrs_facts_from_sd(sd)
+    @test !isempty(rows) && all(r -> r.unit == "GBP", rows)  # per-table £m -> GBP, not the HK$ default
+    V(c) = (v = [r.value for r in rows if r.concept == c && r.period_end == Date(2025, 3, 31)];
+            isempty(v) ? nothing : v[1])
+    @test V("ifrs-full:Revenue")                    ≈ 5_851.8e6
+    @test V("ifrs-full:CostOfSales")                ≈ 3_796.0e6   # value POSITIVE (parens are display only)
+    @test V("ifrs-full:GrossProfit")                ≈ 2_055.8e6
+    @test V("ifrs-full:ProfitLossFromOperatingActivities") ≈ 124.5e6
+    @test V("ifrs-full:ProfitLossBeforeTax")        ≈ 111.6e6     # "…before taxation"
+    @test V("ifrs-full:ProfitLoss")                 ≈ 99.3e6      # "Prfit for the financial year" (OCR typo)
+    @test V("ifrs-full:Equity")                     ≈ 6_339.1e6   # Net assets / Total shareholders' funds
+end
+
 @testset "statement classification from presentation linkbase (W5, offline)" begin
     @test (EDGAR._classify_role("http://x/role/CondensedConsolidatedStatementsofIncome"),
            EDGAR._classify_role("http://x/role/CondensedConsolidatedBalanceSheets"),
