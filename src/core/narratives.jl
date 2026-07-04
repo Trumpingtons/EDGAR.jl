@@ -133,8 +133,13 @@ function _textblock_clean(s::AbstractString)
     return strip(replace(notags, r"\s+" => " "))
 end
 
-# Cheap script guess for the content language (EDINET honbun is Japanese; a filer may still tag English).
-_guess_lang(s::AbstractString) = occursin(r"[\p{Han}\p{Hiragana}\p{Katakana}]", s) ? "ja" : "en"
+# Cheap script guess for the content language, distinguishing the CJK scripts: Japanese kana ⇒ ja; else
+# Hangul ⇒ ko (DART); else Han-only ⇒ zh (CNINFO — Chinese has no kana). A caller-supplied section language
+# takes precedence (see `narratives(::StructuredDocument)`); this is the fallback when none is set.
+_guess_lang(s::AbstractString) =
+    occursin(r"[\p{Hiragana}\p{Katakana}]", s) ? "ja" :
+    occursin(r"\p{Hangul}", s)                 ? "ko" :
+    occursin(r"\p{Han}", s)                    ? "zh" : "en"
 
 # A context's period end + dimensions, from `_xbrl_contexts`' parsed contexts.
 function _narr_ctx(ctxs, ref::AbstractString)
