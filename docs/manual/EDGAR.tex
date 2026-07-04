@@ -22,12 +22,15 @@
 \usepackage{fontspec}
 \newfontfamily\cjkKRfont{Apple SD Gothic Neo}  % macOS system Korean (swap to Noto Sans CJK KR on Linux/CI)
 \newfontfamily\cjkJPfont{Hiragino Sans}        % macOS system Japanese (swap to Noto Sans CJK JP on Linux/CI)
+\newfontfamily\cjkCNfont{Hiragino Sans GB}     % macOS system Simplified Chinese (PingFang SC is not XeTeX-loadable; swap to Noto Sans CJK SC on Linux/CI)
 
 % CJK helpers — use SPARINGLY, for native company names / regulatory terms where the script itself
 % matters. The native script (first arg) renders; the second arg is kept for a romanization gloss in
-% the source. \krcjk{한글}{romanization} for Korean (DART), \jpcjk{日本語}{romanization} for Japanese (EDINET).
+% the source. \krcjk{한글}{romanization} for Korean (DART), \jpcjk{日本語}{romanization} for Japanese (EDINET),
+% \cncjk{中文}{pinyin} for Simplified Chinese (China / CNINFO).
 \newcommand{\krcjk}[2]{{\cjkKRfont #1}}
 \newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
+\newcommand{\cncjk}[2]{{\cjkCNfont #1}}
 
 \usepackage[margin=1in]{geometry}
 \usepackage{microtype}
@@ -2227,150 +2230,6 @@ and once the facts are in DuckDB, \texttt{COPY facts TO 'f.parquet' (FORMAT PARQ
 \texttt{ATTACH 'f.sqlite' (TYPE SQLITE)} export them with a single SQL statement. Wrapping
 these would only add dependencies for no gain.
 
-
-\section{Analysis}
-\label{sec:api-analysis}
-
-Beyond fetching, extracting and classifying, \texttt{EDGAR.jl} provides \emph{analysis} helpers that
-compute over a filing's already-extracted facts --- disaggregation, consistency checks, and (in time)
-more. They share a shape: a pure function of a \texttt{Filing} returning a \texttt{Tables.jl} row table.
-This section is the method \emph{reference}; for the concepts, the per-jurisdiction axes, and worked
-value-added examples, see the \emph{Analysis} chapter (\S\ref{ch:analysis}). This section will grow; its
-first entry is dimensional disaggregation.
-
-\subsection{\texttt{breakdown} and \texttt{segments}}
-
-\paragraph{Signatures}
-\begin{center}
-\textbf{\sig{breakdown(f::Filing, concept; axis = nothing, labels = true, lang = nothing)}}\\
-\textbf{\sig{segments(f::Filing, concept; labels = true, lang = nothing)}}
-\end{center}
-
-\noindent Disaggregate one reported line along a dimension --- revenue by operating segment, by product,
-by geography; a balance by maturity. \texttt{breakdown} groups the values of \texttt{concept} by the
-members of a dimensional \emph{axis}; \texttt{segments} is the convenience that picks the segment axis for
-you. \textbf{No definition linkbase is required}: the members are read from the instance's own contexts,
-and each member's name from the label linkbase where members are \emph{named}
-(\texttt{aapl:IPhoneMember} $\rightarrow$ ``iPhone''), falling back to a per-member descriptor \emph{text}
-fact (\texttt{DescriptionOfReportableSegment}) where they are \emph{generic} (India).
-
-\paragraph{Keyword Arguments}
-\begin{description}[nosep]
-  \item[\quad - \texttt{concept}] the concept QName to disaggregate, e.g.\ \texttt{"us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"}.
-  \item[\quad - \texttt{axis}] the dimension to break down on; when \texttt{nothing} (default), auto-detected, preferring an axis whose name contains ``Segment''. (\texttt{segments} always uses the segment axis.)
-  \item[\quad - \texttt{labels}] resolve member names from the label linkbase (\texttt{false} leaves \texttt{name} equal to the member QName and skips the possibly-networked fetch).
-  \item[\quad - \texttt{lang}] language of the member names for multilingual taxonomies (EDINET, DART): e.g.\ \texttt{"en"} rather than the native Japanese/Korean.
-\end{description}
-
-\paragraph{Return Value.}
-A \texttt{Tables.jl} row table, one row per reported \texttt{(member, period)}, newest period first:
-\begin{itemize}[nosep]
-  \item \texttt{axis} --- the dimension broken down on
-  \item \texttt{member} --- the member QName (\texttt{aapl:AmericasSegmentMember})
-  \item \texttt{name} --- the member's human label (\texttt{"Americas Segment"}), or the QName if unresolved
-  \item \texttt{value}, \texttt{period\_start}, \texttt{period\_end}, \texttt{is\_instant}
-  \item \texttt{other\_dims} --- any OTHER axes on the same fact, so a breakdown entangled with a second dimension (e.g.\ a co-occurring consolidation-items axis) is visible rather than silently double-counted
-\end{itemize}
-
-\paragraph{Julia Example:} Apple revenue by operating segment, and by product.
-
-\begin{lstlisting}
-julia> f = fetch_filing(320193, "0000320193-25-000079");
-julia> segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")
-        # Americas $178B, Europe $111B, Greater China $64B, Rest of Asia Pacific $34B, Japan $29B
-julia> breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax";
-                 axis = "srt:ProductOrServiceAxis")
-        # iPhone $210B, Services $109B, Wearables $36B, Mac $34B, iPad $28B
-\end{lstlisting}
-
-\paragraph{Coverage.} Works wherever segments are dimensionally tagged. \textbf{Named members} name
-themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang="en"} for English rather
-than the native names), and Companies House (all FRC-module labels resolved). \textbf{Generic members} ---
-\textbf{India}'s \texttt{…Segment01Member} placeholders --- are named instead from their
-\texttt{DescriptionOfReportableSegment} \emph{text} fact, which \texttt{breakdown} reads automatically (the
-non-numeric descriptor is invisible to \texttt{facts}, which is numeric-only). One caveat is a property of
-the filings, not the tool: at \textbf{ESEF} filers detail-tag the primary statements but \emph{block-tag the
-notes}, so the segment note usually carries no dimensional facts and the result is empty.
-
-
-\section{Narratives \textemdash{} the text layer}
-\label{sec:api-narratives}
-
-\texttt{narratives(f)} is the prose counterpart of \texttt{facts(f)}: where \texttt{facts} returns a
-filing's numeric tags, \texttt{narratives} returns its \textbf{narrative sections} --- Management's
-Discussion, Business Risks, Governance, Significant Accounting Policies, and the rest --- as a
-\texttt{Tables.jl} row table of \texttt{Narrative}s (\S\ref{sec:api-types}). The \emph{same} call works
-whatever the source: a tagged XBRL text-block, an inline-XBRL text-block, or an ingested-PDF section. So
-everything downstream --- search, export to DuckDB, feeding a language model --- is source-agnostic: one row
-shape, several producers (Table~\ref{tab:narrative-producers}).
-
-\begin{table}[h]
-\centering
-\small
-\caption{The \texttt{narratives} producers --- what counts as a ``narrative'' per source, and how it is found.}
-\label{tab:narrative-producers}
-\begin{tabular}{@{}p{0.13\textwidth}p{0.40\textwidth}p{0.37\textwidth}@{}}
-\toprule
-\textbf{\texttt{source}} & \textbf{A narrative is\ldots} & \textbf{Found by} \\
-\midrule
-\texttt{:xbrl} & a classic-instance text-block element (escaped-HTML content) & concept local-name ends in
-  \texttt{TextBlock} \\
-\texttt{:ixbrl} & an \texttt{<ix:nonNumeric>} text-block fact in the inline document & concept local-name ends
-  in \texttt{TextBlock} \\
-\texttt{:pdf} & a \texttt{StructuredDocument} section, its text-blocks concatenated in reading order &
-  Docling section detection (\S\ref{sec:api-pdf}) \\
-\texttt{:html} & a SEC \emph{Item}/\emph{Part} section & \texttt{sections(f)} --- \emph{planned} \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{Forms.} \texttt{narratives} dispatches on what you hand it:
-\begin{lstlisting}
-julia> narratives(f)                               # a Filing: XBRL/iXBRL text-blocks (or a :pdf filing)
-julia> narratives(sd)                              # a StructuredDocument (a Docling parse of a PDF)
-julia> narratives(read_structured_document(path))  # a persisted structured.json (no Docling needed)
-julia> narratives(f; lang = "en")                  # choose the label language for the titles
-\end{lstlisting}
-
-\noindent Each row carries two title columns and a tag set --- \texttt{section\_title} (verbatim),
-\texttt{canonical\_title} (normalised) and \texttt{tags} (thematic, cross-filer) --- described under Core
-types (\S\ref{sec:api-types}); plus \texttt{text}, \texttt{lang}, and the provenance appropriate to the
-source (\texttt{concept}/\texttt{context\_ref}/\texttt{period\_end} for XBRL, \texttt{page}/\texttt{block\_id}
-for PDF).
-
-\paragraph{XBRL / iXBRL text-blocks.} A narrative is a \textbf{text-block} fact --- a concept whose local
-name ends in \texttt{TextBlock} (EDINET \texttt{jpcrp\_cor}/\texttt{jpigp\_cor}, SEC \texttt{us-gaap}). The
-numeric \texttt{facts} pipeline skips these (they are \texttt{ix:nonNumeric}); \texttt{narratives} generalises
-the same single-concept reader the auditor extractor uses, over \emph{every} text-block. Classic-instance
-content is stored as \emph{escaped} HTML (\texttt{\&lt;p\&gt;\ldots}), so it is entity-decoded \textbf{first}
-and tag-stripped \textbf{after} --- the reverse of the plain-string cleaner --- yielding clean prose;
-duplicate taggings of the same block (a filer tags it in several places) collapse by
-\texttt{(concept, context)}. Titles are the \textbf{verbose} label: for EDINET they come from the bundled
-concept table (\S\ref{sec:edinet-concepts}), because EDINET filings bundle only their \emph{extension}
-labels --- the standard-concept labels (all text-blocks included) live in the standard taxonomy, supplied
-through the same \texttt{\_standard\_labels} seam ESEF uses for \texttt{ifrs-full}.
-
-\paragraph{PDF sections.} \texttt{narratives(sd)} emits one \texttt{Narrative} per document section, carrying
-the heading as \texttt{section\_title} and the page as provenance, with \texttt{concept} empty. It runs on
-\emph{any} \texttt{StructuredDocument} --- a fresh Docling parse or a reloaded \texttt{structured.json} --- so
-the text layer is available without re-running the slow, OCR-heavy extraction. Granularity differs from XBRL
-by design: the PDF splits by every heading (Nintendo: 277 sections) where the XBRL groups by concept (its
-text-blocks), the same report seen at two resolutions.
-
-\paragraph{Validation --- the CSV as a same-document oracle.} EDINET's \texttt{type=5} CSV carries the FSA's
-own parse of \emph{both} the numeric facts and the text-blocks of the identical filing, so it validates
-\texttt{narratives} directly (\S\ref{sec:edinet-oracle}). The bundled \texttt{csv\_oracle} script
-(\texttt{src/sources/csv\_oracle.jl}, loaded on demand like the other \texttt{*\_oracle} helpers) reads it
-correctly (UTF-16, quoted multi-line cells) and prints the diff for a human to eyeball:
-\begin{lstlisting}
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "csv_oracle.jl")); using .CsvOracle
-julia> rep = CsvOracle.validate(f, "jpcrp030000-asr-....csv")   # facts + narratives parity
-julia> CsvOracle.text_diff(rep, "jpcrp_cor:BusinessRisksTextBlock")  # ours vs CSV, side by side
-\end{lstlisting}
-On real annual reports this shows \textbf{100\% content parity} for the tagged text-blocks (Toyota 152/152,
-Fast Retailing 138/138, whitespace-normalised). The check is \emph{exact} --- both sides derive from the same
-filing, so it validates the XBRL/iXBRL text-block extraction against an authoritative reference.
-
 \section{PDF and HTML Documents}
 \label{sec:api-pdf}
 
@@ -2446,11 +2305,18 @@ julia> persist_document(sd)
 "/Users/you/RegulatoryReports/derived/UK-TescoFR2024"
 \end{lstlisting}
 
-\subsection{\texttt{markdown}, \texttt{write\_structured\_document}, \texttt{read\_structured\_document}}
-
+\subsection{\texttt{markdown}}
 \begin{center}
 \textbf{\sig{markdown(sd::StructuredDocument) -> String}}
+\end{center}
+
+\subsection{\texttt{write\_structured\_document}}
+\begin{center}
 \textbf{\sig{write\_structured\_document(sd::StructuredDocument, path)}}
+\end{center}
+
+\subsection{\texttt{read\_structured\_document}}
+\begin{center}
 \textbf{\sig{read\_structured\_document(path) -> StructuredDocument}}
 \end{center}
 
@@ -2551,7 +2417,7 @@ first class whose patterns match \texttt{heading}, or \texttt{nothing} (a descri
 \texttt{table\_class\_kind(key)} maps that key to its \texttt{kind} (so \texttt{fund\_portfolio} tables are
 tagged \texttt{kind="portfolio"}, not \texttt{"statement"}).
 
-\subsection{Repository schema}
+\subsection{Repository Schema}
 \label{sec:pdf-repo-schema}
 
 The repository is a plain DuckDB database, so you query it with SQL (and DuckDB's full-text search over
@@ -2614,7 +2480,7 @@ translations, when added, live in \texttt{translations} (the source tables are n
 \bottomrule
 \end{longtable}
 
-\subsection{company\_facts}
+\subsection{\texttt{company\_facts}}
 
 \sig{company\_facts(cik)}
 
@@ -2624,7 +2490,7 @@ JSON. \texttt{cik} may be an integer or a string, with or without leading zeros.
 Facts are grouped by taxonomy under \texttt{.facts} (e.g.\ \texttt{:dei},
 \texttt{Symbol("us-gaap")}).
 
-\subsection{company\_concept}
+\subsection{\texttt{company\_concept}}
 
 \sig{company\_concept(cik, taxonomy, tag)}
 
@@ -2634,7 +2500,7 @@ want a single line item. Observations live under \texttt{.units} keyed by unit (
 \texttt{.units.USD}), each carrying \texttt{start}/\texttt{end}, \texttt{val}, \texttt{fy},
 \texttt{fp}, \texttt{form} and \texttt{filed}.
 
-\subsection{xbrl\_frames}
+\subsection{\texttt{xbrl\_frames}}
 
 \sig{xbrl\_frames(taxonomy, tag, unit, period)}
 
@@ -2653,6 +2519,166 @@ for o in filter(o -> o.form == "10-K", concept.units.USD)
     println(o.fy, "  ", o.val)
 end
 \end{lstlisting}
+
+
+
+\section{Analysis}
+\label{sec:api-analysis}
+
+Beyond fetching, extracting and classifying, \texttt{EDGAR.jl} provides \emph{analysis} helpers that
+compute over a filing's already-extracted facts --- disaggregation, consistency checks, and (in time)
+more. They share a shape: a pure function of a \texttt{Filing} returning a \texttt{Tables.jl} row table.
+This section is the method \emph{reference}; for the concepts, the per-jurisdiction axes, and worked
+value-added examples, see the \emph{Analysis} chapter (\S\ref{ch:analysis}). This section will grow; its
+first entry is dimensional disaggregation.
+
+\subsection{\texttt{breakdown}}
+\noindent Disaggregate one reported line along a dimension --- revenue by operating segment, by product,
+by geography; a balance by maturity. \texttt{breakdown} groups the values of \texttt{concept} by the
+members of a dimensional \emph{axis}. \textbf{No definition linkbase is required}: the members are read from the instance's own contexts,
+and each member's name from the label linkbase where members are \emph{named}
+(\texttt{aapl:IPhoneMember} $\rightarrow$ ``iPhone''), falling back to a per-member descriptor \emph{text}
+fact (\texttt{DescriptionOfReportableSegment}) where they are \emph{generic} (India).
+
+\paragraph{Signatures}
+\begin{center}
+\textbf{\sig{breakdown(f::Filing, concept; axis = nothing, labels = true, lang = nothing)}}
+\end{center}
+
+\paragraph{Keyword Arguments}
+\begin{description}[nosep]
+  \item[\quad - \texttt{concept}] the concept QName to disaggregate, e.g.\ \texttt{"us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"}.
+  \item[\quad - \texttt{axis}] the dimension to break down on; when \texttt{nothing} (default), auto-detected, preferring an axis whose name contains ``Segment''. (\texttt{segments} always uses the segment axis.)
+  \item[\quad - \texttt{labels}] resolve member names from the label linkbase (\texttt{false} leaves \texttt{name} equal to the member QName and skips the possibly-networked fetch).
+  \item[\quad - \texttt{lang}] language of the member names for multilingual taxonomies (EDINET, DART): e.g.\ \texttt{"en"} rather than the native Japanese/Korean.
+\end{description}
+
+
+\paragraph{Return Value.}
+A \texttt{Tables.jl} row table, one row per reported \texttt{(member, period)}, newest period first:
+\begin{itemize}[nosep]
+  \item \texttt{axis} --- the dimension broken down on
+  \item \texttt{member} --- the member QName (\texttt{aapl:AmericasSegmentMember})
+  \item \texttt{name} --- the member's human label (\texttt{"Americas Segment"}), or the QName if unresolved
+  \item \texttt{value}, \texttt{period\_start}, \texttt{period\_end}, \texttt{is\_instant}
+  \item \texttt{other\_dims} --- any OTHER axes on the same fact, so a breakdown entangled with a second dimension (e.g.\ a co-occurring consolidation-items axis) is visible rather than silently double-counted
+\end{itemize}
+
+\paragraph{Julia Example:} Apple revenue by operating segment, and by product.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079");
+julia> breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax";
+                 axis = "srt:ProductOrServiceAxis")
+        # iPhone $210B, Services $109B, Wearables $36B, Mac $34B, iPad $28B
+\end{lstlisting}
+
+\subsection{\texttt{segments}}
+\paragraph{Signatures}
+\begin{center}
+\textbf{\sig{segments(f::Filing, concept; labels = true, lang = nothing)}}
+\end{center}
+
+\noindent Method \texttt{segments} is the convenience that picks the segment axis for you. 
+
+\paragraph{Julia Example:} Apple revenue by operating segment, and by product.
+
+\begin{lstlisting}
+julia> f = fetch_filing(320193, "0000320193-25-000079");
+julia> segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")
+        # Americas $178B, Europe $111B, Greater China $64B, Rest of Asia Pacific $34B, Japan $29B
+\end{lstlisting}
+
+
+\paragraph{Coverage.} Works wherever segments are dimensionally tagged. \textbf{Named members} name
+themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang="en"} for English rather
+than the native names), and Companies House (all FRC-module labels resolved). \textbf{Generic members} ---
+\textbf{India}'s \texttt{…Segment01Member} placeholders --- are named instead from their
+\texttt{DescriptionOfReportableSegment} \emph{text} fact, which \texttt{breakdown} reads automatically (the
+non-numeric descriptor is invisible to \texttt{facts}, which is numeric-only). One caveat is a property of
+the filings, not the tool: at \textbf{ESEF} filers detail-tag the primary statements but \emph{block-tag the
+notes}, so the segment note usually carries no dimensional facts and the result is empty.
+
+
+\section{Text Layer}
+\label{sec:api-narratives}
+
+\subsection{\texttt{narratives}}
+
+Method \texttt{narratives(f)} is the prose counterpart of method \texttt{facts(f)}: where \texttt{facts} returns a
+filing's numeric tags, \texttt{narratives} returns its \textbf{narrative sections} --- Management's
+Discussion, Business Risks, Governance, Significant Accounting Policies, and the rest --- as a
+\texttt{Tables.jl} row table of \texttt{Narrative}s (\S\ref{sec:api-types}). The \emph{same} call works
+whatever the source: a tagged XBRL text-block, an inline-XBRL text-block, or an ingested-PDF section. So
+everything downstream --- search, export to DuckDB, feeding a language model --- is source-agnostic: one row
+shape, several producers (Table~\ref{tab:narrative-producers}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{The \texttt{narratives} producers --- what counts as a ``narrative'' per source, and how it is found.}
+\label{tab:narrative-producers}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.40\textwidth}p{0.37\textwidth}@{}}
+\toprule
+\textbf{\texttt{source}} & \textbf{A narrative is\ldots} & \textbf{Found by} \\
+\midrule
+\texttt{:xbrl} & a classic-instance text-block element (escaped-HTML content) & concept local-name ends in
+  \texttt{TextBlock} \\
+\texttt{:ixbrl} & an \texttt{<ix:nonNumeric>} text-block fact in the inline document & concept local-name ends
+  in \texttt{TextBlock} \\
+\texttt{:pdf} & a \texttt{StructuredDocument} section, its text-blocks concatenated in reading order &
+  Docling section detection (\S\ref{sec:api-pdf}) \\
+\texttt{:html} & a SEC \emph{Item}/\emph{Part} section & \texttt{sections(f)} --- \emph{planned} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Forms.} \texttt{narratives} dispatches on what you hand it:
+\begin{lstlisting}
+julia> narratives(f)                               # a Filing: XBRL/iXBRL text-blocks (or a :pdf filing)
+julia> narratives(sd)                              # a StructuredDocument (a Docling parse of a PDF)
+julia> narratives(read_structured_document(path))  # a persisted structured.json (no Docling needed)
+julia> narratives(f; lang = "en")                  # choose the label language for the titles
+\end{lstlisting}
+
+\noindent Each row carries two title columns and a tag set --- \texttt{section\_title} (verbatim),
+\texttt{canonical\_title} (normalised) and \texttt{tags} (thematic, cross-filer) --- described under Core
+types (\S\ref{sec:api-types}); plus \texttt{text}, \texttt{lang}, and the provenance appropriate to the
+source (\texttt{concept}/\texttt{context\_ref}/\texttt{period\_end} for XBRL, \texttt{page}/\texttt{block\_id}
+for PDF).
+
+\paragraph{XBRL / iXBRL text-blocks.} A narrative is a \textbf{text-block} fact --- a concept whose local
+name ends in \texttt{TextBlock} (EDINET \texttt{jpcrp\_cor}/\texttt{jpigp\_cor}, SEC \texttt{us-gaap}). The
+numeric \texttt{facts} pipeline skips these (they are \texttt{ix:nonNumeric}); \texttt{narratives} generalises
+the same single-concept reader the auditor extractor uses, over \emph{every} text-block. Classic-instance
+content is stored as \emph{escaped} HTML (\texttt{\&lt;p\&gt;\ldots}), so it is entity-decoded \textbf{first}
+and tag-stripped \textbf{after} --- the reverse of the plain-string cleaner --- yielding clean prose;
+duplicate taggings of the same block (a filer tags it in several places) collapse by
+\texttt{(concept, context)}. Titles are the \textbf{verbose} label: for EDINET they come from the bundled
+concept table (\S\ref{sec:edinet-concepts}), because EDINET filings bundle only their \emph{extension}
+labels --- the standard-concept labels (all text-blocks included) live in the standard taxonomy, supplied
+through the same \texttt{\_standard\_labels} seam ESEF uses for \texttt{ifrs-full}.
+
+\paragraph{PDF sections.} \texttt{narratives(sd)} emits one \texttt{Narrative} per document section, carrying
+the heading as \texttt{section\_title} and the page as provenance, with \texttt{concept} empty. It runs on
+\emph{any} \texttt{StructuredDocument} --- a fresh Docling parse or a reloaded \texttt{structured.json} --- so
+the text layer is available without re-running the slow, OCR-heavy extraction. Granularity differs from XBRL
+by design: the PDF splits by every heading (Nintendo: 277 sections) where the XBRL groups by concept (its
+text-blocks), the same report seen at two resolutions.
+
+\paragraph{Validation --- the CSV as a same-document oracle.} EDINET's \texttt{type=5} CSV carries the FSA's
+own parse of \emph{both} the numeric facts and the text-blocks of the identical filing, so it validates
+\texttt{narratives} directly (\S\ref{sec:edinet-oracle}). The bundled \texttt{csv\_oracle} script
+(\texttt{src/sources/csv\_oracle.jl}, loaded on demand like the other \texttt{*\_oracle} helpers) reads it
+correctly (UTF-16, quoted multi-line cells) and prints the diff for a human to eyeball:
+\begin{lstlisting}
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "csv_oracle.jl")); using .CsvOracle
+julia> rep = CsvOracle.validate(f, "jpcrp030000-asr-....csv")   # facts + narratives parity
+julia> CsvOracle.text_diff(rep, "jpcrp_cor:BusinessRisksTextBlock")  # ours vs CSV, side by side
+\end{lstlisting}
+On real annual reports this shows \textbf{100\% content parity} for the tagged text-blocks (Toyota 152/152,
+Fast Retailing 138/138, whitespace-normalised). The check is \emph{exact} --- both sides derive from the same
+filing, so it validates the XBRL/iXBRL text-block extraction against an authoritative reference.
 
 
 \section{Low-Level Requests}
@@ -2763,7 +2789,7 @@ filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference 
 \end{tabular}
 \end{table}
 
-\section{Independent Data (Yahoo, AlphaVantage)}
+\section{Independent Data Sources (Yahoo, AlphaVantage)}
 \label{sec:validation-sources}
 
 A \textbf{data} oracle confirms the \emph{numbers match the outside world}: it compares the headline totals
@@ -2983,7 +3009,7 @@ self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while 
 
 \part{Filing Systems}
 
-\chapter{EDGAR \textemdash{} U.S.\ SEC}
+\chapter{United States: SEC EDGAR}
 \label{sys:edgar}
 
 EDGAR (\emph{Electronic Data Gathering, Analysis, and Retrieval}) is the U.S.\ Securities and
@@ -3306,7 +3332,7 @@ julia> unpersist_user_agent()   # removes the persisted setting
 \end{longtable}
 \end{subappendices}
 
-\chapter{ESEF \textemdash{} European Union}
+\chapter{European Union: ESEF}
 \label{sys:esef}
 
 ESEF (the \emph{European Single Electronic Format}) is the EU's mandatory reporting format for the
@@ -4008,7 +4034,7 @@ So the account-form ``\emph{T}'' is \emph{permitted} in the Netherlands but not 
 listed groups present the vertical Model~A, and the ESEF/IFRS consolidated statements the three examples file
 are the IAS~1 vertical layout throughout.
 
-\chapter{UK filing systems}
+\chapter{United Kingdom Filing Systems}
 \label{sys:uk}
 
 The United Kingdom exposes company financial reports through \emph{two distinct channels}, and
@@ -4331,7 +4357,7 @@ set_credentials(CompaniesHouse(); api_key = ENV["COMPANIES_HOUSE_API_KEY"])
 SEC-style \texttt{User-Agent} (\S\ref{sec:ua}), set via \texttt{set\_user\_agent}.
 \end{subappendices}
 
-\chapter{EDINET \textemdash{} Japan}
+\chapter{Japan: EDINET}
 \label{sys:edinet}
 
 EDINET is Japan's FSA disclosure system, and the fourth \texttt{FilingSystem}. A filing is a
@@ -4653,7 +4679,7 @@ set_credentials(EDINET(); api_key = ENV["EDINET_API_KEY"])
 (\S\ref{sec:edinet-oracle}) use the key.
 \end{subappendices}
 
-\chapter{DART \textemdash{} South Korea}
+\chapter{South Korea: DART}
 \label{sys:dart}
 
 DART (and its API, OpenDART) is South Korea's FSS disclosure system, and the \textbf{fifth}
@@ -4910,21 +4936,351 @@ set_credentials(DART(); api_key = ENV["DART_API_KEY"])
 \texttt{corpCode.xml} resolver.
 \end{subappendices}
 
-\chapter{China \textemdash{} CSRC / CNINFO}
+\chapter{China: CSRC and CNINFO}
 \label{sys:china}
 
-\emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
+China is being added as the \textbf{seventh} \texttt{FilingSystem}, and it is unlike the six before it in
+one decisive respect: it is the first \textbf{PDF-native} jurisdiction. Every prior system --- SEC, ESEF,
+Companies House, EDINET, DART, India --- exposes an XBRL or iXBRL package as its keyless primary channel,
+so \texttt{facts(f)} flows through the shared jurisdiction-agnostic XBRL extractor. China does not. Its only
+complete, keyless, machine-accessible channel yields \textbf{PDF annual reports under CAS} --- so a China
+filing is a PDF whose facts are recovered by the shared \textbf{PDF extractor} (Chapter~\ref{ch:pdf}), of
+which China is the flagship (and first CJK) consumer. Because disclosure is split across the \textbf{CSRC}
+(listed companies), the \textbf{MOF}/\textbf{SASAC} channel (state-owned enterprises, largely internal) and
+\textbf{AMAC} (funds), the chapter opens --- as India's did --- with a \emph{Repositories} survey
+(\S\ref{sec:china-repos}): the central question is which door to build on. The answer is
+\textbf{CNINFO} (\cncjk{巨潮资讯网}{}), the designated national disclosure portal,
+whose keyless JSON API resolves an issuer and lists its annual-report PDFs. Financials are prepared under
+\textbf{CAS/ASBE} (Chinese Accounting Standards) --- broadly
+IFRS-converged but with a national taxonomy that is itself geo-blocked (\S\ref{sec:china-repos}), and, more
+to the point, \emph{not} present in the PDFs at all: a PDF carries a Chinese line-item \emph{label}
+(``Total assets''), not a namespaced concept. Classification is
+therefore \textbf{by Chinese label}, through a planned dedicated \texttt{vocab\_cas.jl}. Identity is the
+packed CNINFO code-plus-\texttt{orgId} (\texttt{EntityId(:cninfo, "000001,gssz0000001")}) --- the six-digit
+exchange code together with CNINFO's internal organisation id, resolved from a bare code or company name the
+way DART resolves a \texttt{stock\_code} to a \texttt{corp\_code}.
 
-China is the strongest \textbf{multi-system-per-country} case: disclosure is split across the
-\textbf{CSRC} (listed companies, surfaced through the \href{http://www.cninfo.com.cn}{CNINFO} portal and
-the Shanghai/Shenzhen exchange sites), the \textbf{MOF}/\textbf{SASAC} channel (state-owned enterprises,
-largely internal), and \textbf{AMAC} (funds). It also has the lowest XBRL-retrieval maturity of the major
-markets --- the exchange portals expose no clean machine API --- and a large standalone \textbf{CAS}
-(Chinese Accounting Standards) national-GAAP vocabulary that would need its own taxonomy mapping. The
-repository survey, access mechanics and taxonomy work are deferred; this chapter is a scaffold so the
-structure is in place when the work begins.
+\emph{Status:} the seam (C0) is \textbf{implemented} --- the \texttt{China} \texttt{FilingSystem}, its
+credential tag and its keyless browser headers, so \texttt{using EDGAR} loads clean. CNINFO discovery (C1),
+\texttt{fetch\_filing} $\to$ PDF \texttt{Filing} plus \texttt{narratives} (C2), CAS facts via the PDF
+extractor with \texttt{vocab\_cas.jl} (C3) and the validation oracle (C4) are the remaining phases. This
+chapter documents the repository survey and the entity universe; the retrieval mechanics, taxonomy and
+statement types follow as those phases land.
 
-\chapter{India \textemdash{} NSE, BSE and MCA21}
+\section{Repositories}\label{sec:china-repos}
+
+There is no single ``Chinese EDGAR'' in the sense of one regulator's document store --- but there is a
+single \emph{portal} that unifies the listed-company universe: \textbf{CNINFO}, operated by a Shenzhen
+Securities Information Co.\ (an SZSE
+subsidiary) under CSRC mandate, which carries the periodic reports of \emph{every} company listed on the
+Shanghai, Shenzhen and Beijing exchanges. That makes the ``which door'' decision easier than India's: the
+exchanges and the regulator all route public disclosure through CNINFO, so \texttt{EDGAR.jl} builds on it
+directly (Table~\ref{tab:china-repos}). The distinguishing constraint is \emph{format}, not access ---
+CNINFO is keyless and complete, but it serves \textbf{PDF}, not XBRL.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Chinese financial-disclosure repositories and their accessibility.}
+\label{tab:china-repos}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.22\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Repository} & \textbf{What it is} & \textbf{Access} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{CNINFO} & CSRC-designated national disclosure portal; periodic reports of all SSE/SZSE/BSE listed companies & \textbf{Keyless} JSON API; direct \texttt{.PDF} URLs on a static host & \textbf{primary channel} \\
+\textbf{SSE} data service & Shanghai exchange's XBRL-\emph{derived} performance viewer; numbers normalised to base units & HTML/JSONP display layer; ``refer to the PDF for actual disclosed figures'' & display-only (not a parse target) \\
+\textbf{SZSE} XBRL platform & Shenzhen exchange's 2009-era instance-document service & Legacy; no documented live keyless API & out of scope (legacy) \\
+\textbf{CSRC} & The market regulator itself & Delegates public disclosure to CNINFO + the exchanges & not a fetch target \\
+\textbf{MOF} taxonomy & The CAS General-Purpose national-GAAP vocabulary & Host \emph{geo-blocked} outside China & unreachable (and unneeded --- PDFs carry no concepts) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{CNINFO --- the primary channel (keyless)}
+CNINFO behaves like the discovery-to-document seam of DART, but the document is a \textbf{PDF} and there is
+\textbf{no API key} --- only a browser \texttt{User-Agent} and a CNINFO \texttt{Referer}. Unlike NSE it needs
+no cookie bootstrap. The access flow is three requests: resolve the issuer to a code-plus-\texttt{orgId},
+list its annual-report announcements, then download the PDF named in each record.
+
+\begin{lstlisting}[style=term]
+# UA is any realistic desktop-browser User-Agent; a CNINFO Referer is required throughout.
+
+# 1. Resolve an issuer -- a 6-digit code or a company name -> {code, orgId}.
+%  curl -A "$UA" -H "Referer: http://www.cninfo.com.cn/" \
+     --data "keyWord=000001&maxNum=10" \
+     http://www.cninfo.com.cn/new/information/topSearch/query
+#  -> [{"code":"000001","orgId":"gssz0000001","zwjc":"..","category":"A股",..}]
+
+# 2. List a company's annual reports (keyless JSON). stock = "code,orgId";
+#    column = szse | sse | bj ; category_ndbg_szsh = the annual-report class.
+%  curl -A "$UA" -H "Referer: http://www.cninfo.com.cn/" \
+     --data "stock=000001,gssz0000001&column=szse&category=category_ndbg_szsh&tabName=fulltext&pageNum=1&pageSize=30&seDate=2024-01-01~2025-12-31" \
+     http://www.cninfo.com.cn/new/hisAnnouncement/query
+
+# 3. Download the PDF named in each record's `adjunctUrl` (prepend the static host).
+%  curl -A "$UA" -H "Referer: http://www.cninfo.com.cn/" -o report.pdf \
+     http://static.cninfo.com.cn/finalpage/2025-03-15/1222806505.PDF
+\end{lstlisting}
+
+\noindent Each discovery record looks like the following (fields abridged); the \texttt{adjunctUrl} (on the
+\texttt{static.cninfo.com.cn} host) is the parse target, and \texttt{secCode}$+$\texttt{orgId} is the
+identity key. Note the pairing of the full report with its \emph{summary} --- a separate, shorter PDF the
+adapter must distinguish from the report proper.
+
+\begin{lstlisting}[style=term]
+{
+  "secCode":           "000001",
+  "secName":           "..",                      # issuer short name (Chinese)
+  "orgId":             "gssz0000001",
+  "announcementTitle": "2024 Annual Report",      # or ".. Annual Report Summary"
+  "announcementTime":  1742054400000,             # epoch ms
+  "adjunctType":       "PDF",
+  "adjunctUrl":        "finalpage/2025-03-15/1222806505.PDF"
+}
+\end{lstlisting}
+
+\noindent Two practical notes. First, the \texttt{topSearch} resolver is \textbf{live per query}, so ---
+unlike DART's bulk \texttt{corpCode.xml} index --- China needs \emph{no} downloaded entity index; a bare
+code or a name resolves to its \texttt{orgId} in one request. Second, a CNINFO annual-report query returns
+\emph{both} the report and its summary; \texttt{EDGAR.jl} keeps the full report as the parse target and
+treats the summary as secondary.
+
+\subsection{SSE and SZSE --- the exchange data services}
+Both exchanges expose company-financials views \emph{derived} from submitted filings, but neither is a clean
+parse target. The Shanghai (SSE) data service renders a normalised balance-sheet/income/cash-flow view
+behind a JSONP query layer, and states on its own pages that the figures are converted to base units and
+that the \textbf{PDF} is authoritative for the disclosed numbers and units. The Shenzhen (SZSE) XBRL platform
+is a 2009-era instance-document service with no documented live keyless API. Because CNINFO already carries
+the authoritative PDFs for both exchanges' issuers, \texttt{EDGAR.jl} takes CNINFO and treats the exchange
+data services as out of scope.
+
+\subsection{CSRC, and the MOF taxonomy (geo-blocked)}
+The \textbf{CSRC} is the regulator, not a repository: it mandates disclosure and delegates the public store
+to CNINFO and the exchanges, so it is not itself a fetch target. The \textbf{MOF}'s CAS General-Purpose
+Taxonomy --- the national-GAAP vocabulary an XBRL path would need --- is hosted at \texttt{xbrl.mof.gov.cn},
+which is \textbf{geo-blocked} outside mainland China (a probe returns no response). This would block an XBRL
+strategy, but it is moot here: the PDF annual reports carry Chinese line-item \emph{labels}, not taxonomy
+concepts, so \texttt{EDGAR.jl} classifies by label (the planned \texttt{vocab\_cas.jl}) and never resolves
+the MOF taxonomy at all.
+
+\paragraph{Out of scope: SOEs and funds.} Two other Chinese disclosure channels exist but are not listed-issuer
+financial statements and are outside the current scope: the \textbf{MOF}/\textbf{SASAC} channel for
+state-owned-enterprise reporting (largely internal, not a public keyless store), and \textbf{AMAC}, the
+fund-industry association that collects mutual- and private-fund disclosures. \texttt{EDGAR.jl} covers the CSRC listed-company universe via CNINFO.
+
+\section{Entities covered}\label{sec:china-entities}
+
+Because CNINFO is a single portal over all three exchanges, ``which companies can I reach?'' has one answer:
+the \textbf{A-share listed universe} --- every company listed on the Shanghai, Shenzhen or Beijing exchange
+(Table~\ref{tab:china-entities}). This is simpler than India, where the three channels covered
+\emph{different} universes; here the \texttt{column} parameter of the discovery query selects the board, but
+all three resolve through the same endpoint and the same identity scheme. A filer is identified by its
+six-digit exchange code together with CNINFO's \texttt{orgId} (\texttt{EntityId(:cninfo,\ "code,orgId")}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{The A-share listed universe CNINFO covers, by exchange (counts approximate, order of magnitude).}
+\label{tab:china-entities}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.16\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{Exchange (\texttt{column})} & \textbf{Inclusion criterion} & \textbf{Universe (order of mag.)} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{SSE} (\texttt{sse}) & Equity listed on the Shanghai Stock Exchange --- main board plus the STAR Market & $\sim$2{,}200 issuers & \textbf{covered} via CNINFO \\
+\textbf{SZSE} (\texttt{szse}) & Equity listed on the Shenzhen Stock Exchange --- main board plus ChiNext & $\sim$2{,}800 issuers & \textbf{covered} via CNINFO \\
+\textbf{BSE} (\texttt{bj}) & Equity listed on the Beijing Stock Exchange (SME/innovation board) & $\sim$260 issuers & \textbf{covered} via CNINFO \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{A-share listed issuers}
+The covered set is \textbf{A-share listed companies} --- domestically listed, RMB-denominated equity issuers
+filing periodic reports under CSRC/exchange rules. Roughly 5{,}400 companies in total across the three
+exchanges, each publishing an audited \textbf{annual report} under
+CAS. A company is reached by its six-digit code and CNINFO \texttt{orgId} --- e.g.\ Ping~An~Bank
+(\texttt{000001}, \texttt{orgId gssz0000001}), Kweichow~Moutai (\texttt{600519}), Vanke (\texttt{000002}).
+Dual A$+$H-listed companies (also listed in Hong~Kong) appear here through their A-share code; their separate
+HKEX filing is a different repository and is not covered.
+
+\subsection{US-listed issuers --- reachable via the SEC today (no new code)}\label{sec:china-adr}
+A distinct slice of the largest Chinese companies does \emph{not} need the CNINFO/PDF path at all: those
+cross-listed in the United States as \textbf{American Depositary Receipts (ADRs)} --- Alibaba, PDD, JD,
+Baidu, NetEase and many more --- file \textbf{Form~20-F} (the foreign private issuer's annual report) with
+the SEC, so their financials are already reachable through \texttt{EDGAR.jl}'s existing \texttt{SEC} system,
+as \textbf{tagged XBRL} rather than a PDF. For those specific names that is the \emph{better} source --- the
+same balance sheet, income statement and cash-flow statement arrive as classified facts with zero
+China-specific code, on the \texttt{us-gaap}/\texttt{ifrs-full} vocabularies the SEC path already uses (a
+20-F filer reports under IFRS or US~GAAP, not CAS). So the practical rule is: for a US-listed Chinese issuer,
+reach it through the SEC (\texttt{fetch\_filing(cik, accession)}); reserve the CNINFO PDF channel for the
+A-share universe that files \emph{only} in the mainland.
+
+\paragraph{Boundary.} The scope is A-share \textbf{listed issuers'} annual reports on CNINFO (with US-listed
+names better reached through the SEC, above). B-shares and purely Hong-Kong-listed (H-share) entities, the
+interim/quarterly reports, and the SOE (MOF/SASAC) and fund (AMAC) channels are outside the current China
+scope; interim reports and the second statement types follow as later phases (C3+) land. \textbf{Non-listed}
+companies are effectively out of reach: the SAMR company registry (\texttt{gsxt.gov.cn}) holds every firm's
+statutory annual filing but publishes little financial detail and offers no keyless API (it is CAPTCHA-gated),
+and the commercial aggregators that resell it are paid --- so, as with India's MCA21 registrar, the
+all-companies universe is not a practical financial-statement source. The one exception is \textbf{non-listed
+bond issuers} (many large SOEs and financing vehicles), which must publish audited statements through the
+bond-market disclosure channels (the interbank market via NAFMII/ChinaMoney and exchange bonds via CNINFO);
+that channel is a possible later extension, not part of the current equity scope.
+
+\section{Forms and statement types}\label{sec:china-forms}
+
+Chinese listed companies disclose to the exchanges (and thus to CNINFO) under CSRC rules and the exchanges'
+listing rules --- the analogue of the SEC's periodic-reporting regime. Disclosure spans a wide document
+universe (Table~\ref{tab:china-forms}), of which \texttt{EDGAR.jl} targets the one that carries the full
+financial statements: the \textbf{annual report}, a single PDF. Unlike an Indian
+Reg.~33 results filing --- a \emph{condensed} statement set (\S\ref{sec:india-statements}) --- a Chinese
+annual report is the \textbf{complete annual accounts}: the four primary statements, the notes, and a
+management discussion, closer in scope to a U.S.\ 10-K than to a quarterly
+results table. That completeness is what makes the PDF worth the extraction cost.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The Chinese exchange-disclosure landscape (via CNINFO); \texttt{EDGAR.jl} targets the annual report.}
+\label{tab:china-forms}
+\begin{tabular}{@{}p{0.27\textwidth}p{0.43\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Family ($\to$ \texttt{category})} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+Periodic reports & Annual Report, Semi-Annual Report, Quarterly Reports & \textbf{annual PDF} (planned C2) \\
+Issuance \& prospectuses & IPO / rights-issue / bond prospectuses & \emph{not yet} \\
+Major-event announcements & material events, board \& shareholder resolutions & discovery only (planned) \\
+Governance \& ownership & shareholding-change, share-pledge, buy-back announcements & \emph{not yet} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Periodic reports}
+The annual report, semi-annual report and the first- and
+third-quarter reports --- China's analogue of the 10-K/10-Q, carrying the CAS financial
+statements. \texttt{EDGAR.jl} targets the \textbf{annual report}; every CNINFO annual-report query also
+returns a paired \textbf{summary}, a shorter PDF the adapter distinguishes from the report
+proper and skips. Interim (semi-annual, quarterly) reports use the same CNINFO seam and CAS shape and are a
+straightforward later extension.
+
+\subsection{Statement types under CAS}\label{sec:china-statements}
+A CAS annual report carries \textbf{four} primary statements, each typically presented \emph{twice} --- a
+\textbf{consolidated} set and the \textbf{parent-company} set; \texttt{EDGAR.jl} takes the consolidated by
+default, as elsewhere:
+
+\begin{itemize}
+  \item \textbf{Balance sheet}: assets, liabilities and owners' equity.
+  \item \textbf{Income statement}: operating revenue through net profit. (CAS titles it the ``profit
+    statement'', not ``income statement''.)
+  \item \textbf{Cash-flow statement}: operating, investing and financing activities (the CAS format is close
+    to the IFRS indirect method).
+  \item \textbf{Statement of changes in owners' equity} --- which, unlike an Indian condensed results
+    filing, \emph{is} present in full.
+\end{itemize}
+
+\noindent \textbf{Sector formats.} As in India, the statement shape varies by company class: banks, insurers
+and securities firms file the MOF's \emph{financial-institution} CAS formats --- a bank's balance sheet leads
+with loans and advances and deposits rather than inventory and trade receivables, exactly the
+Banking-Regulation shape seen at India's \texttt{BANKING\_} template. Classification (C3) must therefore
+branch on sector, which in the PDF path means recognising the sector's characteristic line labels, not a
+filename prefix.
+
+\section{Taxonomy --- CAS labels, not concepts}\label{sec:china-taxonomy}
+
+China inverts the taxonomy story of every prior system, and this is the chapter's core technical point.
+DART needed \emph{no} vocabulary because K-IFRS tags bare \texttt{ifrs-full} (\S\ref{sec:dart-kifrs}); India
+needed a vocabulary keyed on a national \emph{namespace} (\texttt{in-bse-fin}, \S\ref{sec:india-taxonomy}).
+China has \textbf{no namespace to key on at all}: the retrieval artefact is a PDF, and a PDF line carries a
+Chinese \textbf{label} (\cncjk{资产总计}{}, ``Total assets''), not a namespaced concept
+(\texttt{ifrs-full:Assets}). The classification key is the \emph{human label}.
+
+There \emph{is} a national vocabulary --- the MOF's \textbf{CAS General-Purpose Taxonomy}, an
+XBRL-International-acknowledged taxonomy at
+\texttt{xbrl.mof.gov.cn} --- but it is doubly out of the picture: the host is \textbf{geo-blocked} outside
+mainland China (\S\ref{sec:china-repos}), \emph{and} it never appears in the PDFs the general filer universe
+publishes. So \texttt{EDGAR.jl} does not resolve it. Instead, China is classified through a dedicated
+\textbf{\texttt{vocab\_cas.jl}} keyed on the CAS \textbf{Chinese labels} --- the label-first analogue of the
+by-namespace national vocabularies, and the natural fit for the PDF extractor's document-first path, whose
+facts already anchor on line-item \emph{text} rather than concept URIs (Chapter~\ref{ch:pdf}). The anchor
+labels are stable across filers because the MOF prescribes the statement line items
+(Table~\ref{tab:china-cas-anchors}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{CAS statement anchors --- the Chinese labels \texttt{vocab\_cas.jl} maps to canonical roles (a
+representative subset; general-industry format).}
+\label{tab:china-cas-anchors}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.28\textwidth}@{}}
+\toprule
+\textbf{CAS label} & \textbf{English} & \textbf{Statement --- role} \\
+\midrule
+\cncjk{资产总计}{} & Total assets & Balance sheet --- Assets \\
+\cncjk{负债合计}{} & Total liabilities & Balance sheet --- Liabilities \\
+\cncjk{所有者权益（或股东权益）合计}{} & Total owners'/shareholders' equity & Balance sheet --- Equity \\
+\cncjk{营业收入}{} & Operating revenue & Income statement --- Revenue \\
+\cncjk{营业利润}{} & Operating profit & Income statement \\
+\cncjk{利润总额}{} & Total profit (pre-tax) & Income statement \\
+\cncjk{净利润}{} & Net profit & Income statement --- NetIncome \\
+\cncjk{归属于母公司所有者的净利润}{} & Net profit attributable to owners of the parent & Income statement --- net income (parent) \\
+\cncjk{经营活动产生的现金流量净额}{} & Net cash flow from operating activities & Cash-flow --- OperatingCashFlow \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{CAS versus IFRS.} CAS/ASBE has been substantially \textbf{IFRS-converged}
+since the 2007 ASBE, so the statement structure and most recognition/measurement rules read like IFRS ---
+which is why the anchor labels above map cleanly onto the same canonical roles the \texttt{ifrs-full}
+vocabulary uses. A few deliberate divergences persist (they matter for a validation oracle, not for
+classification): CAS \textbf{prohibits reversing impairment losses} on long-lived assets (IFRS permits it),
+narrows some \textbf{related-party} disclosures for state-controlled entities, and prescribes MOF statement
+\emph{formats} more rigidly than IAS~1. Figures are in \textbf{renminbi} (RMB), with the
+unit (yuan, or in ten-thousands / thousands) stated in the statement header --- a
+locale/unit the PDF extractor's amount parser must read, the CAS counterpart of India's ``Crores''
+rounding.
+
+\medskip\noindent One consequence worth flagging early. Chinese filers headline the \textbf{parent-attributable}
+net profit rather than \emph{total} net profit, so a value-against-value
+check against a third-party source (which usually reports the parent figure) must pick the right line --- the
+same net-income-attribution subtlety documented for India's NSE filings (\S\ref{sec:india-yahoo}). The CAS
+oracle (C4) reconciles on the parent line.
+
+\section{Retrieving filings}\label{sec:china-retrieve}
+
+Discovery is \textbf{keyless} --- a browser \texttt{User-Agent} and a CNINFO \texttt{Referer}, no API key and
+(unlike NSE) no cookie bootstrap. The intended API mirrors every other system, with the one difference that
+the fetched \texttt{Filing} is a \textbf{PDF} whose \texttt{facts} route through the PDF extractor rather than
+the XBRL path:
+
+\begin{lstlisting}
+hs = discover(CNINFOFilings(); code = "000001")   # Ping An Bank; annual reports (the default)
+f  = fetch_filing(first(hs))                       # newest; downloads the CAS annual-report PDF
+facts(f)                                            # statements via the PDF extractor + vocab_cas
+                                                    # narratives(f) -> the MD&A / notes prose
+\end{lstlisting}
+
+\noindent A few notes (the seam is C0; discovery/fetch land at C1/C2):
+
+\begin{itemize}
+  \item \textbf{No key, no cookie.} CNINFO's JSON endpoints answer any browser-headed client; there is nothing
+    to configure --- China, like India, needs no credential, and unlike India needs no session bootstrap.
+  \item \textbf{By code or name.} Discovery keys off the six-digit exchange \texttt{code}
+    (e.g.\ \texttt{"000001"}) or a company name, resolved to its \texttt{orgId} live via CNINFO's
+    \texttt{topSearch} --- so, unlike DART, no entity index is downloaded. The board is selected by the
+    \texttt{column} keyword (\texttt{szse} / \texttt{sse} / \texttt{bj}), defaulting to auto-detect from the
+    code range.
+  \item \textbf{Handles, newest first.} Each \texttt{FilingHandle}'s identity is the packed
+    \texttt{EntityId(:cninfo,\ "code,orgId")} and its \texttt{period\_end} the fiscal-year end (Chinese fiscal
+    years end 31~December), so \texttt{first(hs)} is the most recent annual report; the paired summary
+    is filtered out.
+  \item \textbf{Same caller API, PDF underneath.} \texttt{fetch\_filing(h)} $\to$ \texttt{facts(f)} /
+    \texttt{narratives(f)} $\to$ \texttt{select\_statement} is identical to SEC, DART or India for the caller;
+    what differs is \emph{internally} --- \texttt{facts(f)} runs the PDF extractor (Chapter~\ref{ch:pdf}) with
+    \texttt{vocab\_cas} label classification, not an XBRL parse. Born-digital annual reports (the norm; the
+    text layer extracts CJK directly) need no OCR; older or scanned filings fall back to the extractor's OCR
+    tier.
+\end{itemize}
+
+\chapter{India: NSE, BSE and MCA21}
 \label{sys:india}
 
 India is being added as the \textbf{sixth} \texttt{FilingSystem}. Unlike the single national regulator-API
@@ -5452,7 +5808,7 @@ Reliance and Indian~Oil are reported in INR. \textbf{Per-share restatement.} Yah
 \texttt{BasicEPS} across a corporate action (Reliance's filed \texttt{102.90} vs Yahoo's \texttt{51.45}
 after the 2024 1:1 bonus).
 
-\chapter{Russia \textemdash{} CBR / e-disclosure}
+\chapter{Russia \textemdash{} CBR and e-disclosure}
 \label{sys:russia}
 
 \emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
