@@ -553,9 +553,9 @@ end
     # because it is *subtracted* carries the positive magnitude 311,011 — the sign is its calculation
     # contribution, not the stored value. Credit lines keep their reported sign (a loss stays negative). This
     # keeps ONE accounting-rules implementation working across PDF / HTML / iXBRL / XBRL.
-    @test EDGAR.hkfrs_concept("Cost of revenues", "IncomeStatement").balance == :debit
-    @test EDGAR.hkfrs_concept("Revenue", "IncomeStatement").balance == :credit
-    @test EDGAR.hkfrs_concept("Net cash flows used in investing activities", "CashFlow").balance == :none
+    @test EDGAR.ifrs_label_concept("Cost of revenues", "IncomeStatement").balance == :debit
+    @test EDGAR.ifrs_label_concept("Revenue", "IncomeStatement").balance == :credit
+    @test EDGAR.ifrs_label_concept("Net cash flows used in investing activities", "CashFlow").balance == :none
 
     cells = EDGAR.TableCell[
         EDGAR.TableCell(0, 1, 1, 1, true,  "2024"),                 # column-year header (period detection)
@@ -575,7 +575,7 @@ end
     meta = EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false)
     sd = EDGAR.StructuredDocument("1.0", meta, EDGAR.DocSection[], [blk], [tbl],
                                   EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
-    rows = EDGAR._hkfrs_facts_from_sd(sd)
+    rows = EDGAR._ifrs_facts_from_sd(sd)
     V(c) = (v = [r.value for r in rows if r.concept == c]; isempty(v) ? nothing : v[1])
     @test V("ifrs-full:CostOfSales") == 311_011 * 1e6      # value, NOT -311,011 (the parens are display only)
     @test V("ifrs-full:Revenue")     == 660_257 * 1e6      # unlabelled total via section-header carry-down

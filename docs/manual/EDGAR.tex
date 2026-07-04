@@ -828,7 +828,7 @@ PDF \emph{where the content is tabular}, minus page/outline provenance.
 \label{app:docling}
 
 Docling is the load-bearing engine for the \textbf{PDF-native} jurisdictions --- China
-(\texttt{extract\_cas\_pdf}), Hong~Kong (\texttt{extract\_hkfrs\_pdf}) and scanned UK~Companies~House accounts
+(\texttt{extract\_cas\_pdf}), Hong~Kong (\texttt{extract\_ifrs\_pdf}) and scanned UK~Companies~House accounts
 (via OCR) --- so this appendix collects the \emph{operational} detail in one place: how to install, run, tune
 and troubleshoot it. The design rationale (main-vs-fallback, why a document-AI engine) is the body of this
 chapter; the method signatures (\texttt{structured\_document}, \texttt{born\_digital}, \ldots) are in
@@ -2425,7 +2425,7 @@ installed) on \texttt{JULIA\_PYTHONCALL\_EXE}. Without it they raise a message t
 \noindent Whether a PDF has a usable \textbf{text layer} --- born-digital, or an already-OCR'd scan --- rather
 than being a bare scanned image. It measures the density of extractable text with \texttt{pdf.js} and returns
 \texttt{true} for a real text layer or \texttt{false} for a scan that would need OCR. This is the routing
-signal between the text-based extractors (\texttt{extract\_hkfrs\_pdf} / \texttt{extract\_cas\_pdf} /
+signal between the text-based extractors (\texttt{extract\_ifrs\_pdf} / \texttt{extract\_cas\_pdf} /
 \texttt{extract\_pdf}) and an OCR path. Unlike the rest of this section it needs \textbf{only
 Node\,+\,\texttt{pdf.js}}, not the Docling/PythonCall stack, so it is always available. A scanned UK Companies
 House filing returns \texttt{false}; a born-digital annual report returns \texttt{true}.

@@ -32,7 +32,7 @@ end
 Whether the PDF at `path` has a usable **text layer** (born-digital, or an already-OCR'd scan) rather than
 being a bare scanned image that needs OCR. Judged from the density of extractable text via `pdf.js`: a
 born-digital report yields positioned words on its pages, a scan yields (almost) none. Use it to route a PDF
-to the text-based extractor (`extract_hkfrs_pdf` / `extract_cas_pdf` / `extract_pdf`) versus an OCR path — a
+to the text-based extractor (`extract_ifrs_pdf` / `extract_cas_pdf` / `extract_pdf`) versus an OCR path — a
 scanned UK Companies House filing, for instance, returns `false`.
 
 ```julia
@@ -219,5 +219,5 @@ function _pdf_filing_facts(f::Filing; kwargs...)
     # China filings are CAS PDFs (Chinese labels); Hong Kong and UK Companies House are English PDFs
     # (IFRS / UK-GAAP → ifrs-full via the English label map).
     return f.system isa China ? extract_cas_pdf(src) :
-           (f.system isa HKEX || f.system isa CompaniesHouse) ? extract_hkfrs_pdf(src) : extract_pdf(src)
+           (f.system isa HKEX || f.system isa CompaniesHouse) ? extract_ifrs_pdf(src) : extract_pdf(src)
 end

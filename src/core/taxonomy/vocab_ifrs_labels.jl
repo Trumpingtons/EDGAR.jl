@@ -10,7 +10,7 @@
 
 # Normalise an English statement label for matching: lower-case, collapse whitespace, drop a trailing
 # note-reference and asterisks/footnote marks ("Marketing Services*", "Revenue 6").
-function _hkfrs_norm(s::AbstractString)
+function _ifrs_norm(s::AbstractString)
     t = lowercase(strip(String(s)))
     t = replace(t, r"[*†‡]" => "")
     t = replace(t, r"\s+" => " ")
@@ -18,7 +18,7 @@ function _hkfrs_norm(s::AbstractString)
 end
 
 """
-    hkfrs_concept(label, statement) -> Union{Nothing, NamedTuple{(:concept,:instant,:balance)}}
+    ifrs_label_concept(label, statement) -> Union{Nothing, NamedTuple{(:concept,:instant,:balance)}}
 
 Classify an English HKFRS statement `label` (as clustered from a PDF row) to its `ifrs-full` concept, period
 type and **balance** (`:debit` / `:credit` / `:none`), within a known `statement` ("BalanceSheet" /
@@ -27,10 +27,10 @@ type and **balance** (`:debit` / `:credit` / `:none`), within a known `statement
 **contribution**: a debit line (e.g. cost of sales) is printed in parentheses because it is *subtracted*, but
 its value is the positive magnitude — the sign belongs to the calculation, not the stored fact, matching the
 `ifrs-full` XBRL convention. `:none` marks genuinely-signed lines (cash-flow net flows). Only the totals needed
-for cross-foot and the benchmark are mapped. See [`extract_hkfrs_pdf`](@ref).
+for cross-foot and the benchmark are mapped. See [`extract_ifrs_pdf`](@ref).
 """
-function hkfrs_concept(label::AbstractString, statement::AbstractString)
-    t = _hkfrs_norm(label)
+function ifrs_label_concept(label::AbstractString, statement::AbstractString)
+    t = _ifrs_norm(label)
     isempty(t) && return nothing
     inst = statement == "BalanceSheet"
     C(c, bal::Symbol) = (concept = c, instant = inst, balance = bal)
@@ -38,7 +38,8 @@ function hkfrs_concept(label::AbstractString, statement::AbstractString)
     if statement == "BalanceSheet"
         t == "total assets"                                    && return C("ifrs-full:Assets", :debit)
         t == "total liabilities"                               && return C("ifrs-full:Liabilities", :credit)
-        (t == "total equity" || t == "net assets")             && return C("ifrs-full:Equity", :credit)
+        (t == "total equity" || t == "net assets" ||
+         (occursin("shareholders", t) && occursin("funds", t))) && return C("ifrs-full:Equity", :credit)  # UK "Total shareholders' funds"
         (t == "total equity and liabilities" ||
          t == "total liabilities and equity")                 && return C("ifrs-full:EquityAndLiabilities", :credit)
         occursin(r"^(total )?equity attributable to (equity holders|owners)", t) &&
@@ -52,9 +53,11 @@ function hkfrs_concept(label::AbstractString, statement::AbstractString)
         occursin(r"^cost of (revenue|sales|goods sold)", t)    && return C("ifrs-full:CostOfSales", :debit)
         (occursin(r"^operating profit", t) || occursin(r"^profit from operat", t)) &&
             return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
-        (occursin("profit before", t) && occursin("tax", t))   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        (occursin("before tax", t) ||                                  # UK "…before taxation" / "…before tax"
+         (occursin("profit before", t) && occursin("tax", t)))  && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         (t == "profit for the year" || t == "profit for the period" ||
-         occursin(r"^profit(/\(loss\))? for the (year|period)", t)) && return C("ifrs-full:ProfitLoss", :credit)
+         occursin(r"^profit(/\(loss\))? for the (year|period)", t) ||
+         occursin("for the financial year", t))                 && return C("ifrs-full:ProfitLoss", :credit)  # UK "Profit for the financial year" (OCR-tolerant)
         occursin(r"(equity holders|owners) of the (company|parent)", t) &&
             return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
 
