@@ -2810,7 +2810,7 @@ clean_cache()
 How do you know the numbers \texttt{EDGAR.jl} extracts are right? ``Trust, but verify.'' Validation has two
 faces --- \emph{external} references and \emph{internal} checks --- across the four sections of this chapter,
 ordered by \emph{decreasing independence} (Table~\ref{tab:validation-kinds}). Each asks a different question,
-and together they triangulate: an independent data source catches a wrong \emph{value}, a reference parser
+and together they triangulate: an external data benchmark catches a wrong \emph{value}, a reference parser
 and the cross-format check catch a wrong \emph{extraction}, and the accounting rules catch a filing
 inconsistent with \emph{itself}.
 
@@ -2823,7 +2823,7 @@ inconsistent with \emph{itself}.
 \toprule
 \textbf{\S} & \textbf{Kind} & \textbf{The question it answers} \\
 \midrule
-\ref{sec:validation-sources}     & \textbf{Independent data} --- Yahoo, AlphaVantage & Is the value right vs.\ the world? \\
+\ref{sec:validation-sources}     & \textbf{External data benchmark} --- Yahoo, AlphaVantage & Is the value right vs.\ the world? \\
 \ref{sec:validation-parser}      & \textbf{Reference parser} --- Arelle + its published xBRL-JSON & Did we \emph{parse} it right? \\
 \ref{sec:validation-crossformat} & \textbf{Cross-format check} --- PDF vs.\ iXBRL & Do our own two paths agree? \\
 \ref{sec:validation-rules}       & \textbf{Accounting rules} --- \texttt{check\_calculations}, balance-sheet identity & Is the filing self-consistent? \\
@@ -2841,8 +2841,8 @@ fact (or headline metric) with the \texttt{EDGAR} value, the reference value, th
 
 \begin{table}[h]
 \centering
-\caption{The external validation references --- independent \emph{data}, and the reference \emph{parser} (same
-document, canonical XBRL processor).}
+\caption{The external validation references --- an external data \emph{benchmark}, and the reference
+\emph{parser} (same document, canonical XBRL processor).}
 \label{tab:oracles}
 \small
 \begin{tabular}{@{}p{0.30\textwidth}p{0.26\textwidth}p{0.18\textwidth}p{0.12\textwidth}@{}}
@@ -2857,19 +2857,22 @@ filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference 
 \end{tabular}
 \end{table}
 
-\section{Independent Data Sources (Yahoo, AlphaVantage)}
+\section{External Data Benchmarks}
 \label{sec:validation-sources}
 
-A \textbf{data} oracle confirms the \emph{numbers match the outside world}: it compares the headline totals
-(Assets, Equity, Revenue, Net income, operating cash flow), across all three statements, against an entirely
-separate data pipeline. Two ship --- \textbf{Yahoo Finance} (global reach) and \textbf{AlphaVantage}
-(US-strong), detailed below. A data oracle is the \emph{only} kind that can catch a filer \emph{mis-tagging}
-a value (a reference parser reads the same wrong tag), but only \emph{approximately}, since the providers
-round and normalize --- hence the 1\% tolerance.
+An \textbf{external data benchmark} confirms the \emph{numbers match the outside world}: it compares the
+headline totals (Assets, Equity, Revenue, Net income, operating cash flow), across all three statements,
+against an entirely separate data pipeline. Two ship --- \textbf{Yahoo Finance} (global reach) and
+\textbf{AlphaVantage} (US-strong), detailed below. It is a \emph{benchmark}, not an authority: where
+\texttt{EDGAR.jl} and the provider disagree, the provider is often the one that rounded, normalized or
+mis-mapped, and we frequently conclude \texttt{EDGAR.jl} made the better call --- the aim is to \emph{track}
+(and sometimes beat) the benchmark, not to defer to it. It is nonetheless the \emph{only} kind that can catch
+a filer \emph{mis-tagging} a value (a reference parser reads the same wrong tag), but only
+\emph{approximately}, since providers round and normalize --- hence the 1\% tolerance.
 
 \subsection{Yahoo Finance}
 
-A \emph{data} oracle with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
+An external \emph{benchmark} with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
 SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
 within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
 dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
@@ -2894,14 +2897,14 @@ YahooOracle.report()                               # or the built-in multi-firm 
 \end{lstlisting}
 
 \paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
-not its exchange symbol, so the data oracles take the ticker explicitly (\texttt{"AAPL"},
+not its exchange symbol, so the external benchmarks take the ticker explicitly (\texttt{"AAPL"},
 \texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
 
 \subsection{AlphaVantage}
 
-A second \emph{data} oracle, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
+A second external \emph{benchmark}, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
 dependency}: AlphaVantage is an official, documented REST API (one keyed GET returns clean JSON), so
-the oracle uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
+it uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
 allows only \(\sim\)25 calls/day, so the on-disk response cache makes re-runs free, and a fresh run is
 paced under the \(\sim\)5/minute limit (a burst of four network calls per minute; cached calls never
 block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
@@ -2943,7 +2946,7 @@ A \textbf{parser} oracle confirms we \emph{read the filing right}: it compares t
 the \emph{same} filing as parsed by \textbf{Arelle}, the reference open-source XBRL processor --- an
 independent implementation of the same standard. A mismatch is therefore a \emph{parsing} discrepancy, never
 a data disagreement; conversely it cannot catch a filer \emph{mis-tagging} a value (both readers honour the
-same wrong tag), which is what the data oracles (\S\ref{sec:validation-sources}) are for. This is the same
+same wrong tag), which is what the external benchmarks (\S\ref{sec:validation-sources}) are for. This is the same
 kind of reference the package already applies automatically on the SEC side, validating against the SEC's
 \texttt{companyfacts} API --- the SEC's own parse of the same filing; each filing system has an independent
 reference of this sort, which is what lets us trust one jurisdiction-agnostic parser where no such API exists
@@ -3044,13 +3047,13 @@ cannot be matched on concept. Instead it is matched on \texttt{(value, period)} 
 stores the \emph{printed} number (e.g.\ £m: 64.9) while the twin is absolute (64{,}900{,}000), the match is
 on the \emph{significand} at any power-of-ten scale; the consistent scale factor across matches is the
 document's inferred rounding. A disagreement flags a \emph{format-specific} extraction bug --- a mis-read PDF
-cell or a mis-parsed iXBRL tag --- that neither a data oracle nor a reference parser would surface, since
+cell or a mis-parsed iXBRL tag --- that neither an external benchmark nor a reference parser would surface, since
 each of those sees only \emph{one} of the two formats.
 
 \section{Accounting Rules and Validation}
 \label{sec:validation-rules}
 
-Independent data sources tell you whether a figure matches the outside world; \emph{accounting rules} tell
+External data benchmarks tell you whether a figure matches the outside world; \emph{accounting rules} tell
 you whether a filing is consistent with \emph{itself} --- no network, no third party, just the relationships
 the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
 
@@ -3559,7 +3562,8 @@ prose search and validation. The worked example below runs end-to-end on a real 
 (\S\ref{sec:lifecycle-example}), but spanning discovery, extraction, \emph{prose search}, and
 \emph{validation}. The script below runs end-to-end on a real filer --- Signify N.V.\ (Dutch, IFRS) ---
 using only the public API, then (a) searches the report's text and (b) cross-checks the extracted
-numbers against two independent oracles (\S\ref{sec:validation}).
+numbers against two independent references --- a parser oracle and an external benchmark
+(\S\ref{sec:validation}).
 
 \begin{lstlisting}
 julia> using EDGAR
@@ -3580,13 +3584,13 @@ julia> select_statement(rows, "BalanceSheet")     # ifrs-full:Assets, Liabilitie
 julia> hits = find_paragraphs(f, "sustainability")
 julia> EDGAR._paragraphs(f.content)[hits[1].index]    # the located paragraph
 
-# 5. (b) Validate the numbers against independent oracles (see "Validating the Extraction").
+# 5. (b) Validate the numbers against independent references (see "Validating the Extraction").
 #     Parser oracle -- Arelle xBRL-JSON, per statement:
 julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
 julia> using .ArelleEsefOracle
 julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
 
-#     Data oracle -- Yahoo Finance totals (needs YFinance in the environment):
+#     External benchmark -- Yahoo Finance totals (needs YFinance in the environment):
 julia> using YFinance
 julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
 julia> using .YahooOracle
@@ -3595,7 +3599,7 @@ julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
 
 \noindent Every step succeeds against the live filing; Table~\ref{tab:esef-lifecycle} records what each
 produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and step 5 is the
-``trust-but-verify'' cross-check --- both oracles agree with the extraction across all three statements.
+``trust-but-verify'' cross-check --- both references agree with the extraction across all three statements.
 
 \begin{table}[h]
 \centering
@@ -4691,7 +4695,7 @@ still holds the labels for concepts the newer one has retired.
 \section{Validation: the EDINET CSV oracle}
 \label{sec:edinet-oracle}
 
-Every system in this manual proves its numbers against an independent oracle (\S\ref{sec:validation}):
+Every system in this manual proves its numbers against an independent reference (\S\ref{sec:validation}):
 the SEC path cross-checks \texttt{company\_facts}, and ESEF and Companies House cross-check
 \href{https://filings.xbrl.org}{filings.xbrl.org}, the Arelle-backed XBRL-International aggregator.
 \textbf{Japan has neither} --- \texttt{company\_facts} is SEC-only, and filings.xbrl.org does not carry
@@ -4949,9 +4953,9 @@ Korea is the hardest jurisdiction to validate independently. filings.xbrl.org do
 so there is no Arelle xBRL-JSON oracle (unlike ESEF/UKSEF, \S\ref{sec:validation}), and
 \texttt{company\_facts}/AlphaVantage are US-centric. The independent reference that \emph{does} cover Korea
 is \textbf{Yahoo Finance}, whose KRX coverage uses the suffixes \texttt{.KS} (KOSPI) and \texttt{.KQ}
-(KOSDAQ) --- e.g.\ Samsung \texttt{005930.KS}, SK~Hynix \texttt{000660.KS}. The do-it-yourself oracle
-\texttt{src/sources/yahoo\_oracle.jl} compares EDGAR.jl's revenue, net income, assets and equity for the
-latest annual report against Yahoo's --- an \emph{independent data pipeline}, the same arms-length check it
+(KOSDAQ) --- e.g.\ Samsung \texttt{005930.KS}, SK~Hynix \texttt{000660.KS}. The do-it-yourself benchmark
+helper \texttt{src/sources/yahoo\_oracle.jl} compares EDGAR.jl's revenue, net income, assets and equity for
+the latest annual report against Yahoo's --- an \emph{independent data pipeline}, the same arms-length check it
 applies to every other jurisdiction. One DART subtlety the wiring handles: the consolidated face line is
 not left undimensioned but tagged on the \texttt{ConsolidatedAndSeparateFinancialStatementsAxis}
 (\texttt{ConsolidatedMember}), so those face facts are normalised to undimensioned for the shared metric
