@@ -1,6 +1,7 @@
 # China (CSRC / CNINFO) — the 7th FilingSystem — living plan
 
-Status: **planned → C0 in progress**. Everything local on `main`; do **not** push until China *and* Russia are done.
+Status: **C0–C4 DONE** (seven CAS formats cross-foot; fund §8 portfolios; Yahoo oracle 0 mismatches).
+Everything local on `main`; do **not** push until China *and* Russia are done.
 
 ## The headline: China is the first PDF-native jurisdiction
 
@@ -73,8 +74,12 @@ IFRS-namespaced. Classification is therefore **by Chinese label**, not concept n
   matrix deferred. Original design (now historical):
 - **C3 (original plan) — CAS facts + labels (gated).** `facts(f)` routes through the PDF extractor; `vocab_cas.jl` maps
   Chinese CAS labels → canonical statement roles (label-driven, the analog of `vocab_indas` but keyed on 中文).
-- **C4 — Oracle/validation.** Cross-check `Assets/Revenue/NetIncome` against an independent source (Yahoo carries
-  `000001.SZ`), on fresh filers + the stashed Moutai/Vanke/Wuliangye. Validate on NEW filers each time.
+- **C4 — Oracle/validation. ✅ DONE.** `YahooOracle` gained a `:china` branch (`src/sources/yahoo_oracle.jl`):
+  `cas:` concepts → Yahoo fundamentals (`.SS`/`.SZ`), Revenue prefers `cas:TotalRevenue` (= Yahoo TotalRevenue
+  = 营业总收入; banks fall back to 营业收入合计), NetIncome prefers `cas:ProfitAttributableToParent`.
+  `_edgar_rows(:china,·)` takes a CNINFO code OR a local PDF path. Panel result: **Ping An Bank (000001.SZ),
+  Moutai (600519.SS), Midea (000333.SZ) — all five metrics (Assets/Equity/Revenue/NetIncome/OperCashFlow)
+  match Yahoo to Δ0.0%, 0 mismatches.**
 
 ## Adjacent sources (scoping, decided 2026-07-04)
 
@@ -91,6 +96,19 @@ IFRS-namespaced. Classification is therefore **by Chinese label**, not concept n
   aggregators (Qichacha/Tianyancha) are paid — the MCA21 analog. The one exception: non-listed **bond issuers**
   (large SOEs / financing vehicles) must publish audited statements via bond-market disclosure (interbank
   NAFMII/ChinaMoney; exchange bonds via CNINFO) — a possible later extension, not current equity scope.
+
+## Post-China workstream (parked 2026-07-04)
+
+- **Fund portfolios for JP / KR / IN.** China gained a §8 portfolio extractor (`extract_fund_portfolio`,
+  holdings + 8.1/8.2 summaries) because CNINFO serves fund annual reports with one standardized PDF section.
+  The other three are each a *separate* sub-project (new source + holdings extractor), NOT a reuse:
+  - **Japan (most tractable)** — investment trusts (投資信託) file 有価証券報告書 / 運用報告書 via the existing
+    **EDINET** seam; holdings live in 組入資産明細. New document type + table extractor, but discovery is seamed.
+  - **Korea** — DART is corporate; ETF/fund holdings are on **KRX** (ETF PDF/CSV composition) and **KOFIA**
+    (fund disclosure); some 자산운용보고서 in DART. New adapter.
+  - **India (most fragmented)** — mutual-fund portfolios are monthly per-AMC disclosures (SEBI/AMFI), Excel/PDF
+    on each AMC site; no single keyless portal. New adapter.
+  Recon first (as with China), one jurisdiction at a time; sequence JP → KR → IN.
 
 ## Hard rules honored
 

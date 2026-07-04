@@ -37,6 +37,7 @@ struct Metric
     usgaap::Vector{String}
     ifrs::Vector{String}
     india::Vector{String}     # India: in-capmkt (Integrated Filing) then in-bse-fin (old feed) — same local names
+    china::Vector{String}     # China: cas: label-derived concepts from the PDF path (extract_cas_pdf)
     yahoo::Vector{String}
     statement::Symbol
 end
@@ -48,27 +49,34 @@ _instant(m::Metric) = m.statement === :bs    # balance-sheet items are point-in-
 # RevenueFromOperations (which for some filers carries a small excise/GST definitional gap vs Yahoo —
 # an approximate check, hence the 1% tolerance may flag those). Concepts are listed for BOTH India
 # taxonomies (in-capmkt current, in-bse-fin old); the same-local-name pairs are tried in order.
+# China note: `cas:` concepts come from the PDF label path (vocab_cas). Net income prefers the
+# parent-attributable figure (归属于母公司股东的净利润) Yahoo reports, falling back to total 净利润 (banks,
+# where minority interest is negligible). Revenue is 营业收入 (cas:Revenue), then 营业总收入 (cas:TotalRevenue).
 const METRICS = [
     Metric("Assets",     ["us-gaap:Assets"], ["ifrs-full:Assets"],
-                         ["in-capmkt:Assets", "in-bse-fin:Assets"], ["TotalAssets"], :bs),
+                         ["in-capmkt:Assets", "in-bse-fin:Assets"], ["cas:Assets"], ["TotalAssets"], :bs),
     Metric("Equity",     ["us-gaap:StockholdersEquity", "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
                          ["ifrs-full:EquityAttributableToOwnersOfParent", "ifrs-full:Equity"],
                          ["in-capmkt:EquityAttributableToOwnersOfParent", "in-capmkt:Equity",
                           "in-bse-fin:EquityAttributableToOwnersOfParent", "in-bse-fin:Equity"],
+                         ["cas:EquityAttributableToParent", "cas:Equity"],
                          ["StockholdersEquity", "TotalEquityGrossMinorityInterest", "CommonStockEquity"], :bs),
     Metric("Revenue",    ["us-gaap:Revenues", "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"],
                          ["ifrs-full:Revenue", "ifrs-full:RevenueFromContractsWithCustomers"],
                          ["in-capmkt:RevenueFromOperations", "in-bse-fin:RevenueFromOperations"],
+                         ["cas:TotalRevenue", "cas:Revenue"],   # Yahoo TotalRevenue = 营业总收入; banks lack it → 营业收入合计
                          ["TotalRevenue", "OperatingRevenue"], :is),
     Metric("NetIncome",  ["us-gaap:NetIncomeLoss"],
                          ["ifrs-full:ProfitLossAttributableToOwnersOfParent", "ifrs-full:ProfitLoss"],
                          ["in-capmkt:ProfitOrLossAttributableToOwnersOfParent", "in-capmkt:ProfitLossForPeriod",
                           "in-bse-fin:ProfitOrLossAttributableToOwnersOfParent", "in-bse-fin:ProfitLossForPeriod"],
+                         ["cas:ProfitAttributableToParent", "cas:ProfitLoss"],
                          ["NetIncome", "NetIncomeCommonStockholders"], :is),
     Metric("OperCashFlow", ["us-gaap:NetCashProvidedByUsedInOperatingActivities",
                             "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
                          ["ifrs-full:CashFlowsFromUsedInOperatingActivities"],
                          ["in-capmkt:CashFlowsFromUsedInOperatingActivities", "in-bse-fin:CashFlowsFromUsedInOperatingActivities"],
+                         ["cas:NetCashFlowsFromOperating"],
                          ["OperatingCashFlow", "CashFlowFromContinuingOperatingActivities"], :cf),
 ]
 
@@ -101,6 +109,15 @@ function _edgar_rows(system::Symbol, locator::AbstractString)
         isempty(hs) && (hs = try discover(NSEFilings(); symbol = locator, consolidated = true) catch; FilingHandle[] end)
         isempty(hs) && return nothing
         return EDGAR.facts(fetch_filing(first(hs)); classify = true)
+    elseif system === :china
+        # `locator` is a CNINFO six-digit code (annual report auto-selected) OR a local PDF path (a stashed
+        # filer, to avoid re-fetching). Facts come from the CAS PDF path (Docling), already classified.
+        path = isfile(locator) ? String(locator) : begin
+            hs = discover(CNINFOFilings(); code = String(locator), years = 1)
+            isempty(hs) && return nothing
+            String(fetch_filing(China(), first(hs)).content)
+        end
+        return EDGAR.extract_cas_pdf(path)
     end
     return nothing                       # :edinet not implemented yet
 end
@@ -108,7 +125,7 @@ end
 # The metric's candidate concepts for a system's taxonomy (SEC → us-gaap, India → in-capmkt/in-bse-fin,
 # everything else → IFRS, the ESEF/most-jurisdictions default).
 _metric_concepts(m::Metric, system::Symbol) =
-    system === :sec ? m.usgaap : system === :india ? m.india : m.ifrs
+    system === :sec ? m.usgaap : system === :india ? m.india : system === :china ? m.china : m.ifrs
 
 # EDGAR.jl's (value, period_end) for a metric: consolidated (undimensioned), annual, most-recent.
 # Candidates are tried in order, so the first listed concept wins when a filing tags several (e.g. IFRS
