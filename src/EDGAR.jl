@@ -72,6 +72,7 @@ include("extractors/structured_document.jl")# 🟢 StructuredDocument substrate 
 include("extractors/document_profile.jl")   # 🟢 extensible table-classification taxonomy (BS/IS/CF/EC + open registry)
 include("extractors/facts_derive.jl")        # 🟢 facts derivation core: locale-aware amount parsing + column-axis inference
 include("filing_systems/china/cas.jl")       # 🟡 China CAS PDF extraction (C3): consolidated statements → Facts via vocab_cas (extract_cas_pdf)
+include("filing_systems/china/portfolio.jl") # 🟡 China fund §8 portfolio (投资组合报告): holdings + summaries (extract_fund_portfolio)
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 
@@ -79,7 +80,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_fund_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,
