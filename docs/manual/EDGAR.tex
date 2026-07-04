@@ -5741,6 +5741,50 @@ announcement carries the same face statements in \emph{condensed} form, weeks ea
 extractor serves both, the difference being completeness, not shape. The per-statement classification ---
 mapping the English line labels to \texttt{ifrs-full} concepts --- follows as the implementation lands.
 
+\section{Retrieving filings}\label{sec:hk-retrieve}
+
+Discovery is \textbf{keyless} --- HKEXnews needs no key and no cookie bootstrap. \texttt{discover(HKEXFilings();\
+code=\ldots)} lists an issuer's annual reports by its five-digit stock \texttt{code} (or company \texttt{name});
+each returned \texttt{FilingHandle} carries the annual-report \textbf{PDF} URL, which \texttt{fetch\_filing}
+downloads into the same \texttt{Filing} every other system produces. Fetching BOC Hong Kong's 2025 annual report
+is three lines:
+
+\begin{lstlisting}
+julia> using EDGAR
+
+julia> hs = discover(HKEXFilings(); code = "02388")   # BOC Hong Kong (SEHK 2388), newest first
+4-element Vector{FilingHandle}:
+ FilingHandle(HKEX, hkex:02388, 2025-12-31 [HK])      # the FY2025 annual report
+ FilingHandle(HKEX, hkex:02388, 2024-12-31 [HK])
+ ...
+
+julia> f = fetch_filing(first(hs))                    # FY2025 -> downloads the English HKFRS PDF
+
+julia> facts(f)                                       # consolidated statements as ifrs-full facts
+\end{lstlisting}
+
+\noindent A few notes:
+
+\begin{itemize}
+  \item \textbf{Resolve by code, not name.} The five-digit \texttt{code} (\texttt{"02388"}; a bare
+    \texttt{"2388"} is zero-padded) is the reliable key --- it is matched \emph{exactly} against HKEXnews's
+    \texttt{prefix.do} issuer index. A \texttt{name} is accepted too but the portal's autocomplete is fuzzy
+    (a plain \texttt{"Hang Seng"} surfaces the tracker ETFs, not the bank), so prefer the code when you know it.
+  \item \textbf{Handles, newest first.} Each handle's identity is the stock code
+    (\texttt{EntityId(:hkex,\ "02388")}) and its \texttt{period\_end} the fiscal year-end parsed from the
+    report title, so \texttt{first(hs)} is the most recent; pick another year by filtering on
+    \texttt{period\_end}. The date window defaults to the last \texttt{years\ =\ 8}; widen or set
+    \texttt{from}/\texttt{to} for older reports.
+  \item \textbf{PDF-native, same API as everywhere.} Hong Kong publishes no XBRL --- the report is an English
+    HKFRS \textbf{PDF}, so \texttt{fetch\_filing} returns a \texttt{:pdf} \texttt{Filing} and \texttt{facts(f)}
+    runs it through the shared English-PDF extractor (\texttt{extract\_ifrs\_pdf}, the same path UK Companies
+    House uses), recovering the consolidated statements onto \texttt{ifrs-full} concepts. From there
+    \texttt{facts(f)} / \texttt{select\_statement} / the external-data benchmark are identical to SEC, ESEF or
+    DART --- nothing about a Hong Kong filing differs for the caller. The exact fiscal date, presentation
+    currency (HK\$, or a bank's abbreviated ``HK\$'m'') and scale are read from the statements themselves at
+    extraction.
+\end{itemize}
+
 \chapter{India: NSE, BSE and MCA21}
 \label{sys:india}
 
