@@ -520,6 +520,38 @@ end
     @test isempty(nox) && eltype(nox) == EDGAR.NarrativeRow
 end
 
+@testset "narratives(): PDF StructuredDocument sections — HK English (offline)" begin
+    # The PDF/document side of narratives() (the path a Hong Kong or China :pdf filing takes via
+    # narratives(structured_document(path))): prose grouped by DocSection, tagged source=:pdf, with the
+    # section language (or _guess_lang when Docling tags "und"). Blocks in a section join in `ord` order; a
+    # block whose section id has no DocSection is still emitted (text is never dropped).
+    S(id, t, lg, pg) = EDGAR.DocSection(id, nothing, 1, t, lg, 0, pg, pg, nothing)
+    TB(id, sid, ord, txt, lg, pg) = EDGAR.TextBlock(id, sid, ord, "paragraph", txt, lg, pg, nothing, length(txt))
+    secs = EDGAR.DocSection[S("s_chair", "Chairman's Statement", "en", 2),
+                            S("s_mda", "Management Discussion and Analysis", "und", 5),  # und → guess by script
+                            S("s_is", "CONSOLIDATED INCOME STATEMENT", "en", 10)]
+    blks = EDGAR.TextBlock[
+        TB("c2", "s_chair", 1, "Our profit rose to a record level.", "en", 2),
+        TB("c1", "s_chair", 0, "The year under review was a strong one.", "en", 2),   # ord 0 sorts first
+        TB("m1", "s_mda", 0, "Revenue grew across all divisions during the financial year.", "und", 5),
+        TB("i1", "s_is", 0, "The notes on pages 140 to 307 are an integral part of these financial statements.", "en", 10),
+        TB("g1", "s_ghost", 0, "Independent auditor's report to the members of the Company.", "en", 99)]  # orphan
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("HK-DOC", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 10, "test", "1", false),
+        secs, blks, EDGAR.DocTable[], EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    nr = collect(narratives(sd))
+    @test length(nr) == 4                                      # chair's 2 blocks → 1 narrative; mda; is; orphan
+    @test all(r -> r.source == "pdf", nr)                      # PDF-native source
+    @test all(r -> r.lang == "en", nr)                         # English incl. the "und"→guessed MD&A
+    @test all(r -> r.accession == "HK-DOC", nr)
+    ch = only(filter(r -> r.section_title == "Chairman's Statement", nr))
+    @test ch.text == "The year under review was a strong one.\nOur profit rose to a record level."  # ord-joined
+    @test ch.char_len == length(ch.text) && ch.page == 2
+    @test only(filter(r -> r.block_id == "s_mda", nr)).lang == "en"   # guessed English from Latin script under "und"
+    orphan = only(filter(r -> r.block_id == "s_ghost", nr))    # a block whose section id has no DocSection
+    @test orphan.section_title == "s_ghost" && orphan.source == "pdf" # never dropped; sid is the title fallback
+end
+
 @testset "negated presentation labels flip the sign (offline)" begin
     # A face-statement role may present a concept with a negatedLabel/negatedTerseLabel, so the rendered
     # statement shows the opposite sign of the stored value (general: treasury stock as contra-equity, or
