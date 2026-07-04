@@ -26,6 +26,31 @@ function _pdf_words(path::AbstractString; page::Union{Nothing,Integer}=nothing)
     return JSON3.read(out)
 end
 
+"""
+    born_digital(path; min_chars_per_page = 100) -> Bool
+
+Whether the PDF at `path` has a usable **text layer** (born-digital, or an already-OCR'd scan) rather than
+being a bare scanned image that needs OCR. Judged from the density of extractable text via `pdf.js`: a
+born-digital report yields positioned words on its pages, a scan yields (almost) none. Use it to route a PDF
+to the text-based extractor (`extract_hkfrs_pdf` / `extract_cas_pdf` / `extract_pdf`) versus an OCR path — a
+scanned UK Companies House filing, for instance, returns `false`.
+
+```julia
+born_digital("annual_report.pdf")     # true  — has a text layer
+born_digital("scanned_accounts.pdf")  # false — needs OCR
+```
+"""
+function born_digital(path::AbstractString; min_chars_per_page::Real = 100)
+    doc = _pdf_words(path)
+    pgs = doc.pages
+    isempty(pgs) && return false
+    chars = 0
+    for pg in pgs, w in pg.words
+        chars += length(String(w.str))
+    end
+    return chars / length(pgs) >= min_chars_per_page
+end
+
 # --- number semantics: parentheses = negative, strip £/commas, en-dash = nil, footnote markers ---
 function _pdf_num(s)
     t = strip(String(s)); t = replace(t, r"[*†‡]+$" => "")
@@ -191,7 +216,8 @@ function _pdf_filing_facts(f::Filing; kwargs...)
     (!isempty(src) && isfile(src)) ||
         throw(ArgumentError("facts(::Filing) for a :pdf filing needs the PDF source; this filing carries " *
               "none. Use `extract_pdf(path)` with the downloaded PDF for now."))
-    # China filings are CAS PDFs (Chinese labels); Hong Kong are HKFRS PDFs (English → ifrs-full).
+    # China filings are CAS PDFs (Chinese labels); Hong Kong and UK Companies House are English PDFs
+    # (IFRS / UK-GAAP → ifrs-full via the English label map).
     return f.system isa China ? extract_cas_pdf(src) :
-           f.system isa HKEX  ? extract_hkfrs_pdf(src) : extract_pdf(src)
+           (f.system isa HKEX || f.system isa CompaniesHouse) ? extract_hkfrs_pdf(src) : extract_pdf(src)
 end

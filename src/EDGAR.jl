@@ -84,7 +84,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_hkfrs_pdf, hkfrs_concept, extract_fund_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_hkfrs_pdf, hkfrs_concept, born_digital, extract_fund_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,

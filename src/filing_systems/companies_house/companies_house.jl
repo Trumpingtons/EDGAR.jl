@@ -104,9 +104,9 @@ Read a Companies House **accounts document** into a [`Filing`](@ref). `src` is a
 or an `http(s)://` URL. An inline-XBRL document becomes an `:ixbrl` filing whose `entity` is the
 company registration number (taken from `entity` when given — discovery already knows it — else parsed
 from the instance). A **PDF** document — common for small/dormant/paper-filed accounts — becomes a
-`:pdf` filing with empty `content`: a typed, non-fatal outcome (PDF extraction is a later phase,
-"Companies House II"), with `url` kept so the source stays retrievable. `ref` is the opaque filing
-reference, defaulting to the source basename.
+`:pdf` filing whose `content` is the on-disk PDF path (the bytes are retained under the CH cache dir), so
+`facts(f)` runs the shared PDF extractor on it (UK accounts are English, IFRS or UK-GAAP → the
+English label→`ifrs-full` path). `ref` is the opaque filing reference, defaulting to the source basename.
 
 The resulting iXBRL `Filing` flows through the same system-agnostic API as any other:
 `facts(f; classify = true)` extracts and classifies its FRC/UK-GAAP facts using the prefix-keyed
@@ -117,6 +117,14 @@ f = fetch_filing(CompaniesHouse(), "test/data/companies_house/example-frs102.htm
 facts(f; classify = true)
 ```
 """
+# On-disk cache path for a retained Companies House PDF, keyed on the (sanitised) filing reference.
+function _ch_pdf_path(ref::AbstractString, src::AbstractString)
+    base = strip(String(ref)); isempty(base) && (base = basename(src))
+    name = replace(base, r"[^A-Za-z0-9_.-]" => "_")
+    endswith(lowercase(name), ".pdf") || (name *= ".pdf")
+    return joinpath(get_cache_dir(effective_cache_mode(CompaniesHouse())), "companies_house", name)
+end
+
 function fetch_filing(::CompaniesHouse, src::AbstractString;
                       entity::Union{EntityId,Nothing}=nothing, ref::AbstractString="")
     raw = if startswith(src, "http://") || startswith(src, "https://")
@@ -129,7 +137,11 @@ function fetch_filing(::CompaniesHouse, src::AbstractString;
     r = isempty(ref) ? basename(src) : String(ref)
     if _ch_is_pdf(raw)
         ent = entity === nothing ? EntityId(:companies_house, "") : entity
-        return Filing(CompaniesHouse(), ent, r, basename(src), src, :pdf, "")
+        # Retain the PDF bytes on disk so the shared PDF extractor can read them (UK accounts are English,
+        # IFRS or UK-GAAP): `facts(f)` routes a CompaniesHouse :pdf filing to the English → ifrs-full path.
+        path = _ch_pdf_path(r, src)
+        isfile(path) || (mkpath(dirname(path)); write(path, raw))
+        return Filing(CompaniesHouse(), ent, r, basename(src), src, :pdf, path)
     end
     content = _ch_canonicalize(String(raw))
     ent = entity === nothing ? EntityId(:companies_house, _ch_number(content)) : entity

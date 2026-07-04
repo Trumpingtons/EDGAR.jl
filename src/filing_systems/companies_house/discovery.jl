@@ -131,6 +131,16 @@ end
 fetch_filing(::CompaniesHouse, h::FilingHandle) =
     endswith(lowercase(h.url), ".zip") ? _ch_fetch_from_bulk(h) : _ch_fetch_from_api(h)
 
+# Build a :pdf Filing from downloaded PDF bytes, retaining them on disk (content = path) so `facts(f)` can run
+# the shared PDF extractor. `nothing` bytes → an empty-content :pdf (typed, non-fatal) as before.
+function _ch_pdf_filing(h::FilingHandle, url::AbstractString, bytes)
+    bytes === nothing && return Filing(CompaniesHouse(), h.entity, h.ref, h.ref, url, :pdf, "")
+    raw = Vector{UInt8}(bytes)
+    path = _ch_pdf_path(h.ref, url)
+    isfile(path) || (mkpath(dirname(path)); write(path, raw))
+    return Filing(CompaniesHouse(), h.entity, h.ref, h.ref, url, :pdf, path)
+end
+
 # The authenticated Document-API path: read the document metadata, then download the document content
 # with the iXBRL `Accept` header. Prefers inline XBRL (`application/xhtml+xml`), then a classic XBRL
 # instance (`application/xml`); a filing offering neither (paper/PDF) becomes a typed `:pdf` filing
@@ -145,14 +155,17 @@ function _ch_fetch_from_api(h::FilingHandle)
     has_ixbrl = resources !== nothing && haskey(resources, Symbol("application/xhtml+xml"))
     has_xml   = resources !== nothing && haskey(resources, Symbol("application/xml"))
     if !(has_ixbrl || has_xml)
-        return Filing(CompaniesHouse(), h.entity, h.ref, h.ref, content_url, :pdf, "")
+        # PDF-only filing (small/dormant/paper accounts): download the PDF and RETAIN it so the shared PDF
+        # extractor can read it; the Filing's `content` is the on-disk path.
+        pdf = fetch_url(content_url; headers = [hdrs; "Accept" => "application/pdf"])
+        return _ch_pdf_filing(h, content_url, pdf)
     end
 
     accept = has_ixbrl ? "application/xhtml+xml" : "application/xml"
     bytes = fetch_url(content_url; headers = [hdrs; "Accept" => accept])
     bytes === nothing && error("could not fetch Companies House document content $(repr(content_url))")
     raw = Vector{UInt8}(bytes)
-    _ch_is_pdf(raw) && return Filing(CompaniesHouse(), h.entity, h.ref, h.ref, content_url, :pdf, "")
+    _ch_is_pdf(raw) && return _ch_pdf_filing(h, content_url, raw)
 
     content = _ch_canonicalize(String(raw))
     ent = isempty(h.entity.value) ? EntityId(:companies_house, _ch_number(content)) : h.entity
