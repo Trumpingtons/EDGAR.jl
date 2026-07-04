@@ -597,10 +597,12 @@ document-AI main path is in development.
 \label{sec:pdf-docai}
 
 Both engines convert a PDF into one Structured Document from which every derivation is taken; they differ
-in weight and in how they handle OCR and language (Table~\ref{tab:pdf-docai}). \texttt{EDGAR.jl} carries
-\emph{both}, so they can be compared on real filings and one selected later --- both work well in practice
-(Docling needs an OCR pass only for broken-text-layer cases such as Japanese EDINET; MinerU needs the
-document language set correctly). The stack is Python (installed via
+in weight and in how they handle OCR and language (Table~\ref{tab:pdf-docai}). \texttt{EDGAR.jl} evaluated
+both and \textbf{integrates Docling} (the \texttt{EDGARDoclingExt} extension). The comparison on real CAS
+statements (\S\ref{sec:pdf-docai-measured}) was decisive: Docling ran clean and recovered every headline
+value, whereas MinerU could not be installed alongside Docling at all --- a hard \texttt{transformers}
+version conflict. (Docling needs an OCR pass only for broken-text-layer cases such as Japanese EDINET.) The
+stack is Python (installed via
 \texttt{PythonCall}\,+\,\texttt{CondaPkg}) and is therefore available only in the stand-alone package, not
 in the editor host.
 
@@ -636,6 +638,62 @@ is what drives the install:
     multilingual without a hint but requires a GPU. Because \texttt{EDGAR.jl} knows each filing's
     \texttt{FilingSystem} it largely knows the language already, so setting it is cheap.
 \end{itemize}
+
+\subsection{Measured: Docling versus MinerU on a CAS filing}
+\label{sec:pdf-docai-measured}
+
+The choice between the two engines was settled empirically on a real Chinese filing --- Kweichow~Moutai's
+(600519) FY2023 annual report, the 16-page block of consolidated and parent-company statements --- parsed on
+Apple-silicon CPU/MPS through the Tier-2 venv (Docling~2.107, MinerU~3.4, \texttt{transformers}~5.8.1).
+Table~\ref{tab:pdf-docai-measured} gives time and a quality metric. The quality metric is \textbf{anchor
+recall}: whether five known-correct headline values (operating revenue \texttt{147{,}693{,}604{,}994.14},
+total operating revenue, equity attributable to the parent, total assets, and net operating cash flow) each
+appear, correct to the cent, in the extracted table cells.
+
+\begin{table}[h]
+\centering
+\caption{Docling versus MinerU, measured on Moutai's FY2023 statements (16 pages).}
+\label{tab:pdf-docai-measured}
+\small
+\begin{tabular}{@{}p{0.34\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
+\toprule
+ & \textbf{Docling 2.107} & \textbf{MinerU 3.4} \\
+\midrule
+Runs in the shared Tier-2 venv & \textbf{yes} (clean) & \textbf{no} --- both backends fail \\
+Model load (warm, incl.\ first page) & 13.4\,s & --- \\
+Throughput (models loaded) & \(\sim\)3.8\,s/page (16\,pp in 60\,s) & --- \\
+Tables / statement tables & 21 / 18 & --- \\
+Anchor recall (5 headline values) & \textbf{5 / 5} & --- \\
+Language & auto-detected & must be preset (\texttt{-l ch}) \\
+Integrated in \texttt{EDGAR.jl} & yes (\texttt{EDGARDoclingExt}) & no (CLI only) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Docling} parsed cleanly. It recovered the statements as classified tables (balance sheet, income
+statement, cash flow, changes in equity --- matched by the CJK caption patterns already in the registry,
+\S\ref{sec:pdf-classification}), kept the consolidated and parent-company versions as \emph{separate} tables,
+held the note-reference column apart from the value columns, and carried real period dates in the header
+row. All five anchor values landed to the cent.
+
+\textbf{MinerU could not be run at all} in the same environment --- and this is \emph{structural}, not a
+passing bug. MinerU caps its dependency at \texttt{transformers<5.0.0} (and still does at the latest 3.4.2),
+whereas Docling~2.107 requires \texttt{transformers}~5.8.1; the two cannot co-exist in one venv. Run against
+the newer \texttt{transformers} that Docling installs, MinerU~3.4 duly breaks: the classic \texttt{pipeline}
+backend fails twice --- on the formula model (\texttt{find\_pruneable\_heads\_and\_indices}, removed from
+\texttt{transformers}) and then on the PaddleX layout config
+(\texttt{PPDocLayoutV2Config.reading\_order\_config}) --- and the VLM backend fails, \emph{after} a multi-GB
+model download, on \texttt{Qwen2VLConfig.max\_position\_embeddings}. Upgrading MinerU does not help (3.4.2
+keeps the same \texttt{<5.0.0} cap); running it would need a \emph{separate} virtual environment on the older
+\texttt{transformers} --- two mutually-incompatible Python stacks to maintain and ship.
+
+\paragraph{Selected: Docling; MinerU removed.} Docling is the integrated engine (the
+\texttt{EDGARDoclingExt} package extension), runs clean on CPU, and extracts CAS statements accurately;
+MinerU's heavier, \texttt{transformers}-sensitive stack (PaddlePaddle plus the formula and VLM models) is not
+worth a second, conflicting environment. MinerU has accordingly been \textbf{dropped from the Tier-2 stack} ---
+\texttt{requirements-tier2.txt} now lists only \texttt{docling}, and its \(\sim\)3\,GB of models were removed
+from the environment. It can be revisited if a mutually-compatible \texttt{transformers} pinning appears. The
+rest of this chapter therefore describes the Docling path.
 
 \section{The ingestion pipeline}\label{sec:pdf-pipeline}
 
@@ -4955,17 +5013,19 @@ whose keyless JSON API resolves an issuer and lists its annual-report PDFs. Fina
 IFRS-converged but with a national taxonomy that is itself geo-blocked (\S\ref{sec:china-repos}), and, more
 to the point, \emph{not} present in the PDFs at all: a PDF carries a Chinese line-item \emph{label}
 (``Total assets''), not a namespaced concept. Classification is
-therefore \textbf{by Chinese label}, through a planned dedicated \texttt{vocab\_cas.jl}. Identity is the
+therefore \textbf{by Chinese label}, through a dedicated \texttt{vocab\_cas.jl}. Identity is the
 packed CNINFO code-plus-\texttt{orgId} (\texttt{EntityId(:cninfo, "000001,gssz0000001")}) --- the six-digit
 exchange code together with CNINFO's internal organisation id, resolved from a bare code or company name the
 way DART resolves a \texttt{stock\_code} to a \texttt{corp\_code}.
 
-\emph{Status:} the seam (C0) is \textbf{implemented} --- the \texttt{China} \texttt{FilingSystem}, its
-credential tag and its keyless browser headers, so \texttt{using EDGAR} loads clean. CNINFO discovery (C1),
-\texttt{fetch\_filing} $\to$ PDF \texttt{Filing} plus \texttt{narratives} (C2), CAS facts via the PDF
-extractor with \texttt{vocab\_cas.jl} (C3) and the validation oracle (C4) are the remaining phases. This
-chapter documents the repository survey and the entity universe; the retrieval mechanics, taxonomy and
-statement types follow as those phases land.
+\emph{Status:} C0--C3 are \textbf{implemented}. The seam (C0 --- the \texttt{China} \texttt{FilingSystem},
+its credential tag and keyless browser headers), CNINFO discovery (C1) and \texttt{fetch\_filing}~$\to$~PDF
+\texttt{Filing} (C2) are done; \textbf{CAS facts (C3)} extract the consolidated balance sheet, income
+statement and cash flow from the annual-report PDF through \textbf{Docling}, classified by the dedicated
+\texttt{vocab\_cas.jl} (\S\ref{sec:china-taxonomy}). It is verified --- the balance sheet cross-foots and the
+cash-flow identity holds --- on the \textbf{general-industry, combined (合并及公司) and bank}
+financial-institution formats, across all three exchanges (\S\ref{sec:china-retrieve}). The validation
+oracle (C4) and the insurer format are the remaining work.
 
 \section{Repositories}\label{sec:china-repos}
 
@@ -5060,7 +5120,7 @@ to CNINFO and the exchanges, so it is not itself a fetch target. The \textbf{MOF
 Taxonomy --- the national-GAAP vocabulary an XBRL path would need --- is hosted at \texttt{xbrl.mof.gov.cn},
 which is \textbf{geo-blocked} outside mainland China (a probe returns no response). This would block an XBRL
 strategy, but it is moot here: the PDF annual reports carry Chinese line-item \emph{labels}, not taxonomy
-concepts, so \texttt{EDGAR.jl} classifies by label (the planned \texttt{vocab\_cas.jl}) and never resolves
+concepts, so \texttt{EDGAR.jl} classifies by label (the dedicated \texttt{vocab\_cas.jl}) and never resolves
 the MOF taxonomy at all.
 
 \paragraph{Out of scope: SOEs and funds.} Two other Chinese disclosure channels exist but are not listed-issuer
@@ -5146,7 +5206,7 @@ results table. That completeness is what makes the PDF worth the extraction cost
 \toprule
 \textbf{Family ($\to$ \texttt{category})} & \textbf{Documents} & \textbf{In \texttt{EDGAR.jl}} \\
 \midrule
-Periodic reports & Annual Report, Semi-Annual Report, Quarterly Reports & \textbf{annual PDF} (planned C2) \\
+Periodic reports & Annual Report, Semi-Annual Report, Quarterly Reports & \textbf{annual PDF} (extracted) \\
 Issuance \& prospectuses & IPO / rights-issue / bond prospectuses & \emph{not yet} \\
 Major-event announcements & material events, board \& shareholder resolutions & discovery only (planned) \\
 Governance \& ownership & shareholding-change, share-pledge, buy-back announcements & \emph{not yet} \\
@@ -5247,9 +5307,9 @@ oracle (C4) reconciles on the parent line.
 \section{Retrieving filings}\label{sec:china-retrieve}
 
 Discovery is \textbf{keyless} --- a browser \texttt{User-Agent} and a CNINFO \texttt{Referer}, no API key and
-(unlike NSE) no cookie bootstrap. The intended API mirrors every other system, with the one difference that
-the fetched \texttt{Filing} is a \textbf{PDF} whose \texttt{facts} route through the PDF extractor rather than
-the XBRL path:
+(unlike NSE) no cookie bootstrap. The API mirrors every other system, with the one difference that
+the fetched \texttt{Filing} is a \textbf{PDF} whose \texttt{facts} route through the \textbf{Docling} PDF
+extractor rather than the XBRL path:
 
 \begin{lstlisting}
 hs = discover(CNINFOFilings(); code = "000001")   # Ping An Bank; annual reports (the default)
@@ -5258,7 +5318,7 @@ facts(f)                                            # statements via the PDF ext
                                                     # narratives(f) -> the MD&A / notes prose
 \end{lstlisting}
 
-\noindent A few notes (the seam is C0; discovery/fetch land at C1/C2):
+\noindent A few notes:
 
 \begin{itemize}
   \item \textbf{No key, no cookie.} CNINFO's JSON endpoints answer any browser-headed client; there is nothing
@@ -5275,9 +5335,14 @@ facts(f)                                            # statements via the PDF ext
   \item \textbf{Same caller API, PDF underneath.} \texttt{fetch\_filing(h)} $\to$ \texttt{facts(f)} /
     \texttt{narratives(f)} $\to$ \texttt{select\_statement} is identical to SEC, DART or India for the caller;
     what differs is \emph{internally} --- \texttt{facts(f)} runs the PDF extractor (Chapter~\ref{ch:pdf}) with
-    \texttt{vocab\_cas} label classification, not an XBRL parse. Born-digital annual reports (the norm; the
-    text layer extracts CJK directly) need no OCR; older or scanned filings fall back to the extractor's OCR
-    tier.
+    \texttt{vocab\_cas} label classification, not an XBRL parse. A cheap \texttt{pdf.js} pre-scan locates the
+    consolidated-statements page range (TOC bookmarks, falling back to headings) and the fiscal year;
+    \textbf{Docling} then parses just those \(\sim\)15 pages, and the facts are derived from its table cells
+    --- consolidated statements kept, parent-company (母公司) copies dropped, amounts scaled by the page's own
+    单位 (元/千元/万元/百万元). Verified to cross-foot (Assets $=$ Liabilities $+$ Equity) and close the
+    cash-flow identity on general-industry, combined-column (合并及公司) and bank filers. Born-digital annual
+    reports (the norm; the text layer extracts CJK directly) need no OCR; older or scanned filings fall back
+    to the extractor's OCR tier.
 \end{itemize}
 
 \chapter{India: NSE, BSE and MCA21}
