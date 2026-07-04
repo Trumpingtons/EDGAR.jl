@@ -33,4 +33,19 @@ for (let i = lo; i <= hi; i++) {
     }));
   pages.push({ page: i, width: +W.toFixed(1), height: +H.toFixed(1), words });
 }
-process.stdout.write(JSON.stringify({ file, numPages: doc.numPages, pages }));
+
+// Outline (PDF bookmarks) -> flat [{page, level, title}] for TOC-first section location downstream (page
+// = 1-based absolute, or null when a bookmark has no resolvable destination). Skipped in single-page mode.
+async function pageOf(dest) {
+  try { const d = typeof dest === "string" ? await doc.getDestination(dest) : dest;
+        return d ? (await doc.getPageIndex(d[0])) + 1 : null; } catch { return null; }
+}
+async function flatten(items, level, out) {
+  for (const it of (items || [])) {
+    out.push({ page: await pageOf(it.dest), level, title: it.title });
+    if (it.items && it.items.length) await flatten(it.items, level + 1, out);
+  }
+  return out;
+}
+const outline = only ? [] : await flatten(await doc.getOutline(), 0, []);
+process.stdout.write(JSON.stringify({ file, numPages: doc.numPages, pages, outline }));

@@ -45,6 +45,7 @@ include("core/taxonomy/vocab_ukgaap.jl")    # 🟢 UK GAAP / FRC classification 
 include("core/taxonomy/vocab_jpgaap.jl")    # 🟢 Japanese GAAP classification vocabulary (EDINET jppfs_cor)
 include("core/taxonomy/vocab_indas.jl")     # 🟢 Ind-AS (in-bse-fin) classification vocabulary (India NSE/BSE; INDAS/BANKING/NBFC formats)
 include("core/taxonomy/vocab_incapmkt.jl")  # 🟢 in-capmkt (SEBI Integrated Filing) vocabulary (India; INDAS/BANKING/NBFC + Life/General Insurance)
+include("core/taxonomy/vocab_cas.jl")       # 🟡 CAS (China 企业会计准则) label-driven vocabulary (PDF path; cas_concept)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("core/breakdown.jl")                # 🟢 dimensional breakdown (revenue by segment/product/geography)
@@ -70,6 +71,7 @@ include("extractors/pdf.jl")                # 🟢 PDF extractor (Format axis): 
 include("extractors/structured_document.jl")# 🟢 StructuredDocument substrate (document-first PDF repository); Docling extraction via PythonCall ext
 include("extractors/document_profile.jl")   # 🟢 extensible table-classification taxonomy (BS/IS/CF/EC + open registry)
 include("extractors/facts_derive.jl")        # 🟢 facts derivation core: locale-aware amount parsing + column-axis inference
+include("filing_systems/china/cas.jl")       # 🟡 China CAS PDF extraction (C3): consolidated statements → Facts via vocab_cas (extract_cas_pdf)
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 
@@ -77,7 +79,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept,
        Narrative, narratives,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,

@@ -63,7 +63,15 @@ IFRS-namespaced. Classification is therefore **by Chinese label**, not concept n
   passes `cMapUrl`+`cMapPacked` so CID-keyed **CJK fonts decode** (non-breaking for Latin). Open for C3: CJK
   extracts char-by-char (cluster into labels); `_pdf_page_facts` is Latin-tuned (needs CAS labels + CJK/full-width
   digit parsing + `currency=CNY`); `narratives` needs the Docling Tier-2 venv.
-- **C3 — CAS facts + labels (gated).** `facts(f)` routes through the PDF extractor; `vocab_cas.jl` maps
+- **C3 — CAS facts + labels.** ✅ **Done via Docling** (Tier-2), not geometry. `extract_cas_pdf` is a hybrid:
+  a pdf.js pre-scan locates the statement page range (by statement headings) + fiscal year, Docling parses just
+  those pages, and facts are derived from its `DocTable` cells — statement kind from `TABLE_CLASSES` CJK captions
+  (+ a row-label fallback for mis-titled tables), parent-company (母公司) copies dropped, labels classified
+  through `vocab_cas` (`cas_concept` + `_cas_labelkey` prefix/divider stripping), amounts via the shared
+  `parse_amount`, scale (千元/万元) from a `单位…` marker, periods from the fiscal year. **7/7 anchors + BS
+  cross-foot verified on Moutai (元) and BYD (千元) via the real `fetch_filing→facts(f)` path.** Equity-changes
+  matrix deferred. Original design (now historical):
+- **C3 (original plan) — CAS facts + labels (gated).** `facts(f)` routes through the PDF extractor; `vocab_cas.jl` maps
   Chinese CAS labels → canonical statement roles (label-driven, the analog of `vocab_indas` but keyed on 中文).
 - **C4 — Oracle/validation.** Cross-check `Assets/Revenue/NetIncome` against an independent source (Yahoo carries
   `000001.SZ`), on fresh filers + the stashed Moutai/Vanke/Wuliangye. Validate on NEW filers each time.

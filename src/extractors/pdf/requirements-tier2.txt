@@ -7,7 +7,10 @@
 #   uv venv --python 3.11 "$VENV"
 #   uv pip install --no-cache --python "$VENV/bin/python" -r requirements-tier2.txt
 #
-# Verify:  ~/EDGAR-tools/tier2-venv/bin/python -c "import docling, mineru; print('ok')"
+# Verify:  ~/EDGAR-tools/tier2-venv/bin/python -c "import docling; print('ok')"
+#
+# ENGINE = DOCLING ONLY. MinerU was evaluated and DROPPED (2026-07-04): it pins transformers<5.0.0
+# (through the latest 3.4.2) while Docling requires transformers 5.8.1 — a hard, unfixable version conflict
+# (both MinerU backends fail against 5.8.1). See the manual PDF chapter (§ "Measured: Docling versus MinerU").
 
 docling==2.107.0
-mineru==3.4.0
