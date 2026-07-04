@@ -37,6 +37,19 @@ function _pdf_num(s)
 end
 _pdf_isnum(s) = _pdf_num(s) !== nothing
 
+# Balance heuristic for a generic English statement label: an income-statement DEBIT line (a cost, an expense,
+# taxation, a finance cost) is printed in parentheses because it is SUBTRACTED, but its VALUE is the positive
+# magnitude — the sign is its calculation contribution, not the stored fact, matching the ifrs-full/us-gaap
+# XBRL convention (e.g. facts(f) returns Apple's CostOfGoodsAndServicesSold POSITIVE). Everything else keeps
+# its reported sign (a loss, a net cash outflow are genuinely negative). Conservative — matches only clear
+# expense wording, never a subtotal ("profit before tax"). See docs/manual §"the sign convention".
+function _pdf_is_debit(label::AbstractString, stmt::AbstractString)
+    stmt == "IncomeStatement" || return false
+    l = lowercase(label)
+    return occursin("cost of", l) || occursin("expense", l) || occursin("taxation", l) ||
+           occursin("finance cost", l)
+end
+
 # words for one page as plain NamedTuples
 _pdf_cells(pg) = [(x = Float64(w.x), y = Float64(w.y), w = Float64(w.w), h = Float64(w.h), str = String(w.str))
                   for w in pg.words]
@@ -132,7 +145,8 @@ function _pdf_page_facts(pg; currency = "GBP")
             periods[i] === nothing && continue          # only period-resolved columns become facts
             p = _pdf_num(c.str); p.nil && continue
             bbox = "{\"page\":$pageno,\"x\":$(c.x),\"y\":$(c.y),\"w\":$(c.w),\"h\":$(c.h)}"
-            push!(facts, Fact(; concept = label, label = label, value = p.val * scale,
+            val = (_pdf_is_debit(label, stmt) ? abs(p.val) : p.val) * scale   # store the value, not the (…) sign
+            push!(facts, Fact(; concept = label, label = label, value = val,
                   unit = currency, period_end = periods[i], is_instant = instant,
                   statement = stmt, context_ref = string(periods[i]), unit_ref = currency,
                   source_selector = bbox))

@@ -547,6 +547,41 @@ end
     @test (raw[1].value, flipped[1].value) == (-2873000000.0, 2873000000.0)   # negated -> as reported (+)
 end
 
+@testset "PDF debit lines store the value, not the presentation sign (HKFRS, offline)" begin
+    # Cross-source consistency: the XBRL path stores cost/expense POSITIVE (empirically Apple
+    # CostOfGoodsAndServicesSold = +220.96bn), so the PDF path must too. A debit line printed "(311,011)"
+    # because it is *subtracted* carries the positive magnitude 311,011 — the sign is its calculation
+    # contribution, not the stored value. Credit lines keep their reported sign (a loss stays negative). This
+    # keeps ONE accounting-rules implementation working across PDF / HTML / iXBRL / XBRL.
+    @test EDGAR.hkfrs_concept("Cost of revenues", "IncomeStatement").balance == :debit
+    @test EDGAR.hkfrs_concept("Revenue", "IncomeStatement").balance == :credit
+    @test EDGAR.hkfrs_concept("Net cash flows used in investing activities", "CashFlow").balance == :none
+
+    cells = EDGAR.TableCell[
+        EDGAR.TableCell(0, 1, 1, 1, true,  "2024"),                 # column-year header (period detection)
+        EDGAR.TableCell(1, 0, 1, 1, false, "Revenues"),            # section header (no value)
+        EDGAR.TableCell(2, 0, 1, 1, false, "Value-added Services"),
+        EDGAR.TableCell(2, 1, 1, 1, false, "319,168"),
+        EDGAR.TableCell(3, 1, 1, 1, false, "660,257"),             # UNLABELED total -> Revenue (carry header)
+        EDGAR.TableCell(4, 0, 1, 1, false, "Cost of revenues"),
+        EDGAR.TableCell(4, 1, 1, 1, false, "(311,011)"),           # debit line, parenthesised
+        EDGAR.TableCell(5, 0, 1, 1, false, "Profit for the year"),
+        EDGAR.TableCell(5, 1, 1, 1, false, "(5,000)"),             # credit line, a LOSS -> keeps its sign
+    ]
+    tbl = EDGAR.DocTable("t1", "s1", 0, "statement", "IncomeStatement",
+                         "Consolidated Income Statement", "en", 1, 1, nothing, 6, 2, cells)
+    blk = EDGAR.TextBlock("b1", "s1", 0, "paragraph",
+                          "For the year ended 31 December 2024 (RMB'Million)", "en", 1, nothing, 0)
+    meta = EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false)
+    sd = EDGAR.StructuredDocument("1.0", meta, EDGAR.DocSection[], [blk], [tbl],
+                                  EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    rows = EDGAR._hkfrs_facts_from_sd(sd)
+    V(c) = (v = [r.value for r in rows if r.concept == c]; isempty(v) ? nothing : v[1])
+    @test V("ifrs-full:CostOfSales") == 311_011 * 1e6      # value, NOT -311,011 (the parens are display only)
+    @test V("ifrs-full:Revenue")     == 660_257 * 1e6      # unlabelled total via section-header carry-down
+    @test V("ifrs-full:ProfitLoss")  == -5_000 * 1e6       # credit line: a loss keeps its reported sign
+end
+
 @testset "statement classification from presentation linkbase (W5, offline)" begin
     @test (EDGAR._classify_role("http://x/role/CondensedConsolidatedStatementsofIncome"),
            EDGAR._classify_role("http://x/role/CondensedConsolidatedBalanceSheets"),
