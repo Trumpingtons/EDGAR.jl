@@ -69,6 +69,28 @@ filing is a PDF whose facts come from the shared PDF extractor.
   announcements (condensed face statements); ESG reports (→ `narratives`); HK REITs/trusts/funds (net-asset
   shape, as in China).
 
+## HK2 statement formats (status)
+
+HKFRS annual reports come in several presentations (as CAS did in China); HK2 validated one, handles a second,
+and defers two:
+- **Standard IFRS (Total assets / Total liabilities / Total equity)** — Tencent AR2024. ✅ Cross-foots on
+  reported values (A 1781.0 = L 727.1 + E 1053.9); Revenue via section-header carry-down; sign by `balance`.
+- **Net-assets / Companies-Ordinance (Total assets less current liabilities → Net assets = Total equity)** —
+  Sun Hung Kai (HKD, 30-Jun year-end). ✅ Equity/Revenue/NetIncome/OperCF captured; `Net assets → Equity`
+  added. A=L+E is **format-N/A** (these filers report no single Total assets / Total liabilities line — not a
+  bug, a valid presentation).
+- **Dual-currency columns (HK$ primary + US$ convenience `#` column)** — CK Hutchison. ⏳ DEFERRED. The
+  currency label is now read from the non-`#` token (HKD), but value-column→year mapping still needs to SKIP
+  the US$ column; today the extra column shifts the mapping. Needs per-column currency-header selection.
+- **Bank format** — Hang Seng Bank. ⏳ DEFERRED. Bilingual (English + 中文) with CID fonts, bank-specific
+  labels (deposits/loans and advances), HK$'000 scale; the located "financial position" table is not the main
+  bank balance sheet. A distinct format like China's bank/insurer additions.
+
+Cross-cutting fix (all sources): the sign convention — a debit line's VALUE is stored (positive magnitude),
+its subtraction is the calculation contribution — now applies to the PDF paths (`extract_hkfrs_pdf` via
+`balance`; Tier-1 `extract_pdf` via a label heuristic), matching the XBRL convention (empirically Apple
+CostOfGoodsAndServicesSold = +220.96bn). Pinned by an offline test.
+
 ## Hard rules honored
 
 Persistent env `~/EDGAR-tools/edgar-dev/`; HTTP="1.10" never 2; ask before running the test suite; commit only

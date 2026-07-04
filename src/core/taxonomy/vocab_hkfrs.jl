@@ -38,7 +38,7 @@ function hkfrs_concept(label::AbstractString, statement::AbstractString)
     if statement == "BalanceSheet"
         t == "total assets"                                    && return C("ifrs-full:Assets", :debit)
         t == "total liabilities"                               && return C("ifrs-full:Liabilities", :credit)
-        t == "total equity"                                    && return C("ifrs-full:Equity", :credit)
+        (t == "total equity" || t == "net assets")             && return C("ifrs-full:Equity", :credit)
         (t == "total equity and liabilities" ||
          t == "total liabilities and equity")                 && return C("ifrs-full:EquityAndLiabilities", :credit)
         occursin(r"^(total )?equity attributable to (equity holders|owners)", t) &&

@@ -32,15 +32,29 @@ monthabbr_to_num(s) = get(_HKFRS_MONTHS, lowercase(String(s)), 12)
 # Reporting scale + currency from the statement headers ("RMB'Million", "HK$'000", "in thousands"). One unit
 # for the whole set (HKFRS statements state it once). Returns (scale, currency).
 function _hkfrs_scale_currency(sd)
-    # include TABLE CELLS — the unit lives in a header cell ("RMB'Million", "HK$'000"), not a caption/block.
-    text = join(vcat([something(t.caption, "") for t in sd.tables],
-                     [b.text for b in sd.text_blocks],
-                     [c.text for t in sd.tables for c in t.cells]), " ")
-    scale = occursin(r"(?i)million"i, text) ? 1e6 :
-            occursin(r"(?i)'?000\b|thousand"i, text) ? 1e3 : 1.0
-    cur = occursin(r"(?i)\bRMB\b|人民币|CNY"i, text)   ? "CNY" :
-          occursin(r"(?i)US\$|\bUSD\b"i, text)         ? "USD" :
-          occursin(r"(?i)HK\$|\bHKD\b"i, text)         ? "HKD" : "HKD"
+    # The unit lives in a header CELL ("RMB'Million", "HK$'000", "HK$ million"), not a caption/block. Read the
+    # currency from the SAME token that carries the magnitude — a note elsewhere mentioning "RMB" must not
+    # override a statement stated in "HK$'000".
+    texts = vcat([something(t.caption, "") for t in sd.tables], [b.text for b in sd.text_blocks],
+                 [c.text for t in sd.tables for c in t.cells])
+    _cur(s) = occursin(r"(?i)RMB|人民币|人民幣", s) ? "CNY" : occursin(r"(?i)US\$|USD|美元", s) ? "USD" : "HKD"
+    _scl(mag) = (lowercase(mag) in ("million", "百萬", "百万")) ? 1e6 : 1e3
+    conv = nothing                                             # a "#"-marked supplementary/convenience unit
+    for s in texts
+        m = match(r"(?i)(#\s*)?(HK\$|US\$|RMB|人民[币幣])\s*'?\s*(million|thousand|000|百萬|百万|千)", s)
+        m === nothing && continue
+        if m.captures[1] !== nothing                          # "#" = convenience column (e.g. CK Hutchison's
+            conv === nothing && (conv = m)                     # US$ column beside its primary HK$ statements)
+        else
+            return (_scl(m.captures[3]), _cur(m.captures[2]))  # the PRIMARY currency
+        end
+    end
+    conv === nothing || return (_scl(conv.captures[3]), _cur(conv.captures[2]))
+    # fallback: magnitude alone, currency by presence (HK$ preferred — the HK default)
+    text = join(texts, " ")
+    scale = occursin(r"(?i)million", text) ? 1e6 : occursin(r"(?i)'?000\b|thousand", text) ? 1e3 : 1.0
+    cur = occursin(r"(?i)US\$|\bUSD\b", text) ? "USD" :
+          occursin(r"(?i)HK\$|\bHKD\b", text) ? "HKD" : occursin(r"(?i)\bRMB\b|人民[币幣]", text) ? "CNY" : "HKD"
     return (scale, cur)
 end
 
