@@ -138,11 +138,10 @@
 \noindent
 \texttt{EDGAR.jl} turns company filings into analysis-ready data in Julia. From the U.S.\ SEC's
 \href{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}{EDGAR} system it pulls a
-filer's \emph{submission history}, the \emph{XBRL financial facts} extracted from its filings, cross-filer
+filer's submission history, the XBRL financial facts extracted from its filings, cross-filer
 \emph{frames}, and \emph{full-text search} of filing contents. The same jurisdiction-agnostic core reaches
-the EU (\emph{ESEF}), the UK (\emph{Companies House} and the \emph{NSM}), Japan (\emph{EDINET}) and South
-Korea (\emph{DART}); and a format-agnostic extraction axis is being extended from tagged XBRL to \emph{PDF
-reports}, so a filing's facts are recovered whether it is machine-tagged or published only as a PDF.
+the EU (ESEF), the UK (Companies House and the NSM), Japan (EDINET) and South
+Korea (DART); and a format-agnostic extraction axis is being extended from tagged XBRL to PDF reports, so a filing's facts are recovered whether it is machine-tagged or published only as a PDF.
 \end{abstract}
 
 \tableofcontents
@@ -571,9 +570,12 @@ bridge, and classification keys off the label rather than a concept prefix. The 
 \section{Two paths: document AI (main) and a deterministic fallback}
 
 PDF is the hard case: a born-digital PDF has no rows or columns, just positioned text; scanned PDFs have
-no text layer at all; and layouts vary by issuer and language. \texttt{EDGAR.jl} therefore uses a
-\textbf{document-AI engine as the main approach}, and falls back to a \textbf{light deterministic path}
-when that engine is not installed:
+no text layer at all; and layouts vary by issuer and language. The exported \texttt{born\_digital(path)}
+tells those first two apart at a glance --- it measures the extractable text-layer density with
+\texttt{pdf.js} and returns \texttt{true} for a real text layer (route it to the text-based extractor) or
+\texttt{false} for a bare scan that needs OCR (a scanned UK Companies House filing returns \texttt{false}).
+\texttt{EDGAR.jl} therefore uses a \textbf{document-AI engine as the main approach}, and falls back to a
+\textbf{light deterministic path} when that engine is not installed:
 
 \begin{itemize}
   \item[\textbf{Main}] \textbf{--- document AI (Docling or MinerU).} A document-structuring engine turns
@@ -784,6 +786,32 @@ heading, so section-title matching tags nothing; but the outline entries
 \dots) classify every statement correctly --- including \emph{both} halves (ACTIF and PASSIF) of the
 two-part French \emph{Bilan}. A fund's \emph{Statement of Assets and Liabilities}, by contrast, is tagged
 from its first cell. Where a PDF has no outline, the earlier sources still apply.
+
+\subsection{Line-item value versus contribution: the sign convention}\label{sec:pdf-sign}
+
+A printed statement line encodes \emph{two} distinct things, and the extractor must not conflate them:
+\textbf{(a)} the line item's \textbf{value}, and \textbf{(b)} how that value \textbf{contributes} to the
+statement's arithmetic --- its sign/weight in the running total. ``\texttt{Cost of revenues (311,011)}'' means
+the value is \textbf{311,011}; the parentheses are a \emph{display} convention meaning ``this is
+\emph{subtracted}'' to reach profit --- they are not part of the value.
+
+\texttt{EDGAR.jl} stores the \textbf{value}, not the presentation sign --- matching the XBRL convention
+exactly. In XBRL a debit-balance concept (a cost, an expense) is reported as its \textbf{positive magnitude},
+and the $-1$ lives in the \emph{calculation} linkbase, not the fact; empirically \texttt{facts(f)} for
+Apple's \texttt{us-gaap:CostOfGoodsAndServicesSold} returns \textbf{+220.96\,bn}, not $-220.96$. So the PDF
+extractor carries a \textbf{\texttt{balance}} (\texttt{debit}/\texttt{credit}) per classified concept: a
+\textbf{debit} line printed in parentheses is stored as its \textbf{positive} magnitude, while a
+\textbf{credit} line or a cash-flow \emph{net} flow keeps its reported sign (a loss, a net outflow are
+genuinely negative). The \texttt{balance} is also what \emph{reconstructs} the ``\texttt{(\ldots)}'' display
+when the statement is rendered --- value and presentation stay cleanly separated.
+
+The payoff is \textbf{one} accounting-rules implementation across every source. Because a PDF
+\texttt{CostOfSales} now equals the same filer's iXBRL/XBRL \texttt{CostOfSales}, the balance-sheet
+cross-foot, the calculation checks (\texttt{check\_calculations}) and the external-data benchmark run
+\emph{unchanged} whether the facts came from a PDF, an HTML report, or a tagged XBRL package --- the point of
+recovering the \emph{same} \texttt{Fact}s regardless of format (\S\ref{sec:pdf-pipeline}). An offline test
+(\texttt{``PDF debit lines store the value, not the presentation sign''}) pins this so the convention cannot
+silently drift.
 
 \section{The deterministic fallback}
 \label{sec:pdf-fallback}
@@ -2311,6 +2339,25 @@ installed) on \texttt{JULIA\_PYTHONCALL\_EXE}. Without it they raise a message t
 % point PythonCall at the Tier-2 venv (Docling installed), then launch Julia
 % export JULIA_CONDAPKG_BACKEND=Null
 % export JULIA_PYTHONCALL_EXE=~/EDGAR-tools/tier2-venv/bin/python
+\end{lstlisting}
+
+\subsection{\texttt{born\_digital}}
+
+\begin{center}
+\textbf{\sig{born\_digital(path; min\_chars\_per\_page=100) -> Bool}}
+\end{center}
+
+\noindent Whether a PDF has a usable \textbf{text layer} --- born-digital, or an already-OCR'd scan --- rather
+than being a bare scanned image. It measures the density of extractable text with \texttt{pdf.js} and returns
+\texttt{true} for a real text layer or \texttt{false} for a scan that would need OCR. This is the routing
+signal between the text-based extractors (\texttt{extract\_hkfrs\_pdf} / \texttt{extract\_cas\_pdf} /
+\texttt{extract\_pdf}) and an OCR path. Unlike the rest of this section it needs \textbf{only
+Node\,+\,\texttt{pdf.js}}, not the Docling/PythonCall stack, so it is always available. A scanned UK Companies
+House filing returns \texttt{false}; a born-digital annual report returns \texttt{true}.
+
+\begin{lstlisting}
+julia> born_digital("HK-Tencent-AR2024.pdf")     # true  -- has a text layer
+julia> born_digital("CH-scanned-accounts.pdf")   # false -- a scan; needs OCR
 \end{lstlisting}
 
 \subsection{\texttt{structured\_document}}
