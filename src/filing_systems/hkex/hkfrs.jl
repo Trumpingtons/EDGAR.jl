@@ -95,7 +95,12 @@ function _hkfrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vec
             (p === nothing || p.nil) && continue
             pend = pends[i]
             pst = instant ? nothing : (pend - Year(1) + Day(1))
-            push!(out, Fact(; concept = cc.concept, label = elabel, value = p.val * scale, unit = currency,
+            # store the line item's VALUE, not its presentation sign: a debit line (cost of sales) printed in
+            # parentheses because it is subtracted carries the positive magnitude — the −1 belongs to the
+            # calculation, per the ifrs-full XBRL convention. Credit / :none lines keep their reported sign
+            # (a loss, a net cash outflow are genuinely negative).
+            val = (cc.balance == :debit ? abs(p.val) : p.val) * scale
+            push!(out, Fact(; concept = cc.concept, label = elabel, value = val, unit = currency,
                   period_start = pst, period_end = pend, is_instant = instant, statement = stmt,
                   context_ref = string(pend), unit_ref = currency,
                   source_selector = "{\"table\":$(repr(tbl.table_id)),\"row\":$r,\"col\":$c}"))
