@@ -21,7 +21,7 @@ function _cas_labelkey(s::AbstractString)
     t = replace(t, r"^[（(]?[一二三四五六七八九十]+[)）]?[、.．,]" => "")   # 一、  （二）  三.
     t = replace(t, r"^[（(]?\d+[)）]?[、.．]" => "")                         # 1.  (2)  3、
     t = replace(t, r"^(其中|加|减|其他)[:：]" => "")                        # 其中：  加：  减：
-    t = replace(t, r"^[（(]?按[^）)]*分类[）)]?" => "")                     # "(按所有权归属分类)" IS section divider
+    t = replace(t, r"^[（(]?[一二三四五六七八九十]*[)）]?按[^：:）)]*分类[：:）)]*" => "")  # "（二）按所有权归属分类：" divider (Docling merges it onto the next line's label)
     t = replace(t, r"\(或[^()]*\)" => "")                                  # "(或股东权益)" / "(或股本)" clarifier
     t = replace(t, r"\([^()]*填列[^()]*\)$" => "")                         # trailing "(净亏损以'－'号填列)" sign note
     # CF net-flow lines vary the middle by sign (投资活动【产生的|使用的|(使用)/产生的】现金流量净额) and Docling
@@ -55,6 +55,8 @@ const CAS_CONCEPTS = Dict{String,_CASConcept}(
     "未分配利润"                   => (concept="cas:RetainedEarnings",           statement="BalanceSheet", instant=true),
     "归属于母公司所有者权益合计"   => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),
     "归属于母公司股东权益合计"     => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),
+    "归属于母公司股东的股东权益合计" => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),  # insurers (new standard)
+    "归属于本公司股东的股东权益合计" => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),
     "归属于本行股东权益合计"       => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),  # banks (本行)
     "归属于本公司股东权益合计"     => (concept="cas:EquityAttributableToParent", statement="BalanceSheet", instant=true),
     "少数股东权益"                 => (concept="cas:NoncontrollingInterests",    statement="BalanceSheet", instant=true),
@@ -81,7 +83,8 @@ const CAS_CONCEPTS = Dict{String,_CASConcept}(
     "净利息收入"                   => (concept="cas:NetInterestIncome",          statement="IncomeStatement", instant=false),
     "手续费及佣金净收入"           => (concept="cas:NetFeeAndCommissionIncome",  statement="IncomeStatement", instant=false),
     "净手续费及佣金收入"           => (concept="cas:NetFeeAndCommissionIncome",  statement="IncomeStatement", instant=false),
-    "已赚保费"                     => (concept="cas:NetEarnedPremiums",          statement="IncomeStatement", instant=false),  # insurers
+    "已赚保费"                     => (concept="cas:NetEarnedPremiums",          statement="IncomeStatement", instant=false),  # insurers (pre-2023 standard)
+    "保险服务收入"                 => (concept="cas:InsuranceServiceRevenue",    statement="IncomeStatement", instant=false),  # insurers (new insurance-contract standard)
     "少数股东损益"                 => (concept="cas:MinorityInterestIncome",     statement="IncomeStatement", instant=false),
     "基本每股收益"                 => (concept="cas:BasicEarningsPerShare",      statement="IncomeStatement", instant=false),
     # ── Cash-flow statement (现金流量表) — duration ──────────────────────────────────────────────
