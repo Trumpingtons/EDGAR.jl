@@ -884,7 +884,8 @@ Table~\ref{tab:coretypes} is the map; the exhaustive field-by-field reference li
   \texttt{is\_instant}, \texttt{dimensions}, \texttt{statement(s)}, \texttt{context\_ref} & \texttt{facts} \\
 \texttt{Narrative} & One \textbf{narrative} section --- prose's \texttt{Fact}. & \texttt{source}
   (\texttt{:xbrl}/\texttt{:ixbrl}/\texttt{:pdf}/\texttt{:html}), \texttt{concept}, \texttt{section\_title},
-  \texttt{canonical\_title}, \texttt{tags}, \texttt{text}, \texttt{lang}, \texttt{period\_end}, \texttt{page} &
+  \texttt{canonical\_title}, \texttt{tags}, \texttt{text}, \texttt{lang}
+  (\texttt{:zh}/\texttt{:ja}/\texttt{:ko}/\texttt{:en}), \texttt{period\_end}, \texttt{page} &
   \texttt{narratives} \\
 \texttt{FactRow} / \texttt{NarrativeRow} & The above as \texttt{Tables.jl} rows --- the on-disk/export column
   schema (\texttt{dimensions} JSON-encoded). & (columns mirror the struct) & the \texttt{facts} /
@@ -961,6 +962,15 @@ identified verbatim, normalised, and grouped by theme:
     "supply-chain"]}), the axis along which narratives from \emph{different} filers are grouped horizontally
     by theme. Empty for now, reserved for a later (AI or manual) tagging pass; multiple axes encode as
     namespaced tags (\texttt{"theme:climate"}, \texttt{"risk:fx"}).
+  \item \texttt{lang} --- the section's \textbf{content} language as an ISO-639 code. On the \texttt{Narrative}
+    struct it is a \texttt{Symbol} (\texttt{:zh}\,/\,\texttt{:ja}\,/\,\texttt{:ko}\,/\,\texttt{:en}), following
+    the \texttt{Symbol} convention of the other tag fields (\texttt{source}, a filing's \texttt{kind}); in the
+    exported \texttt{NarrativeRow} it serialises to a plain \texttt{String}, exactly as \texttt{source} does.
+    It is taken from the source's own language tag when meaningful, otherwise guessed from the script
+    (Han-only\,$\to$\,\texttt{:zh}, kana\,$\to$\,\texttt{:ja}, Hangul\,$\to$\,\texttt{:ko}). This
+    \emph{content} language is distinct from the \texttt{lang} \emph{keyword} on \texttt{narratives(f;
+    lang="en")}, which is a \texttt{String} selecting the XBRL \emph{label} language (matched against
+    \texttt{xml:lang}) for the titles.
 \end{itemize}
 
 \subsection{\texttt{EntityId}}
