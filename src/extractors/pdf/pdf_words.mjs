@@ -3,12 +3,18 @@
 // (distance from page top) so downstream row clustering reads naturally. Coordinates in PDF points.
 // Usage: node pdf_words.mjs <file.pdf> [page]      (page optional: dump a single 1-based page)
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 if (typeof globalThis.DOMMatrix === "undefined") globalThis.DOMMatrix = (await import("dommatrix")).default;
 const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
 const file = process.argv[2];
 const only = process.argv[3] ? parseInt(process.argv[3], 10) : null;
-const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(file)), isEvalSupported: false, useSystemFonts: true }).promise;
+// CID-keyed CJK fonts (common in Chinese/Japanese filings) decode only when pdf.js can load its packed
+// CMap tables; point at the bundled pdfjs-dist cmaps. Harmless for non-CJK PDFs (ignored when unneeded).
+const cMapUrl = join(dirname(fileURLToPath(import.meta.url)), "node_modules", "pdfjs-dist", "cmaps") + "/";
+const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(file)), isEvalSupported: false,
+  useSystemFonts: true, cMapUrl, cMapPacked: true }).promise;
 
 const pages = [];
 const lo = only || 1, hi = only || doc.numPages;

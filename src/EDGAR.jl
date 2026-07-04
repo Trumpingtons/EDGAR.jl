@@ -64,6 +64,8 @@ include("filing_systems/dart/dart.jl")                       # 🔵 DART (KR FSS
 include("filing_systems/dart/discovery.jl")                  # 🔵 DART discovery: OpenDARTApi source over the OpenDART REST API (by-company) + corp_code resolver
 include("filing_systems/india/india.jl")                     # 🔵 India (NSE/BSE, Ind-AS) FilingSystem — I0 seam + I1 offline parse + NSE cookie session
 include("filing_systems/india/discovery.jl")                 # 🔵 India discovery: NSEFilings source over the keyless (cookie-gated) NSE financial-results API
+include("filing_systems/china/china.jl")                     # 🟡 China (CSRC/CNINFO, CAS) FilingSystem — C0 seam + C2 fetch→:pdf Filing (first PDF-native jurisdiction; facts via the PDF extractor)
+include("filing_systems/china/discovery.jl")                 # 🟡 China discovery: CNINFOFilings source over the keyless CNINFO JSON API (topSearch + hisAnnouncement) [C1]
 include("extractors/pdf.jl")                # 🟢 PDF extractor (Format axis): pdfjs-dist → words → row/column → coordinate-anchored Facts
 include("extractors/structured_document.jl")# 🟢 StructuredDocument substrate (document-first PDF repository); Docling extraction via PythonCall ext
 include("extractors/document_profile.jl")   # 🟢 extensible table-classification taxonomy (BS/IS/CF/EC + open registry)
@@ -71,7 +73,7 @@ include("extractors/facts_derive.jl")        # 🟢 facts derivation core: local
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 
-export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, EntityId,
+export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
