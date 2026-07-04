@@ -31,8 +31,13 @@ filing is a PDF whose facts come from the shared PDF extractor.
 
 ## Decisions locked (with the user)
 
-1. **Extractor tier: Tier-1 (`pdf.js`) first.** English born-digital statements are far simpler geometry than
-   CJK; test `extract_pdf` on the saved Tencent AR, fall back to Docling only if tables come out messy.
+1. **Extractor tier: Docling (revised after the HK2 spike).** The Tier-1 (`pdf.js`) spike on the Tencent AR
+   was fast (~2 s, 84 facts, correct RMB values) but had systematic gaps — the BS **equity section** and
+   **Revenue total** were missing, the **operating/investing cash-flow** net lines were missing (only
+   financing captured), and note tables contaminated the statements. These are the same geometric-fragility
+   issues that pushed China to Docling. So HK2 reuses China's **Docling** pipeline (`structured_document` →
+   page-scoped table facts), with English being *easier* for Docling than CJK. Tier-1 stays available as a
+   fast pre-scan (page location, fiscal year) exactly as in China.
 2. **Label→concept: a light English-IFRS label map** — headline lines → `ifrs-full:` concepts (Total assets
    → `ifrs-full:Assets`, Revenue, Profit for the year → `ProfitLoss`, Total equity → `Equity`, net cash from
    operating → …`OperatingActivities`). Reuses `ifrs-full`, slots into the existing classify engine.

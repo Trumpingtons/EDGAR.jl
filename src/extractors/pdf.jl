@@ -177,6 +177,7 @@ function _pdf_filing_facts(f::Filing; kwargs...)
     (!isempty(src) && isfile(src)) ||
         throw(ArgumentError("facts(::Filing) for a :pdf filing needs the PDF source; this filing carries " *
               "none. Use `extract_pdf(path)` with the downloaded PDF for now."))
-    # China filings are CAS PDFs — route to the CAS extractor (Chinese statement/label semantics).
-    return f.system isa China ? extract_cas_pdf(src) : extract_pdf(src)
+    # China filings are CAS PDFs (Chinese labels); Hong Kong are HKFRS PDFs (English → ifrs-full).
+    return f.system isa China ? extract_cas_pdf(src) :
+           f.system isa HKEX  ? extract_hkfrs_pdf(src) : extract_pdf(src)
 end
