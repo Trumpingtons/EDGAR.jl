@@ -631,6 +631,47 @@ end
     @test V("ifrs-full:Equity")                     ≈ 6_339.1e6   # Net assets / Total shareholders' funds
 end
 
+@testset "English-PDF extractor: HK bank format (HK\$'m, year-end from cell, cross-foot, offline)" begin
+    # A Hong Kong bank (modelled on BOC Hong Kong) exercises what the corporate cases do not: (1) the unit is
+    # abbreviated "HK\$'m" (the magnitude is a bare "m", not "million"); (2) there is NO "year ended …" phrase —
+    # the year-end date lives in a statement cell ("… at 31 December 2025"), and the equity statement carries a
+    # "1 January" opening-balance line that must NOT set the year-end; (3) the bank balance sheet still cross-
+    # foots on the standard Total assets / Total liabilities / Total equity lines.
+    S(id, t, pg) = EDGAR.DocSection(id, nothing, 1, t, "en", 0, pg, pg, nothing)
+    secs = EDGAR.DocSection[S("s_is", "CONSOLIDATED INCOME STATEMENT", 1),
+                            S("s_bs", "CONSOLIDATED BALANCE SHEET", 2),
+                            S("s_eq", "CONSOLIDATED STATEMENT OF CHANGES IN EQUITY", 3)]
+    Cs(p) = EDGAR.TableCell[EDGAR.TableCell(r, c, 1, 1, r == 0, t) for (r, c, t) in p]
+    is = Cs([(0,1,"2025 HK\$'m"), (0,2,"2024 HK\$'m"),
+             (1,0,"Net interest income"), (1,1,"52,911"), (1,2,"52,334"),
+             (2,0,"Operating profit"), (2,1,"50,532"), (2,2,"48,677"),
+             (3,0,"Profit before taxation"), (3,1,"48,574"), (3,2,"46,754"),
+             (4,0,"Profit for the year"), (4,1,"41,189"), (4,2,"39,118")])
+    bs = Cs([(0,1,"2025 HK\$'m"), (0,2,"2024 HK\$'m"),
+             (1,0,"Total assets"), (1,1,"4,489,809"), (1,2,"4,194,408"),
+             (2,0,"Total liabilities"), (2,1,"4,126,334"), (2,2,"3,852,178"),
+             (3,0,"Total equity"), (3,1,"363,475"), (3,2,"342,230")])
+    eq = Cs([(0,0,"At 1 January 2025"), (0,1,"52,864"),                 # opening (day 1) distractor
+             (1,0,"Balance at 31 December 2025"), (1,1,"31,984")])       # year-end (day 31)
+    T(id, sid, pg, cells, nr) = EDGAR.DocTable(id, sid, 0, "unknown", nothing, nothing, "en", pg, pg, nothing, nr, 3, cells)
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 3, "test", "1", false),
+        secs, EDGAR.TextBlock[], [T("t_is","s_is",1,is,5), T("t_bs","s_bs",2,bs,4), T("t_eq","s_eq",3,eq,2)],
+        EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    @test EDGAR._ifrs_period(sd) == (12, 31, [2025, 2024])              # 31 Dec (month-end), NOT the "1 January" opening
+    rows = EDGAR._ifrs_facts_from_sd(sd)
+    @test !isempty(rows) && all(r -> r.unit == "HKD", rows)             # HK\$'m -> HKD, scale 1e6 (bare "m" magnitude)
+    V(c) = (v = [r.value for r in rows if r.concept == c && r.period_end == Date(2025, 12, 31)];
+            isempty(v) ? nothing : v[1])
+    @test V("ifrs-full:Assets")      ≈ 4_489_809e6
+    @test V("ifrs-full:Liabilities") ≈ 4_126_334e6
+    @test V("ifrs-full:Equity")      ≈ 363_475e6
+    @test V("ifrs-full:Assets") ≈ V("ifrs-full:Liabilities") + V("ifrs-full:Equity")   # bank balance-sheet cross-foot
+    @test V("ifrs-full:ProfitLossFromOperatingActivities") ≈ 50_532e6
+    @test V("ifrs-full:ProfitLossBeforeTax") ≈ 48_574e6
+    @test V("ifrs-full:ProfitLoss")  ≈ 41_189e6
+end
+
 @testset "statement classification from presentation linkbase (W5, offline)" begin
     @test (EDGAR._classify_role("http://x/role/CondensedConsolidatedStatementsofIncome"),
            EDGAR._classify_role("http://x/role/CondensedConsolidatedBalanceSheets"),

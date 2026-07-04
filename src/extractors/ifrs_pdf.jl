@@ -27,13 +27,16 @@ function _ifrs_period(sd)
     end
     isempty(yrs) && return nothing
     uy = sort!(unique(yrs); rev = true)
-    # Year-end month/day from a fiscal-period phrase ("Year ended 31 December", "As at 31 March") — search
-    # section headings too (a scanned filing carries the period line as a heading), and REQUIRE the fiscal
-    # context so a bare date in prose (a pension-valuation "31 May", a signing date) can't set the year-end.
+    # Year-end month/day. Search section headings, captions, blocks AND table cells — a bank states the
+    # year-end date only in the balance-sheet column-header CELL ("31 December 2025"), not in a heading.
+    # Priority: (1) a fiscal-period phrase ("Year ended 31 December", "As at 31 March"); (2) else a month-END
+    # date (day 28–31 — a real year-end, never a "1 January" opening-balance line from the equity statement);
+    # (3) else any date. Steps 1–2 keep a stray prose date (a pension "31 May", a "1 January" opening) out.
     MON = "January|February|March|April|May|June|July|August|September|October|November|December"
-    text = join(vcat([s.title for s in sd.sections],
-                     [something(t.caption, "") for t in sd.tables], [b.text for b in sd.text_blocks]), " ")
+    text = join(vcat([s.title for s in sd.sections], [something(t.caption, "") for t in sd.tables],
+                     [b.text for b in sd.text_blocks], [c.text for t in sd.tables for c in t.cells]), " ")
     m = match(Regex("(?i)(?:year|period)?\\s*(?:ended|ending|as at|as of)\\s+(\\d{1,2})\\s+($MON)"), text)
+    m === nothing && (m = match(Regex("(?i)(28|29|30|31)\\s+($MON)"), text))
     m === nothing && (m = match(Regex("(?i)(\\d{1,2})\\s+($MON)"), text))
     mo = m === nothing ? 12 : monthabbr_to_num(m.captures[2])
     dy = m === nothing ? 31 : parse(Int, m.captures[1])
@@ -45,12 +48,12 @@ const _IFRS_MONTHS = Dict("january"=>1,"february"=>2,"march"=>3,"april"=>4,"may"
 monthabbr_to_num(s) = get(_IFRS_MONTHS, lowercase(String(s)), 12)
 
 # The unit TOKEN → (scale, currency) from a pool of header/label strings, or `nothing` if none carries one.
-# The unit lives in a header CELL ("RMB'Million", "HK$'000", "HK$ million", the UK form "2025 £m" / "£'000"),
-# not a caption/block; the currency is read from the SAME token that carries the magnitude — a note elsewhere
-# mentioning "RMB" must not override a statement stated in "HK$'000".
+# The unit lives in a header CELL ("RMB'Million", "HK$'000", "HK$ million", "HK$'m", the UK form "2025 £m" /
+# "£'000"), not a caption/block; the currency is read from the SAME token that carries the magnitude — a note
+# elsewhere mentioning "RMB" must not override a statement stated in "HK$'000".
 function _ifrs_unit(texts)
     _cur(s) = occursin(r"(?i)RMB|人民币|人民幣", s) ? "CNY" : occursin(r"(?i)US\$|USD|美元", s) ? "USD" : "HKD"
-    _scl(mag) = (lowercase(mag) in ("million", "百萬", "百万")) ? 1e6 : 1e3
+    _scl(mag) = (lowercase(mag) in ("million", "m", "百萬", "百万")) ? 1e6 : 1e3
     # Sterling first: a £-denominated set never carries HK$. Within one pool, prefer £m over £'000 (a single
     # statement's header states one unit — the mixed case only arises document-wide, resolved per table).
     if any(occursin('£', s) for s in texts)
@@ -60,7 +63,8 @@ function _ifrs_unit(texts)
     end
     conv = nothing                                             # a "#"-marked supplementary/convenience unit
     for s in texts
-        m = match(r"(?i)(#\s*)?(HK\$|US\$|RMB|人民[币幣])\s*'?\s*(million|thousand|000|百萬|百万|千)", s)
+        # magnitude is "million"/"thousand"/"000"/CJK, OR a bare "m" (HK banks abbreviate "HK$'m" = HK$ million)
+        m = match(r"(?i)(#\s*)?(HK\$|US\$|RMB|人民[币幣])\s*['’]?\s*(million|thousand|000|百萬|百万|千|m)\b", s)
         m === nothing && continue
         if m.captures[1] !== nothing                          # "#" = convenience column (e.g. CK Hutchison's
             conv === nothing && (conv = m)                     # US$ column beside its primary HK$ statements)
@@ -106,56 +110,81 @@ _ifrs_ismoney(s) = (occursin(',', s) || occursin('(', s) || occursin(r"\d\.\d", 
 _ifrs_isnoteref(s) = (t = strip(String(s)); occursin(r"\d", t) &&
                        isempty(strip(replace(t, r"[\d\(\)a-z\s\.,/–-]" => ""))))
 
-# Facts from one classified Docling statement table. `stmt` is the statement ("BalanceSheet"/…); value columns
-# (≥2 monetary cells) map left→right to the period ends (most-recent first, the HKFRS convention). The label is
-# the leading text cells before the first value column, minus any note reference. Concepts come from
-# `ifrs_label_concept(label, stmt)`; unrecognised rows are skipped (only the headline anchors are wanted).
+# Pick the most frequent element (deterministic on ties by string order).
+_ifrs_mode(v) = (d = Dict{String,Int}(); for x in v; d[x] = get(d, x, 0) + 1; end;
+                 first(sort(collect(keys(d)); by = k -> (-d[k], k))))
+
+# Facts from one classified Docling statement table. COLUMN-AWARE, so it handles the awkward HK layouts as well
+# as the plain ones:
+#   • the LABEL is any word cell in the row (joined), so a LEADING convenience column — e.g. CK Hutchison's
+#     "# US$ million" column that sits BEFORE the description — does not hide the line item;
+#   • each VALUE column carries its own year + currency in the header ("2025 HK$ million"), so we keep only the
+#     PRIMARY-currency columns (dropping the "#"-marked US$ convenience column) and map each to the period end
+#     for ITS year — an opening-balance "1 January" column or a 3rd comparative year then lands correctly.
+# The stored value is the line item's magnitude (a parenthesised debit is positive; its −1 is the calculation
+# contribution, per the ifrs-full XBRL convention). Concepts come from `ifrs_label_concept`; other rows skipped.
 function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vector{Date},
                             scale::Float64, currency::AbstractString)
     nr, nc = tbl.n_rows, tbl.n_cols
+    isempty(pends) && return Fact[]
     grid = Dict{Tuple{Int,Int},String}()
     for c in tbl.cells; grid[(c.row, c.col)] = strip(c.text); end
-    valcols = Int[]
-    for c in 1:nc-1
-        count(r -> _ifrs_ismoney(get(grid, (r, c), "")), 0:nr-1) >= 2 && push!(valcols, c)
-    end
-    sort!(valcols)
+    # value columns: ≥2 monetary body cells (a Note column of "13" / "32 (a)" is not monetary, so it is excluded)
+    valcols = [c for c in 0:nc-1 if count(r -> _ifrs_ismoney(get(grid, (r, c), "")), 0:nr-1) >= 2]
     isempty(valcols) && return Fact[]
-    firstval = minimum(valcols)
+    firstbody = something(findfirst(r -> any(_ifrs_ismoney(get(grid, (r, c), "")) for c in valcols), 0:nr-1),
+                          1) - 1                                # 0-based index of the first row carrying values
+
+    # per value column: its header year, currency, and whether it is a "#" convenience or a "1 January" opening
+    colyear = Dict{Int,Union{Int,Nothing}}(); colcur = Dict{Int,Union{String,Nothing}}()
+    colconv = Dict{Int,Bool}(); colopen = Dict{Int,Bool}()
+    for c in valcols
+        h = join([get(grid, (r, c), "") for r in 0:firstbody-1], " ")
+        ym = match(r"(20\d{2})", h); colyear[c] = ym === nothing ? nothing : parse(Int, ym.captures[1])
+        colcur[c] = occursin(r"(?i)HK\$", h) ? "HKD" : occursin(r"(?i)US\$|\bUSD\b", h) ? "USD" :
+                    occursin(r"(?i)\bRMB\b|人民[币幣]", h) ? "CNY" : occursin('£', h) ? "GBP" : nothing
+        colconv[c] = occursin('#', h)
+        colopen[c] = occursin(r"(?i)1\s+january", h)
+    end
+    stated = [colcur[c] for c in valcols if !colconv[c] && colcur[c] !== nothing]
+    primary = isempty(stated) ? currency : _ifrs_mode(stated)   # the PRIMARY presentation currency (HK$, not US$)
+    keep = [c for c in valcols if !colconv[c] && !colopen[c] && (colcur[c] === nothing || colcur[c] == primary)]
+    isempty(keep) && (keep = valcols)                           # degenerate: no column matched — keep them all
+    sort!(keep)
+    mo, dy = month(pends[1]), day(pends[1])                     # the fiscal year-end; each column's year sets its end
+    colend = Dict{Int,Date}(c => (colyear[c] === nothing ? pends[min(i, length(pends))] : Date(colyear[c], mo, dy))
+                            for (i, c) in enumerate(keep))
+
     out = Fact[]
-    last_header = ""                                           # most recent section header (label, no values)
+    last_header = ""                                            # most recent section header (label, no values)
     for r in 0:nr-1
+        # the label is every word cell in the row (nonempty, not an amount, not a note reference) — position-free
         lcells = String[]
-        for c in 0:firstval-1
+        for c in 0:nc-1
             s = get(grid, (r, c), "")
-            (!isempty(s) && parse_amount(s; locale = :en) === nothing && !_ifrs_isnoteref(s)) && push!(lcells, s)
+            (!isempty(s) && occursin(r"[A-Za-z]", s) && parse_amount(s; locale = :en) === nothing &&
+             !_ifrs_isnoteref(s)) && push!(lcells, s)
         end
         label = strip(join(lcells, " "))
-        hasval = any(_ifrs_ismoney(get(grid, (r, c), "")) for c in valcols)
-        if !hasval                                            # a section header / caption row — no fact
+        hasval = any(_ifrs_ismoney(get(grid, (r, c), "")) for c in keep)
+        if !hasval                                             # a section header / caption row — no fact
             isempty(label) || (last_header = label)
             continue
         end
-        # HKFRS presents some totals on an UNLABELED row under a section header (Tencent's Revenue total sits
-        # under a "Revenues" header, after the segment lines) — so an unlabeled value row inherits that header.
-        # This EXTRACTS the reported figure (it does not compute it from other lines).
+        # an UNLABELED value row inherits the section header (Tencent's Revenue total sits under a "Revenues"
+        # header) — this EXTRACTS the reported figure, it does not compute it from other lines.
         elabel = isempty(label) ? last_header : label
         cc = isempty(elabel) ? nothing : ifrs_label_concept(elabel, stmt)
         cc === nothing && continue
-        for (i, c) in enumerate(valcols)
-            i <= length(pends) || break
+        for c in keep
             p = parse_amount(get(grid, (r, c), ""); locale = :en)
             (p === nothing || p.nil) && continue
-            pend = pends[i]
+            pend = colend[c]
             pst = instant ? nothing : (pend - Year(1) + Day(1))
-            # store the line item's VALUE, not its presentation sign: a debit line (cost of sales) printed in
-            # parentheses because it is subtracted carries the positive magnitude — the −1 belongs to the
-            # calculation, per the ifrs-full XBRL convention. Credit / :none lines keep their reported sign
-            # (a loss, a net cash outflow are genuinely negative).
             val = (cc.balance == :debit ? abs(p.val) : p.val) * scale
-            push!(out, Fact(; concept = cc.concept, label = elabel, value = val, unit = currency,
+            push!(out, Fact(; concept = cc.concept, label = elabel, value = val, unit = primary,
                   period_start = pst, period_end = pend, is_instant = instant, statement = stmt,
-                  context_ref = string(pend), unit_ref = currency,
+                  context_ref = string(pend), unit_ref = primary,
                   source_selector = "{\"table\":$(repr(tbl.table_id)),\"row\":$r,\"col\":$c}"))
         end
     end

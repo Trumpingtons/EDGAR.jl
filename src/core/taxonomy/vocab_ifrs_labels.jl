@@ -38,8 +38,13 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
     if statement == "BalanceSheet"
         t == "total assets"                                    && return C("ifrs-full:Assets", :debit)
         t == "total liabilities"                               && return C("ifrs-full:Liabilities", :credit)
+        # "Total ordinary shareholders' funds" is the owners'-of-parent subtotal (excludes NCI + perpetual
+        # capital), so it must be tested BEFORE the whole-equity "shareholders' funds" rule below.
+        (t == "total ordinary shareholders' funds" || occursin("ordinary shareholders' funds", t)) &&
+            return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
         (t == "total equity" || t == "net assets" ||
-         (occursin("shareholders", t) && occursin("funds", t))) && return C("ifrs-full:Equity", :credit)  # UK "Total shareholders' funds"
+         (occursin("shareholders", t) && occursin("funds", t) && !occursin("ordinary", t))) &&
+            return C("ifrs-full:Equity", :credit)             # whole equity: UK "Total shareholders' funds", "Total equity"
         (t == "total equity and liabilities" ||
          t == "total liabilities and equity")                 && return C("ifrs-full:EquityAndLiabilities", :credit)
         occursin(r"^(total )?equity attributable to (equity holders|owners)", t) &&
@@ -56,6 +61,7 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin("before tax", t) ||                                  # UK "…before taxation" / "…before tax"
          (occursin("profit before", t) && occursin("tax", t)))  && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         (t == "profit for the year" || t == "profit for the period" ||
+         t == "profit after tax" || t == "profit after taxation" ||          # CK Hutchison's net-income line
          occursin(r"^profit(/\(loss\))? for the (year|period)", t) ||
          occursin("for the financial year", t))                 && return C("ifrs-full:ProfitLoss", :credit)  # UK "Profit for the financial year" (OCR-tolerant)
         occursin(r"(equity holders|owners) of the (company|parent)", t) &&
