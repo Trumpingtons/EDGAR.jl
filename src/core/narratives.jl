@@ -24,7 +24,11 @@ is the prose (`text`); its identity/provenance depend on where it came from (`so
   along which narratives from *different* filers are grouped by theme. Empty for now — reserved for a later
   (AI or manual) tagging pass. Multiple axes encode as namespaced tags (`"theme:climate"`, `"risk:fx"`).
 - `text` — the content, HTML-stripped to plain text.
-- `lang` — `"ja"` / `"en"` / `""`.
+- `lang` — the ISO-639 content language as a **`Symbol`** (`:zh` / `:ja` / `:ko` / `:en`; `Symbol("")` if
+  unknown), matching the `Symbol` convention of the other tag-like fields on this row (`source`, and a
+  filing's `kind`). The value comes from the source's own tag when meaningful, else a script guess
+  (`_guess_lang`); an undetermined tag (`"und"`) is treated as unknown and re-guessed. It serialises to a
+  plain `String` in the storage row (see `narrative_row`), exactly as `source` does.
 - `char_len` — `length(text)` (set automatically).
 - `period_end` — the XBRL context period end; `nothing` for PDF/HTML.
 - `dimensions` — axis ⇒ member qualifiers (XBRL only); empty otherwise.
@@ -44,7 +48,7 @@ struct Narrative
     canonical_title::String
     tags::Vector{String}
     text::String
-    lang::String
+    lang::Symbol
     char_len::Int
     period_end::Union{Nothing,Date}
     dimensions::Dict{String,String}
@@ -58,12 +62,12 @@ function Narrative(; cik::AbstractString = "", accession::AbstractString = "", s
                    concept::AbstractString = "", section_title::AbstractString = "",
                    canonical_title::Union{Nothing,AbstractString} = nothing,
                    tags::AbstractVector{<:AbstractString} = String[],
-                   text::AbstractString = "", lang::AbstractString = "",
+                   text::AbstractString = "", lang::Union{Symbol,AbstractString} = Symbol(""),
                    period_end::Union{Nothing,Date} = nothing,
                    dimensions::AbstractDict = Dict{String,String}(), context_ref::AbstractString = "",
                    page::Union{Nothing,Int} = nothing, block_id::AbstractString = "")
     ct = canonical_title === nothing ? section_title : canonical_title   # defaults to the section title
-    Narrative(cik, accession, source, concept, section_title, ct, Vector{String}(tags), text, lang,
+    Narrative(cik, accession, source, concept, section_title, ct, Vector{String}(tags), text, Symbol(lang),
               length(text), period_end, Dict{String,String}(dimensions), context_ref, page, block_id)
 end
 
@@ -75,7 +79,7 @@ Base.show(io::IO, n::Narrative) = print(io, "Narrative(",
 narrative_row(n::Narrative) =
     (cik = n.cik, accession = n.accession, source = String(n.source), concept = n.concept,
      section_title = n.section_title, canonical_title = n.canonical_title, tags = JSON3.write(n.tags),
-     text = n.text, lang = n.lang, char_len = n.char_len, period_end = n.period_end,
+     text = n.text, lang = String(n.lang), char_len = n.char_len, period_end = n.period_end,
      dimensions = JSON3.write(n.dimensions), context_ref = n.context_ref, page = n.page, block_id = n.block_id)
 
 # The narrative row-table schema: the element type of the Tables.jl row table `narratives` returns, so an
@@ -136,10 +140,16 @@ end
 # Cheap script guess for the content language, distinguishing the CJK scripts: Japanese kana ⇒ ja; else
 # Hangul ⇒ ko (DART); else Han-only ⇒ zh (CNINFO — Chinese has no kana). A caller-supplied section language
 # takes precedence (see `narratives(::StructuredDocument)`); this is the fallback when none is set.
+# Match EXPLICIT kana/hangul/ideograph codepoint ranges, NOT \p{Hiragana}/\p{Katakana}/\p{Hangul}: PCRE
+# resolves those script classes via Script_Extensions, so the shared CJK punctuation 、。(U+3001/3002, used in
+# Chinese too) counts as Katakana AND Hangul — which would flag every Chinese sentence as Japanese. The kana
+# (U+3041–, U+30A1–) and Hangul-syllable (U+AC00–) blocks sit ABOVE the U+3000–303F punctuation block, so
+# explicit ranges see only real script letters. Order matters: Japanese has kana, Chinese has neither.
 _guess_lang(s::AbstractString) =
-    occursin(r"[\p{Hiragana}\p{Katakana}]", s) ? "ja" :
-    occursin(r"\p{Hangul}", s)                 ? "ko" :
-    occursin(r"\p{Han}", s)                    ? "zh" : "en"
+    occursin(r"[ぁ-ゖァ-ヺー]", s) ? :ja :   # hiragana / katakana letters
+    occursin(r"[가-힣]", s)                    ? :ko :   # hangul syllables
+    occursin(r"[一-鿿㐀-䶿]", s)        ? :zh :   # CJK ideographs
+    :en
 
 # A context's period end + dimensions, from `_xbrl_contexts`' parsed contexts.
 function _narr_ctx(ctxs, ref::AbstractString)
@@ -248,7 +258,8 @@ function narratives(sd::StructuredDocument)
         text = strip(join((b.text for b in blocks), "\n")); isempty(text) && continue
         s = get(secmap, sid, nothing)
         title = (s !== nothing && !isempty(s.title)) ? s.title : (isempty(sid) ? "(untitled)" : sid)
-        lg    = (s !== nothing && !isempty(s.lang))  ? s.lang  : _guess_lang(text)
+        # DocSection lang wins when meaningful; an empty or "und" (undetermined) Docling tag → guess by script.
+        lg    = (s !== nothing && !isempty(s.lang) && s.lang != "und") ? Symbol(s.lang) : _guess_lang(text)
         page  = s !== nothing ? s.page_start : minimum(b.page for b in blocks)
         push!(out, Narrative(; accession = acc, source = :pdf, section_title = title, text = String(text),
                              lang = lg, page = page, block_id = sid))
