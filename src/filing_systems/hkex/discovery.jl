@@ -41,29 +41,47 @@ end
 
 Resolve a five-digit stock `code` (e.g. `"00700"`) or a company name to HKEXnews's `(code, stockId)` pair
 via the portal's live `prefix.do` autocomplete — the identity every `titleSearchServlet.do` query needs (the
-`stockId`, e.g. `7609`, is HKEXnews's internal id). A numeric query is zero-padded to five digits and its
-exact-code match returned; a name returns the first hit (the main equity line, ahead of the `-R` counter and
-structured products). Throws if nothing matches. Keyless.
+`stockId`, e.g. `7609`, is HKEXnews's internal id). Keyless.
+
+`prefix.do` exposes two indexes and NEITHER is complete: `type=A` is the live-issuer index (correct current
+name + id for most codes — Tencent 00700 → 7609) but omits some issuers (Hang Seng Bank 00011 is absent);
+`type=I` covers those (00011 → 18) but carries stale entries for others (00700 → the delisted "Yaohan"). So a
+numeric code is matched by its **exact code** in `type=A` first, then `type=I` — and if neither index carries
+that exact code we THROW, never silently return a different company (returning the first fuzzy hit is what once
+resolved "0011" to the unrelated CFH/China~Fortune 00110). A name query prefers a hit whose name contains it.
 
 ```julia
-hkex_stock("00700")   # -> ("00700", "7609")  (Tencent)
-hkex_stock("tencent") # -> ("00700", "7609")
+hkex_stock("00700")   # -> ("00700", "7609")  (Tencent, via type=A)
+hkex_stock("00011")   # -> ("00011", "18")    (Hang Seng Bank, via type=I fallback)
 ```
 """
 function hkex_stock(query::AbstractString; market::AbstractString = "SEHK")
     q = strip(String(query))
     isempty(q) && throw(ArgumentError("hkex_stock needs a code or name"))
-    occursin(r"^\d{1,5}$", q) && (q = lpad(q, 5, '0'))             # numeric → five-digit code
-    url = string(_HKEX_PREFIX, "?callback=cb&lang=EN&type=A",
-                 "&name=", HTTP.URIs.escapeuri(q), "&market=", market)
-    parsed = JSON3.read(_hkex_unjsonp(_hkex_get(url)))
-    arr = get(parsed, :stockInfo, nothing)
-    (arr === nothing || isempty(arr)) && throw(ArgumentError("no HKEXnews match for $(repr(query))"))
-    if occursin(r"^\d{5}$", q)                                    # exact five-digit code → match it
+    _arr(typ) = (p = JSON3.read(_hkex_unjsonp(_hkex_get(string(_HKEX_PREFIX, "?callback=cb&lang=EN&type=", typ,
+                     "&name=", HTTP.URIs.escapeuri(q), "&market=", market)))); get(p, :stockInfo, nothing))
+    if occursin(r"^\d{1,5}$", q)                                  # numeric → five-digit code, matched EXACTLY
+        q = lpad(q, 5, '0')
+        for typ in ("A", "I")                                     # live-issuer index first, then the fallback index
+            arr = _arr(typ)
+            arr === nothing && continue
+            for e in arr
+                _hkex_str(e, :code) == q && return (q, _hkex_str(e, :stockId))
+            end
+        end
+        throw(ArgumentError("no HKEXnews issuer carries stock code $(repr(q))"))
+    end
+    # name query: try both indexes; prefer a hit whose name contains the query, else the first hit
+    ql = lowercase(q)
+    for typ in ("A", "I")
+        arr = _arr(typ)
+        (arr === nothing || isempty(arr)) && continue
         for e in arr
-            _hkex_str(e, :code) == q && return (q, _hkex_str(e, :stockId))
+            occursin(ql, lowercase(_hkex_str(e, :name))) && return (_hkex_str(e, :code), _hkex_str(e, :stockId))
         end
     end
+    arr = _arr("A")
+    (arr === nothing || isempty(arr)) && throw(ArgumentError("no HKEXnews match for $(repr(query))"))
     e = first(arr)
     return (_hkex_str(e, :code), _hkex_str(e, :stockId))
 end
