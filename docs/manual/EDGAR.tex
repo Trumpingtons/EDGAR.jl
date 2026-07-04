@@ -641,61 +641,12 @@ is what drives the install:
     \texttt{FilingSystem} it largely knows the language already, so setting it is cheap.
 \end{itemize}
 
-\subsection{Measured: Docling versus MinerU on a CAS filing}
-\label{sec:pdf-docai-measured}
+\subsection{Measured: Docling versus MinerU}
 
-The choice between the two engines was settled empirically on a real Chinese filing --- Kweichow~Moutai's
-(600519) FY2023 annual report, the 16-page block of consolidated and parent-company statements --- parsed on
-Apple-silicon CPU/MPS through the Tier-2 venv (Docling~2.107, MinerU~3.4, \texttt{transformers}~5.8.1).
-Table~\ref{tab:pdf-docai-measured} gives time and a quality metric. The quality metric is \textbf{anchor
-recall}: whether five known-correct headline values (operating revenue \texttt{147{,}693{,}604{,}994.14},
-total operating revenue, equity attributable to the parent, total assets, and net operating cash flow) each
-appear, correct to the cent, in the extracted table cells.
-
-\begin{table}[h]
-\centering
-\caption{Docling versus MinerU, measured on Moutai's FY2023 statements (16 pages).}
-\label{tab:pdf-docai-measured}
-\small
-\begin{tabular}{@{}p{0.34\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
-\toprule
- & \textbf{Docling 2.107} & \textbf{MinerU 3.4} \\
-\midrule
-Runs in the shared Tier-2 venv & \textbf{yes} (clean) & \textbf{no} --- both backends fail \\
-Model load (warm, incl.\ first page) & 13.4\,s & --- \\
-Throughput (models loaded) & \(\sim\)3.8\,s/page (16\,pp in 60\,s) & --- \\
-Tables / statement tables & 21 / 18 & --- \\
-Anchor recall (5 headline values) & \textbf{5 / 5} & --- \\
-Language & auto-detected & must be preset (\texttt{-l ch}) \\
-Integrated in \texttt{EDGAR.jl} & yes (\texttt{EDGARDoclingExt}) & no (CLI only) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{Docling} parsed cleanly. It recovered the statements as classified tables (balance sheet, income
-statement, cash flow, changes in equity --- matched by the CJK caption patterns already in the registry,
-\S\ref{sec:pdf-classification}), kept the consolidated and parent-company versions as \emph{separate} tables,
-held the note-reference column apart from the value columns, and carried real period dates in the header
-row. All five anchor values landed to the cent.
-
-\textbf{MinerU could not be run at all} in the same environment --- and this is \emph{structural}, not a
-passing bug. MinerU caps its dependency at \texttt{transformers<5.0.0} (and still does at the latest 3.4.2),
-whereas Docling~2.107 requires \texttt{transformers}~5.8.1; the two cannot co-exist in one venv. Run against
-the newer \texttt{transformers} that Docling installs, MinerU~3.4 duly breaks: the classic \texttt{pipeline}
-backend fails twice --- on the formula model (\texttt{find\_pruneable\_heads\_and\_indices}, removed from
-\texttt{transformers}) and then on the PaddleX layout config
-(\texttt{PPDocLayoutV2Config.reading\_order\_config}) --- and the VLM backend fails, \emph{after} a multi-GB
-model download, on \texttt{Qwen2VLConfig.max\_position\_embeddings}. Upgrading MinerU does not help (3.4.2
-keeps the same \texttt{<5.0.0} cap); running it would need a \emph{separate} virtual environment on the older
-\texttt{transformers} --- two mutually-incompatible Python stacks to maintain and ship.
-
-\paragraph{Selected: Docling; MinerU removed.} Docling is the integrated engine (the
-\texttt{EDGARDoclingExt} package extension), runs clean on CPU, and extracts CAS statements accurately;
-MinerU's heavier, \texttt{transformers}-sensitive stack (PaddlePaddle plus the formula and VLM models) is not
-worth a second, conflicting environment. MinerU has accordingly been \textbf{dropped from the Tier-2 stack} ---
-\texttt{requirements-tier2.txt} now lists only \texttt{docling}, and its \(\sim\)3\,GB of models were removed
-from the environment. It can be revisited if a mutually-compatible \texttt{transformers} pinning appears. The
-rest of this chapter therefore describes the Docling path.
+The engine choice was settled empirically on Moutai's FY2023 statements, and MinerU was dropped for a
+\emph{structural} \texttt{transformers} version conflict. The measured comparison --- and the full Docling
+operational reference (install, OCR, page-scoping, troubleshooting) --- is collected in this chapter's
+appendix, \S\ref{app:docling}. The rest of this chapter describes the Docling path.
 
 \section{The ingestion pipeline}\label{sec:pdf-pipeline}
 
@@ -871,6 +822,130 @@ absent:
 fund statements (BS / IS / EC, and 10 and 50 \texttt{fund\_portfolio} tables respectively) via the
 first-cell mechanism; \textbf{T.~Rowe~Price} is the image-rendered case above. So HTML works the same as
 PDF \emph{where the content is tabular}, minus page/outline provenance.
+
+\begin{subappendices}
+\section{Operating the Docling engine}
+\label{app:docling}
+
+Docling is the load-bearing engine for the \textbf{PDF-native} jurisdictions --- China
+(\texttt{extract\_cas\_pdf}), Hong~Kong (\texttt{extract\_hkfrs\_pdf}) and scanned UK~Companies~House accounts
+(via OCR) --- so this appendix collects the \emph{operational} detail in one place: how to install, run, tune
+and troubleshoot it. The design rationale (main-vs-fallback, why a document-AI engine) is the body of this
+chapter; the method signatures (\texttt{structured\_document}, \texttt{born\_digital}, \ldots) are in
+\S\ref{sec:api-pdf}.
+
+\subsection{Install and launch}
+Docling and its Python stack live in a dedicated \textbf{Tier-2 virtual environment}, kept out of the
+\texttt{EDGAR} package so the core carries no Python dependency (\texttt{requirements-tier2.txt} lists only
+\texttt{docling}). Point PythonCall at that venv and load it alongside \texttt{EDGAR}; the Docling functions
+are a \textbf{weak-dependency package extension} (\texttt{EDGARDoclingExt}) that gains its methods only
+\emph{after} \texttt{using PythonCall} --- so \texttt{using EDGAR} alone never pulls in Python, and calling a
+Docling function without the stack raises a clear message rather than a cryptic error.
+
+\begin{lstlisting}[style=term]
+% export JULIA_CONDAPKG_BACKEND=Null                       # don't let CondaPkg manage Python
+% export JULIA_PYTHONCALL_EXE=~/EDGAR-tools/tier2-venv/bin/python
+% julia --project
+\end{lstlisting}
+\begin{lstlisting}
+julia> using EDGAR, PythonCall   # loads the EDGARDoclingExt package extension
+\end{lstlisting}
+
+\subsection{OCR: text layer, scans and CID fonts}
+Docling reads the \textbf{text layer first} and treats OCR as a plugin, invoked only where the text is missing
+or unusable:
+\begin{itemize}[nosep]
+  \item \texttt{ocr=false} (default) --- born-digital reports; the text layer is authoritative.
+  \item \texttt{ocr=true} --- OCR only the pages Docling judges to lack a usable text layer.
+  \item \texttt{force\_ocr=true} --- OCR \emph{every} page, overriding the heuristic. Required for a
+    \emph{garbled-but-present} text layer (CID fonts, e.g.\ Japanese EDINET, which would otherwise yield
+    mojibake) and for bare scans. The bundled OCR is RapidOCR (PP-OCRv6).
+\end{itemize}
+\texttt{born\_digital(path)} (\S\ref{sec:api-pdf}) is the routing gate: \texttt{true}~$\to$~the text path,
+\texttt{false}~$\to$~force OCR.
+
+\paragraph{Worked example --- a scanned UK filing.} Companies~House is the acid test: electronic accounts
+arrive as iXBRL, so the filings that remain \emph{PDF} are paper/scanned (\texttt{born\_digital} returns
+\texttt{false}). On a real 60-page scan --- \textbf{Vodafone~Limited} (\texttt{01471587}), FY2025 statutory
+accounts --- \texttt{structured\_document(path;\ force\_ocr=true)} OCR'd the whole document in
+\(\sim\)5.7\,min (280 sections, 36 tables, 136 narrative blocks). The \textbf{balance sheet came through
+cleanly}: total assets less current liabilities \(\pounds8{,}600.6\)m, net assets \(\pounds6{,}339.1\)m, share
+premium \(\pounds9{,}227.0\)m, retained earnings \((\pounds2{,}887.9)\)m --- and it \emph{cross-foots} (net
+assets \(=\) total shareholders' funds \(=\) \(\pounds6{,}339.1\)m). Narrative prose OCR'd more noisily than
+the tabular figures. The lesson: Docling+OCR \emph{can} recover statements from a genuine scan; the remaining
+gaps are \emph{extractor}-side, not Docling's --- classifying the table off its section heading (its own
+caption is the date line ``\texttt{AS AT 31 MARCH 2025}''), the UK-GAAP net-assets vocabulary
+(``\texttt{Creditors: amounts falling due\ldots}'', ``\texttt{Total shareholders' funds}'') and
+\(\pounds\)/GBP currency detection.
+
+\subsection{Page-scoping and performance}
+A born-digital report is parsed \textbf{page-scoped}: a fast \texttt{pdf.js} pre-scan reads the outline
+(bookmarks) or scans headings for the consolidated-statements page range, and Docling is handed only those
+\(\sim\)10--15 pages via \texttt{pages=(first,last)} --- not the whole 200--300-page report. Throughput is
+\(\sim\)30\,pages/min born-digital (measured \(\sim\)3.8\,s/page on Moutai's statements); \texttt{force\_ocr}
+is slower (\(\sim\)5.7\,s/page on the Vodafone scan). A scan \emph{cannot} be pre-scoped --- with no text
+layer there is nothing to locate the statements by --- so it is OCR'd whole, which is why the scanned path is
+dominated by OCR cost. Pass \texttt{progress=true} for a page-count forecast and ETA on long runs
+(\texttt{convert()} is otherwise a single silent call).
+
+\subsection{Docling versus MinerU (measured)}
+\label{sec:pdf-docai-measured}
+
+The choice between the two engines was settled empirically on a real Chinese filing --- Kweichow~Moutai's
+(600519) FY2023 annual report, the 16-page block of consolidated and parent-company statements --- parsed on
+Apple-silicon CPU/MPS through the Tier-2 venv (Docling~2.107, MinerU~3.4, \texttt{transformers}~5.8.1).
+Table~\ref{tab:pdf-docai-measured} gives time and a quality metric. The quality metric is \textbf{anchor
+recall}: whether five known-correct headline values (operating revenue \texttt{147{,}693{,}604{,}994.14},
+total operating revenue, equity attributable to the parent, total assets, and net operating cash flow) each
+appear, correct to the cent, in the extracted table cells.
+
+\begin{table}[h]
+\centering
+\caption{Docling versus MinerU, measured on Moutai's FY2023 statements (16 pages).}
+\label{tab:pdf-docai-measured}
+\small
+\begin{tabular}{@{}p{0.34\textwidth}p{0.28\textwidth}p{0.30\textwidth}@{}}
+\toprule
+ & \textbf{Docling 2.107} & \textbf{MinerU 3.4} \\
+\midrule
+Runs in the shared Tier-2 venv & \textbf{yes} (clean) & \textbf{no} --- both backends fail \\
+Model load (warm, incl.\ first page) & 13.4\,s & --- \\
+Throughput (models loaded) & \(\sim\)3.8\,s/page (16\,pp in 60\,s) & --- \\
+Tables / statement tables & 21 / 18 & --- \\
+Anchor recall (5 headline values) & \textbf{5 / 5} & --- \\
+Language & auto-detected & must be preset (\texttt{-l ch}) \\
+Integrated in \texttt{EDGAR.jl} & yes (\texttt{EDGARDoclingExt}) & no (CLI only) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Docling} parsed cleanly --- statements as classified tables (balance sheet, income statement, cash
+flow, changes in equity), consolidated and parent-company versions kept \emph{separate}, the note-reference
+column held apart from the value columns, and real period dates in the header row; all five anchor values
+landed to the cent. \textbf{MinerU could not be run at all} in the same environment, and this is
+\emph{structural}: MinerU caps its dependency at \texttt{transformers<5.0.0} (still true at 3.4.2) whereas
+Docling~2.107 requires \texttt{transformers}~5.8.1 --- the two cannot co-exist in one venv. Run against the
+newer \texttt{transformers}, MinerU's \texttt{pipeline} backend fails on the formula model
+(\texttt{find\_pruneable\_heads\_and\_indices}, removed) and the PaddleX layout config, and its VLM backend
+fails (after a multi-GB download) on \texttt{Qwen2VLConfig.max\_position\_embeddings}. So \textbf{MinerU was
+dropped from the Tier-2 stack} --- \texttt{requirements-tier2.txt} lists only \texttt{docling}, and its
+\(\sim\)3\,GB of models were removed. It can be revisited if a mutually-compatible \texttt{transformers}
+pinning appears.
+
+\subsection{Troubleshooting}
+\begin{itemize}[nosep]
+  \item \textbf{``requires the Docling Tier-2 stack via PythonCall''} --- a Docling function was called without
+    \texttt{using PythonCall}, or PythonCall points at the wrong interpreter. Set \texttt{JULIA\_PYTHONCALL\_EXE}
+    to the Tier-2 venv's \texttt{python} and re-launch.
+  \item \textbf{Mojibake or empty cells from a CJK filing} --- the text layer is CID-garbled; pass
+    \texttt{force\_ocr=true} (auto-on for Japan).
+  \item \textbf{A scan yields no facts} --- confirm with \texttt{born\_digital(path)}; if \texttt{false} it
+    needs \texttt{force\_ocr=true}, and statement location falls back to headings (a scan has no outline).
+  \item \textbf{``Cannot close object, library is destroyed''} --- a harmless PythonCall teardown warning at
+    process exit; ignore it.
+\end{itemize}
+
+\end{subappendices}
 
 % ===========================================================================
 \chapter{Common API}
