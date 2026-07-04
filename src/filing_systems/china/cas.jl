@@ -95,7 +95,11 @@ function _cas_statement_pages(doc; window::Int=22)
     toc === nothing || return toc
     lo = nothing
     for pg in doc.pages                                   # also matches combined "合并及(母)公司资产负债表" (Midea)
-        occursin(r"合并(?:及(?:母)?公司)?资产负债表", _cas_pagetext(pg)) && (lo = Int(pg.page); break)
+        t = _cas_pagetext(pg)
+        # the AUDIT REPORT enumerates every statement on one page ("…合并资产负债表、合并利润表、合并现金流量表…"),
+        # which would anchor `lo` too early; a real balance-sheet page carries the BS heading but NOT a
+        # cash-flow one, so require the BS heading in the ABSENCE of 现金流量表 to skip the audit enumeration.
+        occursin(r"合并(?:及(?:母)?公司)?资产负债表", t) && !occursin("现金流量表", t) && (lo = Int(pg.page); break)
     end
     if lo === nothing
         for pg in doc.pages
@@ -165,12 +169,14 @@ end
 # punctuation — "1", "注释 61", "附注七", "五、(四十一)". A real line-item label always carries content
 # characters beyond these, so anything left after stripping this class marks it as a genuine label.
 _cas_isnoteref(s) = isempty(strip(replace(String(s),
-    r"[注释附一二三四五六七八九十百千零两\d a-zA-Z、，,\.．（）()\s　:：\-]" => "")))
+    r"[注释附一二三四五六七八九十百千零两\d a-zA-Z、，,\.．（）()\s　:：\-'‘’\"−﹣－]" => "")))
 
 # Classify by the row labels when the caption/section title fails (Docling sometimes mis-titles a statement,
 # e.g. the consolidated cash flow captioned with a running header). Scans col-0 labels for anchor terms.
 function _cas_class_by_labels(labels)
-    any(l -> occursin("经营活动产生的现金流量", l), labels) && return "cash_flow"
+    # a long financial-institution cash-flow statement splits across pages → Docling emits a SEPARATE table
+    # per activity section, so accept any of the three (经营/投资/筹资)活动…现金流量 anchors, not just 经营.
+    any(l -> occursin(r"(经营|投资|筹资)活动.{0,4}现金流量", l), labels) && return "cash_flow"
     any(l -> occursin("营业总收入", l) || occursin("营业利润", l) || occursin("营业收入", l), labels) && return "income_statement"
     # balance sheet: the totals OR either asset subtotal — the latter is essential because a multi-page BS
     # can split so a continuation page holds ONLY current assets (…流动资产合计) with the totals on the next
@@ -184,7 +190,9 @@ end
 # (statement, is_instant, is_parent) for a Docling table, or nothing (skip: equity matrix / descriptive).
 function _cas_table_kind(tbl, title::AbstractString)
     t = _cas_norm(title)
-    isparent = occursin("母公司", t) && !occursin("合并", t)      # pure 母公司 = parent (skip); 合并 / 合并及公司 kept
+    # pure 母公司 (corporate parent) or 个别 (a REIT/fund's standalone accounts) = the non-consolidated copy →
+    # skip; 合并 / 合并及公司 kept. A REIT files 合并 AND 个别 statements, the latter being the fund-only view.
+    isparent = (occursin("母公司", t) || occursin("个别", t)) && !occursin("合并", t)
     cls = classify_table_class(title)
     if cls === nothing
         cls = _cas_class_by_labels([_cas_norm(c.text) for c in tbl.cells if c.col == 0])
@@ -298,12 +306,33 @@ function extract_cas_pdf(path::AbstractString; currency::AbstractString = "CNY")
     units = _cas_page_units(sd)                        # per-page 单位 scale (千元/万元/元)
     sectitle = Dict(s.section_id => s.title for s in sd.sections)
 
+    # Parent-company (母公司) statement pages. Docling's per-table caption often drops the 母公司 heading (a
+    # broker's parent statements caption as a bare unit note), so the in-title check in _cas_table_kind misses
+    # them and the parent cash flow would then compete with the consolidated one via `max`. Mark a page parent
+    # when its heading carries a 母公司…表 title without the 合并 counterpart, and skip tables starting there.
+    parent_pages = Set{Int}()
+    for pg in doc.pages
+        t = _cas_pagetext(pg)
+        (occursin(r"(?:母公司|个别)(?:资产负债表|利润表|现金流量表)", t) &&
+         !occursin(r"合并(?:及(?:母)?公司)?(?:资产负债表|利润表|现金流量表)", t)) && push!(parent_pages, Int(pg.page))
+    end
+
     facts = Fact[]
     for tbl in sd.tables
-        title = something(tbl.caption, "")
-        isempty(title) && (title = get(sectitle, something(tbl.section_id, ""), ""))
+        # A table's own caption may be a bare "单位：人民币元"; the 合并/个别 designation then lives only in the
+        # numbered section heading (11.1.2 个别资产负债表), so classify on caption + section title together.
+        cap = something(tbl.caption, "")
+        sectit = get(sectitle, something(tbl.section_id, ""), "")
+        title = strip(string(cap, " ", sectit))
         k = _cas_table_kind(tbl, title)
-        (k === nothing || k[3]) && continue          # skip unrecognised + parent-company statements
+        # page-based parent exclusion is a fallback for tables whose title carries NO 合并/个别/母公司 designation
+        # (CITIC's parent cash flow captions as a bare unit note). When the title DOES say 合并/个别/母公司, trust
+        # it — a REIT interleaves a consolidated statement's tail and its 个别 head on one page, so a page-level
+        # skip would wrongly drop the consolidated rows sharing that page.
+        ct = _cas_norm(title)
+        titled = occursin("合并", ct) || occursin("个别", ct) || occursin("母公司", ct)
+        isparent_page = !titled && (tbl.page_start in parent_pages)
+        (k === nothing || k[3] || isparent_page) && continue   # skip unrecognised + parent-company statements
         scale = _cas_scale_at(units, tbl.page_start)  # each statement uses its OWN page's unit
         append!(facts, _cas_table_facts(tbl, k[1], k[2], fy, scale, currency))
     end
@@ -319,6 +348,22 @@ function extract_cas_pdf(path::AbstractString; currency::AbstractString = "CNY")
         push!(facts, Fact(; concept = "cas:Assets", label = "资产总计", value = src.value, unit = src.unit,
               period_start = nothing, period_end = pe, is_instant = true, statement = "BalanceSheet",
               context_ref = string(pe), unit_ref = src.unit, source_selector = src.source_selector))
+    end
+
+    # Recover a dropped 归属于母公司股东的净利润: in a CAS consolidated income statement it ≡ 净利润 −
+    # 少数股东损益. Docling sometimes wraps the long parent-NI label across two rows (CITIC: "归属于母公司股东
+    # 的净" | "利润" + value), stranding the value on a "利润"-only row that matches no concept. If parent net
+    # income is missing for a period but net profit and minority-interest income are present, fill it in.
+    for pe in unique(f.period_end for f in facts if f.statement == "IncomeStatement" && !f.is_instant)
+        any(f -> f.concept == "cas:ProfitAttributableToParent" && f.period_end == pe, facts) && continue
+        ip = findfirst(f -> f.concept == "cas:ProfitLoss" && f.period_end == pe, facts)
+        im = findfirst(f -> f.concept == "cas:MinorityInterestIncome" && f.period_end == pe, facts)
+        (ip === nothing || im === nothing) && continue
+        p, m = facts[ip], facts[im]
+        push!(facts, Fact(; concept = "cas:ProfitAttributableToParent", label = "归属于母公司股东的净利润",
+              value = p.value - m.value, unit = p.unit, period_start = p.period_start, period_end = pe,
+              is_instant = false, statement = "IncomeStatement", context_ref = string(pe), unit_ref = p.unit,
+              source_selector = p.source_selector))
     end
 
     # Recover a dropped 现金及现金等价物净增加额: it equals 期末余额 − 期初余额 (Docling sometimes drops its
