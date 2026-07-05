@@ -218,6 +218,9 @@ function _pdf_filing_facts(f::Filing; kwargs...)
               "none. Use `extract_pdf(path)` with the downloaded PDF for now."))
     # China filings are CAS PDFs (Chinese labels); Hong Kong and UK Companies House are English PDFs
     # (IFRS / UK-GAAP → ifrs-full via the English label map).
+    # China → CAS (Chinese labels); HK / UK CH / Generic → the shared English-PDF ifrs-full path (the broad
+    # default for an IFRS-family report); anything else → the deterministic Tier-1 geometric extractor.
     return f.system isa China ? extract_cas_pdf(src) :
-           (f.system isa HKEX || f.system isa CompaniesHouse) ? extract_ifrs_pdf(src) : extract_pdf(src)
+           (f.system isa HKEX || f.system isa CompaniesHouse || f.system isa Generic) ? extract_ifrs_pdf(src) :
+           extract_pdf(src)
 end

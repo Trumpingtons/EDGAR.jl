@@ -6479,7 +6479,92 @@ model, and any sanctions/access constraints from outside Russia --- is \textbf{n
 a scaffold to be filled once India is complete and Russia is picked up.
 
 \chapter{Generic Filing}
+\label{ch:generic}
 
+Each chapter before this one adds a \emph{specialised} \texttt{FilingSystem} --- SEC, ESEF, Companies~House,
+EDINET, DART, India, China, Hong~Kong. But the world has far more repositories than \texttt{EDGAR.jl} has
+adapters: an annual report from Australia, Brazil, Canada or Sweden arrives with no system to receive it. Two
+poor options follow --- do not use \texttt{EDGAR.jl} at all, or \emph{force} the document through some existing
+jurisdiction's pipeline, whose discovery, vocabulary and quirk-fixes are tuned (\emph{over}-fitted) to a
+country that is not this one, and quietly mis-handle it. \textbf{Generic Filing} is the third option: a general
+path that, lacking a specialist's advantages, also lacks a specialist's constraints.
+
+\section{Generic is the core with no adapter}
+
+Every specialised \texttt{FilingSystem} in the preceding chapters is really \texttt{Generic} \emph{plus} three
+things:
+\begin{enumerate}[nosep]
+  \item \textbf{Discovery} --- knowing the repository's API, so \texttt{discover} can \emph{find} a filer's
+    filings.
+  \item \textbf{A national vocabulary} --- the country's taxonomy label map (\texttt{vocab\_cas},
+    \texttt{vocab\_indas}, \ldots), so a native-language line maps to a canonical concept.
+  \item \textbf{Quirk handling} --- the overfitted per-jurisdiction fixes (the NSE context-id encoding, Hong
+    Kong's dual-currency columns, US month-day dates).
+\end{enumerate}
+Strip those three away and what remains --- the format-appropriate extractor, the shared taxonomy
+vocabularies, and the \texttt{facts}\,/\,\texttt{narratives}\,/\,\texttt{toc} accessors (all of the Common API,
+Chapter~\ref{sec:api}) --- is \emph{already} jurisdiction-agnostic. \texttt{Generic} adds no pipeline; it
+\textbf{exposes the core directly}. You supply a document you have already obtained from its repository, and
+Generic dispatches on its \emph{format}:
+
+\begin{lstlisting}
+julia> f = fetch_filing(Generic(), "sydney_airport_2024.pdf")   # you found it; Generic just opens it
+julia> facts(f)          # the statements, on ifrs-full / us-gaap concepts
+julia> toc(f)            # the outline
+julia> narratives(f)     # the prose
+\end{lstlisting}
+
+\noindent \texttt{src} is a local path or an \texttt{http(s)} URL; there is no \texttt{discover} step ---
+finding the document in the foreign repository is the part a Generic path cannot do for you, and the part you
+have already done.
+
+\section{Format, not jurisdiction}
+
+Generic sniffs the document's format from its leading bytes and routes to the extractor that format already
+has (Table~\ref{tab:generic-formats}). The pivotal case is tagged \textbf{XBRL}: it is \emph{self-describing}
+--- the filing carries its own presentation linkbase --- so an Australian or Swedish IFRS instance classifies
+its statements with \emph{zero} national knowledge, exactly as a specialised system would. A tagged foreign
+filing is therefore handled about as well by Generic as by a bespoke adapter; the gap is widest for an
+untagged, non-English PDF.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Generic dispatches on format, not jurisdiction; each format's extractor classifies \emph{without} a
+national vocabulary.}
+\label{tab:generic-formats}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.34\textwidth}p{0.39\textwidth}@{}}
+\toprule
+\textbf{Format} & \textbf{Generic extractor} & \textbf{Classified by (no national vocab)} \\
+\midrule
+XBRL / iXBRL & \texttt{extract\_xbrl} (standard-agnostic) & the filing's \textbf{own} presentation linkbase ---
+  self-describing \\
+English PDF & \texttt{extract\_ifrs\_pdf} (Docling) & the \texttt{ifrs-full} English label map --- IFRS-, not
+  country-specific \\
+Other PDF & \texttt{extract\_pdf} (Tier-1) & geometric statement detection \\
+HTML & \texttt{toc} / \texttt{sections} & the heading / \emph{Item} structure \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{A floor, not a ceiling}
+
+What Generic gives up, relative to a specialised path, is exactly the three things above: no \texttt{discover}
+(you bring the document), no standardisation of a national-namespace concept to a canonical one, no
+quirk-fixes, and no external-benchmark ticker mapping. What it gains is \textbf{universal reach} and
+\textbf{robustness}: a pattern-based, IFRS-family extractor is not over-fitted to one country's wording, so it
+often survives variation a narrowly tuned path would trip over. And it \textbf{degrades gracefully} --- where
+the numbers do not classify (a national-GAAP filing in a language the vocabularies do not cover),
+\texttt{toc} still returns the outline, the tables are still parsed, and \texttt{narratives} still returns the
+prose. A German annual report opened as \texttt{Generic}, for instance, yields its full bookmark outline from
+\texttt{toc} even where the German line labels fall outside the \texttt{ifrs-full} English map. You get
+\emph{something}, never nothing, and never a wrong-jurisdiction mangling.
+
+\paragraph{Promotion.} Because a specialised system \emph{is} Generic plus discovery, vocabulary and quirk
+handling, a jurisdiction is ``promoted'' out of Generic incrementally: add a \texttt{discover} for its
+repository, a label map for its taxonomy, and fixes for its quirks --- each independent, each turning a piece
+of the graceful floor into a specialised ceiling. Generic is thus both the fallback for the long tail and the
+\emph{starting point} for the next specialised chapter.
 
 \part{Analysis}
 

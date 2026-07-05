@@ -584,6 +584,38 @@ end
     @test tf[1].anchor == "s1" && tf[1].page == 2
 end
 
+@testset "Generic FilingSystem: sniff any format, extract via the shared core (offline)" begin
+    # Generic is the shared core with NO jurisdiction adapter: you supply a document from any repository, it
+    # sniffs the format, and facts/narratives/toc run through the generic extractors. XBRL is the best case —
+    # self-describing, so a "foreign" tagged filing extracts with zero national vocabulary.
+    d = mktempdir()
+    xbrl = """<?xml version="1.0" encoding="UTF-8"?>
+    <xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+                xmlns:us-gaap="http://fasb.org/us-gaap/2024">
+      <xbrli:context id="I"><xbrli:entity><xbrli:identifier scheme="s">X</xbrli:identifier></xbrli:entity>
+        <xbrli:period><xbrli:instant>2024-12-31</xbrli:instant></xbrli:period></xbrli:context>
+      <xbrli:unit id="U"><xbrli:measure>iso4217:AUD</xbrli:measure></xbrli:unit>
+      <us-gaap:Assets contextRef="I" unitRef="U" decimals="0">1000</us-gaap:Assets></xbrli:xbrl>"""
+    px = joinpath(d, "foreign.xml"); write(px, xbrl)
+    ph = joinpath(d, "report.html"); write(ph, "<!doctype html><html><body><h1>R</h1></body></html>")
+    pi = joinpath(d, "inline.html"); write(pi, "<html xmlns:ix='http://www.xbrl.org/2013/inlineXBRL'><body>x</body></html>")
+    ppdf = joinpath(d, "doc.pdf"); write(ppdf, "%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")     # PDF magic (binary tail)
+    pzip = joinpath(d, "pkg.zip"); write(pzip, "PK\x03\x04rest")
+
+    @test EDGAR._generic_kind(px) == :xbrl
+    @test EDGAR._generic_kind(ph) == :html
+    @test EDGAR._generic_kind(pi) == :ixbrl
+    @test EDGAR._generic_kind(ppdf) == :pdf                      # detected by %PDF bytes, not by decoding as text
+    @test_throws ArgumentError EDGAR._generic_kind(pzip)        # a ZIP report package → point to the specialised system
+
+    f = fetch_filing(Generic(), px)                             # a "foreign" tagged filing — no discovery, no vocab
+    @test f.system isa Generic && f.kind == :xbrl
+    a = only(r for r in facts(f) if r.concept == "us-gaap:Assets")  # self-describing: extracted by the core
+    @test a.value == 1000.0 && a.unit == "AUD" && a.period_end == Date(2024, 12, 31)
+
+    @test_throws ArgumentError fetch_filing(Generic(), joinpath(d, "nope.pdf"))   # missing file
+end
+
 @testset "negated presentation labels flip the sign (offline)" begin
     # A face-statement role may present a concept with a negatedLabel/negatedTerseLabel, so the rendered
     # statement shows the opposite sign of the stored value (general: treasury stock as contra-equity, or
