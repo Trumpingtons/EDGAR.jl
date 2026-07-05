@@ -5804,6 +5804,36 @@ the \emph{same} \texttt{FundPortfolio} type \texttt{extract\_fund\_portfolio} re
 (\S\ref{sec:india-formats}), so funds and REITs share one portfolio API. The \emph{distribution} statement is a
 further REIT-specific extension.
 
+\begin{lstlisting}
+using EDGAR, PythonCall           # PythonCall loads the Docling extension the PDF extractor uses
+
+# fetch the REIT's newest annual report, then read its property-portfolio composition
+hs = discover(HKEXFilings(); code = "00823")   # Link REIT (SEHK: 00823), newest first
+f  = fetch_filing(first(hs))                    # -> a :pdf Filing; f.content is the on-disk path
+pf = extract_reit_portfolio(f.content)          # -> FundPortfolio (the same type funds return)
+
+total = sum(a.amount for a in pf.asset_composition)
+for a in pf.asset_composition                   # asset_composition :: Vector{FundAssetClass}
+    println(rpad(a.item, 18), lpad("HK\$$(round(a.amount/1e9, digits=1))bn", 12),
+            lpad("$(a.pct_total_assets)%", 10))
+end
+println("Total portfolio  HK\$$(round(total/1e9, digits=1))bn")
+\end{lstlisting}
+
+\begin{lstlisting}
+Destination          HK$21.8bn     19.9%
+Community            HK$61.4bn     56.0%
+Neighbourhood        HK$26.3bn     24.1%
+Total portfolio  HK$109.5bn
+\end{lstlisting}
+
+\noindent \texttt{extract\_reit\_portfolio(f.content)} returns a \texttt{FundPortfolio} --- identical to what
+\texttt{extract\_fund\_portfolio} gives for a Chinese or Indian fund --- so \texttt{pf.asset\_composition} is a
+\texttt{Vector\{FundAssetClass\}} with \texttt{item} (the segment), \texttt{amount} (the valuation, in full
+units) and \texttt{pct\_total\_assets} (its share of the portfolio). Swap the code for another REIT
+(Fortune~\texttt{00778}, Sunlight~\texttt{00435}) and the same three lines work; with the PDF already on disk,
+call \texttt{extract\_reit\_portfolio("path/to.pdf")} directly.
+
 \paragraph{Boundary.} The scope is \textbf{listed-issuer annual and interim reports} on HKEXnews (Main Board
 and GEM) --- including REITs and business trusts (\S\ref{sec:hk-reits}) --- with US-primary names better
 reached through the SEC. \textbf{Non-listed} Hong~Kong companies are out of reach: the Companies Registry holds
