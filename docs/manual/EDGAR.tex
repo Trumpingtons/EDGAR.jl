@@ -31,6 +31,9 @@
 \newcommand{\krcjk}[2]{{\cjkKRfont #1}}
 \newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
 \newcommand{\cncjk}[2]{{\cjkCNfont #1}}
+% Cyrillic (Russia) needs no dedicated font: the Latin Modern body font covers Cyrillic natively under
+% XeTeX, so \rus is a single-arg passthrough (swap the body to a Cyrillic-specific face here if ever needed).
+\newcommand{\rus}[1]{#1}
 
 \usepackage[margin=1in]{geometry}
 \usepackage{microtype}
@@ -483,18 +486,24 @@ CSV/DuckDB exports and the validation oracles (\S\ref{sec:validation}) all work 
 The portability picture (\S\ref{sec:two-axes}) has two axes --- a \emph{jurisdiction} axis (fetch and
 identity) and a \emph{taxonomy} axis (the concept vocabulary). Extraction is a \textbf{third,
 orthogonal axis: \emph{format}} --- \emph{how} facts are recovered from the bytes. \texttt{Filing.kind}
-names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}), and \texttt{facts(f)} dispatches on it:
+names it (\texttt{:ixbrl}, \texttt{:xbrl}, \texttt{:pdf}, \texttt{:ras}), and \texttt{facts(f)} dispatches on it:
 
 \begin{itemize}
   \item \texttt{:ixbrl} / \texttt{:xbrl} \(\rightarrow\) the \textbf{XBRL extractor} (reads inline or
     classic XBRL, resolving contexts and units). This is the path every structured filing has used so far.
   \item \texttt{:pdf} \(\rightarrow\) the \textbf{PDF extractor}, described in Chapter~\ref{ch:pdf}
     (\emph{PDF Reports}).
+  \item \texttt{:ras} \(\rightarrow\) the \textbf{RFSD structured-row reader} (Russia route~1,
+    Chapter~\ref{sys:russia}). Here the ``filing'' is \emph{already} a firm-year row of numbered OKUD lines,
+    so extraction is a direct code\(\to\)\texttt{Fact} mapping (values scaled to rubles; balance-sheet lines
+    instant, flow lines duration) --- there is no document to parse. It is the opposite extreme from
+    \texttt{:pdf}: the facts arrive pre-structured rather than buried in prose.
 \end{itemize}
 
-\noindent The key invariant: \textbf{both emit the same \texttt{FactRow}}. So the XBRL parser is
+\noindent The key invariant: \textbf{all emit the same \texttt{FactRow}}. So the XBRL parser is
 \emph{one} extractor on this axis, not the universal core --- a point the Companies House and German
-cases force, where a large share of filings are PDF, not XBRL. (The PDF extractor itself --- the main
+cases force, where a large share of filings are PDF, not XBRL, and the Russian \texttt{:ras} case pushes
+the other way (a whole national universe arrives as structured rows, no parsing at all). (The PDF extractor itself --- the main
 document-AI approach and its deterministic fallback --- has its own chapter, \emph{PDF Reports},
 Chapter~\ref{ch:pdf}.)
 
@@ -545,10 +554,96 @@ else                                                      # f.kind == :pdf
 end
 \end{lstlisting}
 
+\paragraph{Russia (RFSD structured row --- \texttt{:ras}).}
+\begin{lstlisting}
+# Route 1: a Russian "filing" is one (inn, year) RFSD row (kind :ras). The facts(f) step below is
+# implemented (R1); the discovery/fetch seam (name/ticker -> INN via MOEX, then a DuckDB partition
+# query) is planned (R2), so today the :ras Filing is built from a fetched RFSD row.
+f    = fetch_filing(Russia(); inn = "7736050003", year = 2023)   # Gazprom parent (discovery/fetch: R2)
+rows = facts(f)                                                  # one Fact per OKUD line, in rubles
+# ras:line_1600 (total assets) == ras:line_1700 (total equity + liabilities) -- the RAS cross-foot
+select_statement(rows, "BalanceSheet")                          # after vocab_ras classification (R3)
+\end{lstlisting}
+
 \noindent (For a born-digital PDF, the extractor call is \texttt{extract\_pdf(path)} --- see
 Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row table, so the downstream
 (classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
 of which extractor produced it.
+
+
+\section{Related Work and Comparison}
+\label{sec:related-work}
+
+EDGAR.jl enters a mature ecosystem of EDGAR/XBRL tooling, mostly in Python and R. It is
+worth being explicit about where it follows the field, where it differs, and what it does
+not (yet) do.
+
+\paragraph{The landscape.} In Python, \href{https://github.com/dgunning/edgartools}{\texttt{edgartools}}
+is the modern leader --- it turns filings into typed objects and is especially strong on XBRL
+statements, with two ideas we admire: \emph{concept standardization} (mapping each issuer's tag
+to a common concept for cross-company comparison) and \emph{statement stitching} (assembling a
+multi-period statement across filings). It is, however, in-memory --- it exports to
+\texttt{DataFrame}s rather than persisting a warehouse. \href{https://arelle.org/}{Arelle} is the
+reference open-source XBRL engine --- the SEC's own EDGAR Renderer is built on it --- and its
+\texttt{xbrlDB} plug-in persists facts using the canonical \emph{XBRL-US Public Database} schema.
+Tools such as \texttt{sec-edgar-downloader} and \texttt{sec-downloader} fetch raw filings and
+leave parsing to you. In R, \texttt{finstr} (on top of the \texttt{XBRL} package) organises
+instances into income statements, balance sheets and cash-flow statements. Julia, by contrast,
+has had no established EDGAR/XBRL library.
+
+\begin{table}[h]
+\centering
+\caption{EDGAR.jl among representative EDGAR/XBRL tools.}
+\label{tab:related-work}
+\small
+\begin{tabular}{@{}p{0.16\textwidth}p{0.06\textwidth}p{0.27\textwidth}p{0.15\textwidth}p{0.10\textwidth}p{0.09\textwidth}@{}}
+\toprule
+\textbf{Tool} & \textbf{Lang} & \textbf{Focus} & \textbf{Persistent warehouse} & \textbf{Concept std.} & \textbf{Picker / prov.} \\
+\midrule
+\textbf{EDGAR.jl} & Julia & Pick a region $\to$ four-layer export + fact warehouse & DuckDB (embedded) & yes (opt-in) & \textbf{yes} \\
+edgartools & Python & Typed filings; XBRL statements & in-memory & yes & no \\
+Arelle & Python & Reference XBRL engine / renderer & Postgres, RDF, \ldots & --- & no \\
+sec-downloader & Python & Download raw filings & no & no & no \\
+finstr + XBRL & R & XBRL $\to$ IS / BS / CF & no & partial & no \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{What EDGAR.jl does differently.} Three things set it apart. \emph{(1)~An interactive
+picker with provenance:} you select a region in the rendered filing, and every extracted fact
+carries a \texttt{source\_selector} back to the exact DOM node --- a bridge between document
+review, iXBRL semantics and relational analytics that the other tools, which extract purely
+programmatically, do not offer. \emph{(2)~An embedded DuckDB warehouse:} zero-server and
+single-file, where Arelle persists only to heavy databases and edgartools does not persist at
+all --- and facts from any source share one table under a semantic key
+(\S\ref{sec:export-layers}). \emph{(3)~A four-layer export} from a single selection --- lossless
+iXBRL, Markdown, Facts JSON and DuckDB --- with provenance threaded throughout. And it is
+Julia/Tables.jl-native, filling a gap in that ecosystem.
+
+\paragraph{Authoritative enrichment.} A second distinction is \emph{where} EDGAR.jl's enrichment
+comes from: a fact's statement is read from the filing's own presentation linkbase
+(\texttt{statement\_map}, \S\ref{sec:export-layers}) and its roll-up arithmetic from the
+calculation linkbase (\texttt{calculations}), rather than inferred --- and concept standardization
+is pluggable (\texttt{set\_standardizer}), defaulting to \emph{none} and offering the bundled,
+attributed edgartools mapping opt-in, instead of baking one opinionated mapping in.
+
+\paragraph{What it does not (yet) do.} In fairness, the established tools still lead in breadth.
+edgartools covers many more form types (Form 3/4/5, 13F, ADV, \dots) and now ships IFRS mappings,
+while Arelle implements the full XBRL specification --- formula, dimensional validation, table
+linkbases --- that EDGAR.jl does not. EDGAR.jl focuses on us-gaap financial-statement facts, and
+its standardization is the bundled edgartools concept mapping rather than that project's newer,
+data-driven one. The gaps an earlier draft named --- concept standardization, statement
+classification, and the calculation linkbase --- are now closed
+(\texttt{set\_standardizer(:edgartools)}, \texttt{statement\_map}, \texttt{calculations}).
+
+\paragraph{Validation from the reference schema.} Reassuringly, the design we arrived at matches
+the XBRL-US reference: it hashes each fact by its context so identical contexts collapse (our
+semantic \texttt{fact\_key}), and assigns a fiscal year and period to every fact (our
+\texttt{fy}/\texttt{fp}/\texttt{frame}). Where we diverge is deliberate --- the reference
+normalises context, unit and dimension into separate tables for transactional Postgres, whereas
+EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytical, columnar
+store like DuckDB prefers.
+
 
 % ===========================================================================
 \chapter{PDF and HTML Reports}
@@ -948,6 +1043,9 @@ pinning appears.
 \end{subappendices}
 
 % ===========================================================================
+
+\chapter{Announcements, News and Alerts}
+
 \chapter{Common API}
 \label{sec:api}
 
@@ -3313,7 +3411,7 @@ the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
 self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while the data sources
 (\S\ref{sec:validation-sources}) catch a value that is internally consistent but wrong against the world.
 
-\part{Filing Systems}
+\part{Jurisdictions and Filing Systems}
 
 \chapter{United States: SEC EDGAR}
 \label{sys:edgar}
@@ -3787,73 +3885,6 @@ UKSEF), and per-country Officially Appointed Mechanisms (OAMs) can be added late
     Companies House requires --- is planned.
 \end{itemize}
 
-\section{Workflow Use Case Examples}
-\label{sec:esef-example}
-
-This section collects practical ESEF workflows --- a few lines each --- spanning discovery, extraction,
-prose search and validation. The worked example below runs end-to-end on a real filer; more will follow.
-
-\noindent The ESEF pieces compose into a full workflow --- the analogue of the SEC filings life-cycle
-(\S\ref{sec:lifecycle-example}), but spanning discovery, extraction, \emph{prose search}, and
-\emph{validation}. The script below runs end-to-end on a real filer --- Signify N.V.\ (Dutch, IFRS) ---
-using only the public API, then (a) searches the report's text and (b) cross-checks the extracted
-numbers against two independent references --- a parser oracle and an external benchmark
-(\S\ref{sec:validation}).
-
-\begin{lstlisting}
-julia> using EDGAR
-julia> set_user_agent("Your Name you@example.com")
-
-# 1. Discover the issuer's ESEF report packages by LEI (via filings.xbrl.org).
-julia> hs = discover(FilingsXBRLOrg(); lei = "549300072P3J1X8NZO35")  # Signify N.V.
-julia> h  = first(filter(x -> endswith(x.url, "-en.zip"), hs))         # the English package
-
-# 2. Fetch the report package (downloads + reads the ZIP into a Filing).
-julia> f = fetch_filing(h)              # Filing(:ixbrl, ...); f.entity == EntityId(:lei, ...)
-
-# 3. Extract and classify the IFRS facts; pull a face statement.
-julia> rows = facts(f; classify = true, labels = true)
-julia> select_statement(rows, "BalanceSheet")     # ifrs-full:Assets, Liabilities, Equity, ...
-
-# 4. (a) Search the prose: locate paragraphs by phrase, then jump back via the index.
-julia> hits = find_paragraphs(f, "sustainability")
-julia> EDGAR._paragraphs(f.content)[hits[1].index]    # the located paragraph
-
-# 5. (b) Validate the numbers against independent references (see "Validating the Extraction").
-#     Parser oracle -- Arelle xBRL-JSON, per statement:
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
-julia> using .ArelleEsefOracle
-julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
-
-#     External benchmark -- Yahoo Finance totals (needs YFinance in the environment):
-julia> using YFinance
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-julia> using .YahooOracle
-julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
-\end{lstlisting}
-
-\noindent Every step succeeds against the live filing; Table~\ref{tab:esef-lifecycle} records what each
-produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and step 5 is the
-``trust-but-verify'' cross-check --- both references agree with the extraction across all three statements.
-
-\begin{table}[h]
-\centering
-\caption{The ESEF workflow, step by step (Signify N.V.).}
-\label{tab:esef-lifecycle}
-\begin{tabular}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.30\textwidth}@{}}
-\toprule
-\textbf{Step} & \textbf{Call} & \textbf{Result} \\
-\midrule
-1. Discover by LEI         & \texttt{discover(FilingsXBRLOrg(); lei)}        & report-package handles (per year / language) \\
-2. Fetch package           & \texttt{fetch\_filing(h)}                       & \texttt{Filing(:ixbrl)}, LEI identity \\
-3. Facts + classify        & \texttt{facts(f; classify=true)} $\to$ \texttt{select\_statement} & IFRS facts across BS / IS / CF \\
-4. Search prose            & \texttt{find\_paragraphs(f, "sustainability")} & matching paragraphs, each with its \texttt{index} \\
-5a. Validate (Arelle)      & \texttt{ArelleEsefOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
-5b. Validate (Yahoo)       & \texttt{YahooOracle.validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 \section{Germany}
 \label{sec:esef-germany}
 
@@ -4073,7 +4104,7 @@ verified against real filings during testing --- and Italy brought two genuine s
 \end{tabular}
 \end{table}
 
-\subsection{Format particularities (for extraction)}
+\subsection{Format Particularities (for extraction)}
 
 \begin{itemize}
   \item \textbf{Comprehensive income is not a ``conto economico'' variant.} Italian filers title the OCI
@@ -4191,7 +4222,7 @@ reports):
     cleanly.
 \end{itemize}
 
-\subsection{Format particularities (for extraction)}
+\subsection{Format Particularities (for extraction)}
 
 \begin{itemize}
   \item \textbf{Issuer extensions are a large, locally-named share.} Roughly a quarter to a third of tagged
@@ -4304,7 +4335,7 @@ reports):
     financial-institution vocabulary, not a Dutch specificity, but the trio shows it cleanly.
 \end{itemize}
 
-\subsection{Format particularities (for extraction)}
+\subsection{Format Particularities (for extraction)}
 
 \begin{itemize}
   \item \textbf{The extension prefix is the issuer's ticker/short-code.} Each filer's extension namespace is
@@ -4340,6 +4371,77 @@ the status of law and applies to \emph{N.V.}\ and \emph{B.V.}\ entities (partial
 So the account-form ``\emph{T}'' is \emph{permitted} in the Netherlands but not compelled --- in practice large
 listed groups present the vertical Model~A, and the ESEF/IFRS consolidated statements the three examples file
 are the IAS~1 vertical layout throughout.
+
+\section{Sweden}
+
+
+\section{Workflow Use Case Examples}
+\label{sec:esef-example}
+
+This section collects practical ESEF workflows --- a few lines each --- spanning discovery, extraction,
+prose search and validation. The worked example below runs end-to-end on a real filer; more will follow.
+
+\noindent The ESEF pieces compose into a full workflow --- the analogue of the SEC filings life-cycle
+(\S\ref{sec:lifecycle-example}), but spanning discovery, extraction, \emph{prose search}, and
+\emph{validation}. The script below runs end-to-end on a real filer --- Signify N.V.\ (Dutch, IFRS) ---
+using only the public API, then (a) searches the report's text and (b) cross-checks the extracted
+numbers against two independent references --- a parser oracle and an external benchmark
+(\S\ref{sec:validation}).
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> set_user_agent("Your Name you@example.com")
+
+# 1. Discover the issuer's ESEF report packages by LEI (via filings.xbrl.org).
+julia> hs = discover(FilingsXBRLOrg(); lei = "549300072P3J1X8NZO35")  # Signify N.V.
+julia> h  = first(filter(x -> endswith(x.url, "-en.zip"), hs))         # the English package
+
+# 2. Fetch the report package (downloads + reads the ZIP into a Filing).
+julia> f = fetch_filing(h)              # Filing(:ixbrl, ...); f.entity == EntityId(:lei, ...)
+
+# 3. Extract and classify the IFRS facts; pull a face statement.
+julia> rows = facts(f; classify = true, labels = true)
+julia> select_statement(rows, "BalanceSheet")     # ifrs-full:Assets, Liabilities, Equity, ...
+
+# 4. (a) Search the prose: locate paragraphs by phrase, then jump back via the index.
+julia> hits = find_paragraphs(f, "sustainability")
+julia> EDGAR._paragraphs(f.content)[hits[1].index]    # the located paragraph
+
+# 5. (b) Validate the numbers against independent references (see "Validating the Extraction").
+#     Parser oracle -- Arelle xBRL-JSON, per statement:
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"))
+julia> using .ArelleEsefOracle
+julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
+
+#     External benchmark -- Yahoo Finance totals (needs YFinance in the environment):
+julia> using YFinance
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+julia> using .YahooOracle
+julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
+\end{lstlisting}
+
+\noindent Every step succeeds against the live filing; Table~\ref{tab:esef-lifecycle} records what each
+produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and step 5 is the
+``trust-but-verify'' cross-check --- both references agree with the extraction across all three statements.
+
+\begin{table}[h]
+\centering
+\caption{The ESEF workflow, step by step (Signify N.V.).}
+\label{tab:esef-lifecycle}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.34\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Call} & \textbf{Result} \\
+\midrule
+1. Discover by LEI         & \texttt{discover(FilingsXBRLOrg(); lei)}        & report-package handles (per year / language) \\
+2. Fetch package           & \texttt{fetch\_filing(h)}                       & \texttt{Filing(:ixbrl)}, LEI identity \\
+3. Facts + classify        & \texttt{facts(f; classify=true)} $\to$ \texttt{select\_statement} & IFRS facts across BS / IS / CF \\
+4. Search prose            & \texttt{find\_paragraphs(f, "sustainability")} & matching paragraphs, each with its \texttt{index} \\
+5a. Validate (Arelle)      & \texttt{ArelleEsefOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
+5b. Validate (Yahoo)       & \texttt{YahooOracle.validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 
 \chapter{United Kingdom Filing Systems}
 \label{sys:uk}
@@ -6488,7 +6590,7 @@ that carry Indian-GAAP-specific gross-ups --- \textbf{revenue} (excise duty) and
 (lease interest, unwinding of discount) --- are where the two sources legitimately diverge. Anchor a
 validation on the profit lines; treat revenue and finance-costs as \emph{definitional-difference} lines.
 
-\subsection{The concept map}
+\subsection{The Concept Map}
 Each income-statement line, as \texttt{in-bse-fin:} concept $\leftrightarrow$ Yahoo field (prefixes dropped):
 
 \begin{itemize}
@@ -6514,7 +6616,7 @@ Each income-statement line, as \texttt{in-bse-fin:} concept $\leftrightarrow$ Ya
     \texttt{102.90} $\to$ Yahoo \texttt{51.45} after the 1:1 bonus).
 \end{itemize}
 
-\subsection{Revenue --- Excise Duty (\texttt{RevenueFromOperations} $-$ excise $=$ \texttt{TotalRevenue})}
+\subsection{Revenue --- Excise Duty}
 Ind-AS reports \texttt{RevenueFromOperations} \textbf{gross of excise duty}, with the excise shown as a
 separate expense line --- tagged \texttt{in-bse-fin:OtherExpenses} in the operating-expense breakdown member
 whose \texttt{DescriptionOfOtherExpenses} is \texttt{"Excise Duty"}. Yahoo (like most data vendors) presents
@@ -6579,17 +6681,270 @@ Reliance and Indian~Oil are reported in INR. \textbf{Per-share restatement.} Yah
 \texttt{BasicEPS} across a corporate action (Reliance's filed \texttt{102.90} vs Yahoo's \texttt{51.45}
 after the 2024 1:1 bonus).
 
-\chapter{Russia: CBR and e-Disclosure}
+\chapter{Russia: MOEX, CBR and e-Disclosure}
 \label{sys:russia}
 
-\emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
+Russia is being added as the \textbf{ninth} \texttt{FilingSystem}, and it breaks a pattern every prior
+jurisdiction shared: there is \emph{no single door}. SEC, ESEF, CNINFO, HKEXnews, NSE --- each earlier system
+had one keyless portal spanning its whole reachable universe. Russia instead spreads corporate disclosure
+across \emph{four} unrelated channels --- five authorised e-disclosure agencies (which mirror the same
+issuer filings), the \textbf{Moscow Exchange} (MOEX, for listing and the securities master), the \textbf{Bank
+of Russia} (CBR, the financial-sector regulator), and the tax-service corporate-registry channel behind the
+\textbf{FNS} --- and the distinguishing problem is not \emph{which} door but \emph{access}: the canonical
+primary agency is anti-bot-gated, so identity and facts must be assembled from the doors that are open.
 
-Russian corporate disclosure centres on the \textbf{Bank of Russia} (CBR) as securities-market regulator and
-the authorised \textbf{information-disclosure agencies} (the e-disclosure centres, e.g.\ Interfax's system),
-with issuers reporting under \textbf{RAS} (Russian Accounting Standards) and, for consolidated accounts,
-IFRS. The repository survey --- which venues expose machine-readable (XBRL) filings versus PDF, the access
-model, and any sanctions/access constraints from outside Russia --- is \textbf{not yet done}; this chapter is
-a scaffold to be filled once India is complete and Russia is picked up.
+Issuers report under \textbf{\rus{РСБУ}} (RAS, Russian Accounting Standards --- statutory, unconsolidated)
+and, for large groups, \textbf{\rus{МСФО}} (IFRS, consolidated). The recon outcome, developed across the
+three sections below, is that two open channels carry the facts: an open, permissively-licensed derived
+dataset of the \emph{entire non-financial universe's} RAS statements (the \textbf{RFSD},
+\S\ref{sec:russia-forms}) is the \textbf{first route}, and the CBR's public \emph{bank} reporting is the
+\textbf{second}; MOEX supplies identity for both. The gated primary agency and the financial-sector XBRL are
+documented but deferred.
+
+\emph{Status:} \textbf{recon complete}; implementation pending. Route~1 (RFSD $\to$ RAS facts, keyed by INN)
+is chosen for the MVP because it is the fastest path to validated, cross-footed facts with the most reuse of
+the existing structured-fact model; route~2 (CBR bank forms) adds the financial sector afterwards.
+
+\section{Repositories}\label{sec:russia-repos}
+
+Russia has no ``Russian EDGAR''. The legally-designated disclosure venues are \textbf{five authorised
+information-disclosure agencies} (\rus{уполномоченные агентства}) that each republish the \emph{same}
+mandated issuer filings --- the \rus{годовой отчёт} (annual report), accounting statements, consolidated
+IFRS, and material-fact notices. Because they mirror one another, the agency that matters is simply
+\emph{whichever one is reachable}: the canonical primary, Interfax's \texttt{e-disclosure.ru}, sits behind a
+ServicePipe JavaScript challenge (a Russian anti-DDoS gate whose cookie must be computed by executing
+obfuscated JS --- not solvable by a plain HTTP client), whereas two of the mirrors (\textbf{AK\&M} and
+\textbf{PRIME}) are ungated. Alongside the agencies, \textbf{MOEX} runs an open securities-master API,
+\textbf{CBR} publishes the financial sector's reporting, and the \textbf{FNS} corporate-registry channel ---
+surfaced most usefully through the derived \textbf{RFSD} dataset --- carries the RAS statements of the whole
+non-financial economy (Table~\ref{tab:russia-repos}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Russian disclosure channels and their access model (probed from the dev environment). \texttt{EDGAR.jl}
+assembles identity from MOEX and facts from RFSD (route~1) and CBR bank forms (route~2).}
+\label{tab:russia-repos}
+\begin{tabular}{@{}p{0.20\textwidth}p{0.32\textwidth}p{0.20\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{Channel} & \textbf{What it holds} & \textbf{Access} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{e-disclosure.ru} (Interfax) & \emph{Primary} agency: every issuer's annual report, RAS \& IFRS
+  statements, material facts --- as Cyrillic PDF & \textbf{Gated} --- ServicePipe JS-challenge (no plain-HTTP
+  access) & not targeted (use a mirror) \\
+\textbf{Mirror agencies} --- AK\&M (\texttt{disclosure.ru}), PRIME, SKRIN, AZIPI & The \emph{same} mandated
+  filings, republished (legal mirrors) & AK\&M / PRIME \textbf{ungated}; SKRIN / AZIPI down at probe time &
+  document fallback (deferred) \\
+\textbf{MOEX ISS} (\texttt{iss.moex.com}) & Listing + securities master: \texttt{secid}, ISIN,
+  \texttt{emitent\_id} and \textbf{INN} (the universal join key) & \textbf{Open}, keyless JSON &
+  \textbf{identity resolver} \\
+\textbf{CBR} (\texttt{cbr.ru}) & Financial-sector regulator: bank Forms 0409101/102 (public, per-\texttt{regnum});
+  NFO XBRL taxonomy (public) & ddos-guard cookie (replayable); NFO \emph{instances} not public &
+  \textbf{route~2} (banks) \\
+\textbf{RFSD} (\texttt{irlspbru/RFSD}) & Derived firm-level dataset --- the \emph{non-financial universe's}
+  RAS statements, 2011--2024, keyed by INN & \textbf{Open}, CC-BY-4.0, Parquet on HuggingFace &
+  \textbf{route~1} (primary facts) \\
+\textbf{FNS GIR BO} (\texttt{bo.nalog.ru}) & The authoritative per-firm RAS source \emph{behind} RFSD (XML per
+  firm) & Fee-based API & upstream of RFSD --- not targeted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The e-disclosure agencies --- one filing, five mirrors, one gate.} Russian securities law routes
+issuer disclosure through five accredited agencies, each of which must republish the filings sent to it; the
+sets are legally identical, so any \emph{one} reachable agency is a complete document source. The canonical
+primary is Interfax's \texttt{e-disclosure.ru} --- the closest analogue to HKEXnews or EDGAR --- but it is
+fronted by \textbf{ServicePipe}, a Russian anti-DDoS layer that returns a JavaScript challenge (\texttt{spsn}
+/ \texttt{spid} cookies computed by an obfuscated script) rather than the page; a plain HTTP client is turned
+away. Two of the mirrors are not gated: \textbf{AK\&M} (\texttt{disclosure.ru}, plain Apache/PHP) and
+\textbf{PRIME} (\texttt{disclosure.1prime.ru}, ASP.NET), while \textbf{SKRIN} and \textbf{AZIPI} were
+unreachable (503 / empty) at probe time. So the primary-source document path exists but is a fallback: it is
+not needed for route~1, whose facts come structured from RFSD.
+
+\paragraph{MOEX --- the open identity resolver.} The Moscow Exchange's Informational \& Statistical Server
+(\texttt{iss.moex.com}) is fully \textbf{open and keyless}: \texttt{/iss/securities.json?q=Sberbank} returns
+a clean record with \texttt{secid} (\texttt{SBER}), ISIN, \texttt{emitent\_id}, and --- decisively ---
+\texttt{emitent\_inn}, the taxpayer number that is Russia's universal join key. MOEX plays the role NSE played
+for India: it does not hold the accounts, but it turns a name or ticker into the INN that keys every other
+channel (RFSD rows, CBR bank cards). This is the identity layer for both routes.
+
+\paragraph{CBR --- the financial sector, and a taxonomy without public instances.} The Bank of Russia
+(\texttt{cbr.ru}, behind the lighter \texttt{ddos-guard}, whose cookie is set inline and replayable) is the
+\emph{only} door to financial-sector accounts, which the FNS/RFSD channel excludes by law. Its public
+disclosure splits awkwardly: \textbf{banks} publish per-institution reporting (Forms 0409101/102),
+addressable by registration number, but under the \emph{pre-XBRL} form regime; \textbf{non-credit financial
+organisations} (insurers, pension funds, brokers) are the actual XBRL filers, but their filed \emph{instances}
+are supervisory --- only the \textbf{taxonomy} is published openly (versioned ZIPs). The consequence, detailed
+in \S\ref{sec:russia-entities}, is that CBR's public XBRL and CBR's public per-entity data do not overlap; the
+buildable path is the bank forms (route~2).
+
+\paragraph{FNS GIR BO and Rosstat --- the source behind RFSD.} Every Russian firm files its statutory RAS
+accounts to the Federal Tax Service; these become public through the GIR BO resource (\texttt{bo.nalog.ru},
+per-firm XML via a fee-based API) and, historically, Rosstat's open annual CSV dumps (2012--2018). Rather than
+integrate that fee-gated API directly, \texttt{EDGAR.jl} consumes the \textbf{RFSD} --- an academic
+re-packaging of exactly this channel into clean, partitioned Parquet (\S\ref{sec:russia-forms}) --- as route~1.
+
+\section{Entities Covered}\label{sec:russia-entities}
+
+Unlike Hong~Kong or China --- essentially one listed universe reached through one portal --- Russia's
+reachable universe is \textbf{segmented by repository}, and the segments barely overlap
+(Table~\ref{tab:russia-entities}). The largest is the \emph{non-financial economy}: every firm that files
+statutory RAS accounts to the FNS, of order \textbf{2.25~million} firms per year, reached in bulk through
+RFSD. A far smaller \emph{listed} slice (MOEX equities and bonds) is where market context and IFRS
+consolidation live, and is reached for \emph{identity} through MOEX. The \emph{financial sector} --- banks and
+non-credit financial organisations --- is carved out of the RAS universe entirely and reachable only through
+CBR, and only in part.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Russia's reachable universe, segmented by repository (counts order-of-magnitude). The segments are
+largely disjoint --- financials are excluded from the RAS/RFSD universe by law.}
+\label{tab:russia-entities}
+\begin{tabular}{@{}p{0.22\textwidth}p{0.30\textwidth}p{0.16\textwidth}p{0.18\textwidth}@{}}
+\toprule
+\textbf{Segment} & \textbf{Inclusion criterion} & \textbf{Universe (order of mag.)} & \textbf{In
+\texttt{EDGAR.jl}} \\
+\midrule
+\textbf{Non-financial firms} & Every firm filing statutory RAS accounts to the FNS (incl.\ state-owned
+  \emph{commercial} firms) & $\sim$2.25M / year & \textbf{route~1} via RFSD \\
+\textbf{MOEX-listed issuers} & Companies with listed shares or bonds & $\sim$200 share issuers, hundreds more
+  bond issuers & \textbf{identity} via MOEX; facts via RFSD (non-fin.) \\
+\textbf{Credit institutions} (banks) & Licensed by the CBR & $\sim$320 (declining) & \textbf{route~2} via CBR
+  Forms 101/102 \\
+\textbf{Non-credit financial orgs} (insurers, NPFs, brokers) & CBR-regulated XBRL filers & insurers
+  $\sim$130, NPFs $\sim$40, plus brokers/MFOs & deferred (instances not public) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{By standard: RAS unconsolidated vs IFRS consolidated}
+A Russian issuer typically files \emph{two} distinct sets of accounts. The \textbf{\rus{РСБУ}} (RAS) statements
+are \emph{statutory} and \emph{unconsolidated} --- the legal-entity accounts every firm must file to the FNS,
+on a fixed national form (\S\ref{sec:russia-forms}); this is what RFSD collects. The \textbf{\rus{МСФО}} (IFRS)
+statements are \emph{consolidated} and filed only by large groups (listed issuers, and any group above the
+statutory thresholds), disclosed as PDF through the e-disclosure agencies, sometimes bilingually with an
+English column. The two differ materially --- a holding company's unconsolidated RAS parent looks nothing like
+its consolidated IFRS group --- so route~1 (RFSD/RAS) delivers the \emph{legal-entity} view, and the
+consolidated IFRS view is a later, agency-sourced PDF extension for the listed subset.
+
+\subsection{The financial-sector gap}
+The single most important coverage fact is a \emph{carve-out}: firms ``ineligible to submit financial
+statements to the Rosstat / Federal Tax Service by law --- financial, religious, or state organisations'' are
+absent from the RAS/FNS channel, and therefore from RFSD. Banks and insurers instead report to the CBR. But
+CBR's public data is itself split (\S\ref{sec:russia-repos}): banks are public but pre-XBRL (Forms 101/102),
+while the true XBRL filers' instances are not published. So the financial sector is reachable only through the
+bank-forms route, and only for credit institutions --- the cleanest reason to sequence RFSD first and CBR
+second.
+
+\subsection{Identity: the INN key}
+Every segment is keyed by the \textbf{INN} (\rus{ИНН}, the taxpayer identification number). MOEX ISS exposes it
+(\texttt{emitent\_inn}) for any listed name; RFSD is keyed by it; CBR bank cards resolve from it via the
+registration number. A single resolver --- name or ticker $\to$ INN through MOEX --- therefore threads all the
+open channels, exactly as the five-digit stock code did for Hong~Kong and the NSE symbol did for India.
+
+\subsection{Query axes --- RFSD is a population, not a document}\label{sec:russia-axes}
+Because RFSD is a firm-level \emph{panel} --- of order \textbf{56.6M firm-year observations} across
+2011--2024, one row per \texttt{(inn, year)} --- it is queryable on far more than firm identity. Every prior
+\texttt{FilingSystem} is a \emph{document-fetch} system: it reaches a \emph{named entity} and nothing else.
+RFSD supports that \textbf{point query} (one INN $\to$ that firm's firm-year rows, the \texttt{FilingSystem}
+fetch path) \emph{and} a \textbf{population query} --- a cohort selected by industry, region, legal form,
+ownership or age, crossed with the year partition. The selectable axes are the dataset's own \emph{dimension}
+columns (Table~\ref{tab:russia-axes}); the 187 \texttt{line\_XXXX} columns are the \emph{measures} read off
+whichever population the axes define.
+
+\begin{table}[h]
+\centering
+\small
+\caption{RFSD query axes (the dimension columns); the \texttt{line\_XXXX} columns are the measures. A
+\emph{point} query fixes \texttt{inn}; a \emph{population} query fixes one or more of the rest, crossed with
+\texttt{year}. All but firm/period are Russian \textbf{OK-classifiers} --- national code systems --- so a
+sector or ownership query is a code match, not free text.}
+\label{tab:russia-axes}
+\begin{tabular}{@{}p{0.17\textwidth}p{0.31\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Axis} & \textbf{RFSD column(s)} & \textbf{Selects} \\
+\midrule
+\textbf{Firm} (point) & \texttt{inn} (primary), \texttt{ogrn}, \texttt{okpo} & one firm's firm-year rows ---
+  the fetch path; INN preferred (the FNS / MOEX key) \\
+\textbf{Period} & \texttt{year} (partition), \texttt{creation\_date}, \texttt{dissolution\_date},
+  \texttt{age} & reporting year; firm-age cohorts and lifecycle \\
+\textbf{Industry} & \texttt{okved}, \texttt{okved\_section} & firms in an economic-activity class (OKVED,
+  NACE~Rev.2-compatible); \texttt{\_section} = coarse grouping \\
+\textbf{Legal form} & \texttt{okopf} & organizational-legal form (LLC / JSC / PJSC \ldots) \\
+\textbf{Ownership} & \texttt{okfc}, \texttt{okogu} & form of ownership (state / private / foreign / mixed);
+  state-authority type (OKOGU) \\
+\textbf{Geography} & \texttt{region}, \texttt{region\_taxcode}, \texttt{oktmo}, \texttt{lon}/\texttt{lat} &
+  oblast, tax-region, municipality (OKTMO), or geocoded point \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The \textbf{quality flags} are query \emph{predicates}, not axes: a sound population is
+\texttt{filed \& eligible \& !outlier}, preferring \texttt{articulated} rows (whose lines reconcile to their
+subtotals), with \texttt{imputed} (reconstructed from adjacent years) and \texttt{simplified} (the abbreviated
+KND~0710096 form) surfaced as provenance, and \texttt{financial} used only to confirm the sector's absence.
+This population capability is what makes RFSD more than a RAS back-end: it turns Russia into the first
+jurisdiction where \texttt{EDGAR.jl} can select an \emph{economy} --- a sector, a region, an ownership class
+--- and not only a single filer.
+
+\section{Forms and Statement Types}\label{sec:russia-forms}
+
+What a Russian firm files, and in which format, follows the RAS/IFRS split. The statutory \textbf{RAS} accounts
+use a \emph{fixed national form} with numbered lines --- the OKUD templates --- which is what makes route~1
+tractable without any PDF extraction or national-language vocabulary: the line \emph{numbers} are the
+concepts. Table~\ref{tab:russia-forms} maps the forms to their formats and to how \texttt{EDGAR.jl} reaches
+them.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Russian statement types by standard, format, and route. Route~1 consumes the RAS forms as structured
+Parquet; the rest are extensions.}
+\label{tab:russia-forms}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.30\textwidth}p{0.16\textwidth}p{0.16\textwidth}@{}}
+\toprule
+\textbf{Statement} & \textbf{Form / codes} & \textbf{Format} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{RAS balance sheet} & OKUD \textbf{0710001} --- fixed lines (\texttt{line\_1600} total assets,
+  \texttt{line\_1700} total liabilities \& equity) & \textbf{Parquet} (RFSD); XML (GIR BO); PDF (agencies) &
+  \textbf{route~1} \\
+\textbf{RAS income statement} & OKUD \textbf{0710002} --- fixed lines (\texttt{line\_2110} revenue,
+  \texttt{line\_2400} net profit) & Parquet (RFSD); XML; PDF & \textbf{route~1} \\
+\textbf{RAS cash flow / equity} & OKUD \textbf{0710004} / \textbf{0710003} & Parquet (RFSD, \texttt{CF*} /
+  equity lines) & route~1 (subset) \\
+\textbf{IFRS consolidated} (\rus{МСФО}) & Full IFRS statement set, \texttt{ifrs-full} concepts & \textbf{PDF}
+  (agencies; sometimes bilingual) & extension (agency PDF) \\
+\textbf{Bank reporting} & CBR Forms \textbf{0409101} (turnover balance by account) / \textbf{0409102}
+  (financial results) & HTML / XLS (per \texttt{regnum}) & \textbf{route~2} \\
+\textbf{NFO XBRL} & CBR taxonomy (insurers, NPFs, \ldots) & XBRL (taxonomy public; \emph{instances} not) &
+  deferred \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{RFSD --- structured RAS, already mapped.} The route-1 source is the \textbf{Russian Financial
+Statements Database} (\texttt{irlspbru/RFSD} on HuggingFace; Zenodo DOI \texttt{10.5281/zenodo.14622208};
+CC-BY-4.0), a firm-level collection of the whole non-financial universe's unconsolidated RAS statements for
+\textbf{2011--2024}. It is distributed as Apache \textbf{Parquet}, \emph{year-partitioned} (\texttt{year=2011}
+\ldots{} \texttt{year=2024}), $\sim$7.4~GB in total but $\sim$550~MB for the current year alone --- and a
+per-issuer lookup is a column-projected, INN-filtered read of a single partition, not a full scan. Crucially,
+the OKUD line codes arrive \emph{already decoded}: a shipped dictionary maps \texttt{line\_2110} to
+\texttt{B\_revenue}-style names, with prefixes \texttt{B\_} (balance sheet), \texttt{PL\_} (profit/loss) and
+\texttt{CFi\_}/\texttt{CFo\_} (cash flows). So route~1 needs neither a PDF extractor nor a \texttt{vocab\_ras}:
+the facts are structured, named, cross-footable (\texttt{line\_1600 = line\_1700}), and keyed by the INN that
+MOEX resolves. It refreshes annually (late July / early August; current v2.0.3). A fetched row is a
+\texttt{Filing} of kind \texttt{:ras}, and \texttt{facts(f)} maps each OKUD line to a \texttt{Fact} in rubles
+(the RFSD structured-row extractor, \S\ref{sys:extraction}); on the four FY2023 fixtures (Gazprom, Lukoil,
+Tatneft, Magnit) the balance sheet cross-foots exactly.
+
+\paragraph{The RAS form is the ``taxonomy''.} Because every RAS filer uses the same numbered OKUD lines, the
+line codes function as a de-facto taxonomy --- the RAS analogue of \texttt{ifrs-full} concepts or CAS labels,
+but numeric and fixed by regulation. Classification is therefore a static code map (balance-sheet and
+income-statement lines to the shared statement-type model), not a per-filing label-matching problem. This is
+why RFSD is the highest-reuse first route: it slots into the existing structured-fact machinery on the same
+axes (revenue, net income, total assets) as every XBRL jurisdiction, and validates against MOEX/Yahoo figures
+for listed non-financial names.
 
 \chapter{Generic Filing}
 \label{ch:generic}
@@ -6679,14 +7034,67 @@ repository, a label map for its taxonomy, and fixes for its quirks --- each inde
 of the graceful floor into a specialised ceiling. Generic is thus both the fallback for the long tail and the
 \emph{starting point} for the next specialised chapter.
 
-\part{Analysis}
+\section{Examples from: Australia, Brazil, Canada and Denmark}
 
 
-\chapter{Capital Market Data}
+\section{Dealing with Writing Systems: Alphabets, Abjads, Abugidas, Syllabaries and Logograms}
+Only Greece uses a true alphabet on that list. The rest use a fascinating mix of abjads, abugidas, syllabaries, and logograms!
+\subsection{Egypt}
+Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
+Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
 
-\chapter{News and Alerts}
+\subsection{Greece}
+System: Alphabet
+How it works: A true alphabet has distinct symbols for both consonants and vowels. The Greek alphabet was actually the world's first true alphabet (derived from the Phoenician system, but they added vowels).
 
-\chapter{Product Market Data: Clients, Suppliers and Competitors}
+\subsection{Israel}
+System: Abjad (Consonantal alphabet)
+How it works: Hebrew is written primarily with consonants. Vowels are mostly omitted in everyday writing, though they can be indicated with little dots and dashes called niqqud (usually found in children's books or poetry).
+
+\subsection{Japan Narratives}
+A Hybrid System
+System: Syllabary + Logographic
+How it works: Japanese uses three different scripts combined:
+Hiragana \& Katakana: These are syllabaries, meaning each character represents an entire syllable (like ka, mi, tu), not individual letters.
+Kanji: These are logograms (borrowed Chinese characters) that represent whole words or concepts.
+
+\subsection{Thailand}
+System: Abugida (Alphasyllabary)
+How it works: In the Thai script, the base characters are consonants that have an inherent vowel sound automatically attached to them (usually an "a" or "o"). To change the vowel, you add a diacritic mark above, below, before, or after the consonant.
+
+
+
+\section{Local Variations}
+
+\subsection{China: Simplified and Traditional Chinese}
+Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
+\begin{itemize}
+  \item Written Standard: Mandarin primarily uses Simplified Chinese (used in mainland China), whereas Cantonese predominantly uses Traditional Chinese (used in Hong Kong and Macau).
+  \item Spoken Differences: Spoken Mandarin and Cantonese are completely different languages and are not mutually intelligible. A Mandarin speaker cannot understand spoken Cantonese. 
+  \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
+  \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
+\end{itemize}
+
+
+\subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
+ Languages spoken in India do not all use the same alphabet. India has massive linguistic diversity, and languages are written using several distinct scripts. While many share roots in the ancient Brahmi script, they have evolved into unique writing systems.
+
+ The primary scripts used include:
+ \begin{itemize}
+  \item Devanagari: The script used for Hindi, Sanskrit, Marathi, Nepali, and Konkani.
+  \item Dravidian Scripts: Languages in the south have their own distinct scripts, such as Tamil, Telugu, Kannada, and Malayalam.
+  \item Other Major Scripts: Bengali, Punjabi (Gurmukhi script), and Odia each use their own distinct writing systems.
+  \item Perso-Arabic: Used primarily for Urdu.
+  \item Latin: Extensively used for English and sometimes for writing regional languages on digital platforms or in specific localized areas.
+ \end{itemize}
+
+
+
+\part{Business Reports}
+
+
+
+\chapter{Discover: Clients, Suppliers and Competitors}
 \label{ch:analysis}
 
 \texttt{EDGAR.jl} is meant to be a \emph{value-added} application, not merely a fetcher of filings. Once a
@@ -6764,91 +7172,17 @@ a filing's numbers are self-consistent --- \texttt{check\_calculations} and the 
 a distinct concern, \emph{validation} rather than analysis; it lives in \S\ref{sec:validation-rules}.) Each
 of these stays framed here and deep in its own package.
 
+\chapter{Market Signals: Decoding Your Business Ecosystem}
 
-\chapter{External Ratings Data and Internal Credit Scoring}
+\chapter{Ratings and Internal Credit Scoring}
 
-\section{Credit Ratings}
+\section{External Credit Ratings}
 \section{User Ratings}
 \section{Internal Credit Scoring}
 
+\chapter{Fiscal and Legal Context}
 
-\chapter{Valuation Models}
-
-
-\part{Reference}
-
-\chapter{Related Work and Comparison}
-\label{sec:related-work}
-
-EDGAR.jl enters a mature ecosystem of EDGAR/XBRL tooling, mostly in Python and R. It is
-worth being explicit about where it follows the field, where it differs, and what it does
-not (yet) do.
-
-\paragraph{The landscape.} In Python, \href{https://github.com/dgunning/edgartools}{\texttt{edgartools}}
-is the modern leader --- it turns filings into typed objects and is especially strong on XBRL
-statements, with two ideas we admire: \emph{concept standardization} (mapping each issuer's tag
-to a common concept for cross-company comparison) and \emph{statement stitching} (assembling a
-multi-period statement across filings). It is, however, in-memory --- it exports to
-\texttt{DataFrame}s rather than persisting a warehouse. \href{https://arelle.org/}{Arelle} is the
-reference open-source XBRL engine --- the SEC's own EDGAR Renderer is built on it --- and its
-\texttt{xbrlDB} plug-in persists facts using the canonical \emph{XBRL-US Public Database} schema.
-Tools such as \texttt{sec-edgar-downloader} and \texttt{sec-downloader} fetch raw filings and
-leave parsing to you. In R, \texttt{finstr} (on top of the \texttt{XBRL} package) organises
-instances into income statements, balance sheets and cash-flow statements. Julia, by contrast,
-has had no established EDGAR/XBRL library.
-
-\begin{table}[h]
-\centering
-\caption{EDGAR.jl among representative EDGAR/XBRL tools.}
-\label{tab:related-work}
-\small
-\begin{tabular}{@{}p{0.16\textwidth}p{0.06\textwidth}p{0.27\textwidth}p{0.15\textwidth}p{0.10\textwidth}p{0.09\textwidth}@{}}
-\toprule
-\textbf{Tool} & \textbf{Lang} & \textbf{Focus} & \textbf{Persistent warehouse} & \textbf{Concept std.} & \textbf{Picker / prov.} \\
-\midrule
-\textbf{EDGAR.jl} & Julia & Pick a region $\to$ four-layer export + fact warehouse & DuckDB (embedded) & yes (opt-in) & \textbf{yes} \\
-edgartools & Python & Typed filings; XBRL statements & in-memory & yes & no \\
-Arelle & Python & Reference XBRL engine / renderer & Postgres, RDF, \ldots & --- & no \\
-sec-downloader & Python & Download raw filings & no & no & no \\
-finstr + XBRL & R & XBRL $\to$ IS / BS / CF & no & partial & no \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{What EDGAR.jl does differently.} Three things set it apart. \emph{(1)~An interactive
-picker with provenance:} you select a region in the rendered filing, and every extracted fact
-carries a \texttt{source\_selector} back to the exact DOM node --- a bridge between document
-review, iXBRL semantics and relational analytics that the other tools, which extract purely
-programmatically, do not offer. \emph{(2)~An embedded DuckDB warehouse:} zero-server and
-single-file, where Arelle persists only to heavy databases and edgartools does not persist at
-all --- and facts from any source share one table under a semantic key
-(\S\ref{sec:export-layers}). \emph{(3)~A four-layer export} from a single selection --- lossless
-iXBRL, Markdown, Facts JSON and DuckDB --- with provenance threaded throughout. And it is
-Julia/Tables.jl-native, filling a gap in that ecosystem.
-
-\paragraph{Authoritative enrichment.} A second distinction is \emph{where} EDGAR.jl's enrichment
-comes from: a fact's statement is read from the filing's own presentation linkbase
-(\texttt{statement\_map}, \S\ref{sec:export-layers}) and its roll-up arithmetic from the
-calculation linkbase (\texttt{calculations}), rather than inferred --- and concept standardization
-is pluggable (\texttt{set\_standardizer}), defaulting to \emph{none} and offering the bundled,
-attributed edgartools mapping opt-in, instead of baking one opinionated mapping in.
-
-\paragraph{What it does not (yet) do.} In fairness, the established tools still lead in breadth.
-edgartools covers many more form types (Form 3/4/5, 13F, ADV, \dots) and now ships IFRS mappings,
-while Arelle implements the full XBRL specification --- formula, dimensional validation, table
-linkbases --- that EDGAR.jl does not. EDGAR.jl focuses on us-gaap financial-statement facts, and
-its standardization is the bundled edgartools concept mapping rather than that project's newer,
-data-driven one. The gaps an earlier draft named --- concept standardization, statement
-classification, and the calculation linkbase --- are now closed
-(\texttt{set\_standardizer(:edgartools)}, \texttt{statement\_map}, \texttt{calculations}).
-
-\paragraph{Validation from the reference schema.} Reassuringly, the design we arrived at matches
-the XBRL-US reference: it hashes each fact by its context so identical contexts collapse (our
-semantic \texttt{fact\_key}), and assigns a fiscal year and period to every fact (our
-\texttt{fy}/\texttt{fp}/\texttt{frame}). Where we diverge is deliberate --- the reference
-normalises context, unit and dimension into separate tables for transactional Postgres, whereas
-EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytical, columnar
-store like DuckDB prefers.
+\chapter{Valuation Methods}
 
 
 % ===========================================================================
