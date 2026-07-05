@@ -1076,6 +1076,24 @@ identified verbatim, normalised, and grouped by theme:
     \texttt{xml:lang}) for the titles.
 \end{itemize}
 
+\subsection{\texttt{TocNode}}
+\label{sec:api-tocnode}
+
+\noindent A single outline entry --- a heading with its position in the document --- is a \texttt{TocNode}, the
+row type the \texttt{toc} method (\S\ref{sec:api-toc}) returns; it is the \textbf{structure} companion to
+\texttt{Fact} (numbers) and \texttt{Narrative} (prose). Its columns are source-agnostic, filled by whichever
+producer emitted the row:
+\begin{itemize}[nosep]
+  \item \texttt{title}, \texttt{level}, \texttt{ord} --- the heading text, its nesting depth
+    (\texttt{0}\,=\,top, so a tree is reconstructable) and its position in document order.
+  \item \texttt{source} --- the producer / format the entry came from
+    (\texttt{:pdf}\,/\,\texttt{:html}\,/\,\texttt{:ixbrl}\,/\,\texttt{:xbrl}), exactly as on \texttt{Fact} and
+    \texttt{Narrative}.
+  \item \texttt{page} --- the PDF page (\texttt{nothing} for HTML/XBRL); \texttt{anchor} --- an HTML element
+    \texttt{id} or XBRL role for a viewer to jump to (\texttt{""} for PDF); \texttt{kind} --- an optional
+    semantic tag (e.g.\ \texttt{"statement"}).
+\end{itemize}
+
 \subsection{\texttt{EntityId}}
 \label{sec:api-entityid}
 
@@ -2712,7 +2730,7 @@ end
 
 
 
-\section{Analysis}
+\section{Product Market Data: Clients, Suppliers and Competitors}
 \label{sec:api-analysis}
 
 Beyond fetching, extracting and classifying, \texttt{EDGAR.jl} provides \emph{analysis} helpers that
@@ -2792,6 +2810,48 @@ notes}, so the segment note usually carries no dimensional facts and the result 
 
 \section{Text Layer}
 \label{sec:api-narratives}
+
+\subsection{\texttt{toc}}
+\label{sec:api-toc}
+
+Sitting slightly apart from the text layer proper --- it is \emph{structure}, not prose --- \texttt{toc(f)} is
+the third companion to \texttt{facts} (numbers) and \texttt{narratives} (text): a filing's \textbf{table of
+contents} / outline, as one source-agnostic \texttt{Tables.jl} row table of \texttt{TocNode}s
+(\S\ref{sec:api-tocnode}). Like \texttt{narratives}, the same call works whatever the source --- one row shape,
+several producers (Table~\ref{tab:toc-producers}) --- and it is deliberately \emph{faithful to the source}: a
+PDF carrying only two coarse bookmarks yields two rows.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The \texttt{toc} producers --- what a document's ``contents'' is per source, and how it is found.}
+\label{tab:toc-producers}
+\begin{tabular}{@{}p{0.13\textwidth}p{0.42\textwidth}p{0.35\textwidth}@{}}
+\toprule
+\textbf{\texttt{source}} & \textbf{The outline is\ldots} & \textbf{Found by} \\
+\midrule
+\texttt{:pdf} & the PDF's bookmark outline (with \texttt{page}) & \texttt{pdf.js} --- read directly, \emph{no}
+  Docling \\
+\texttt{:html} & the heading hierarchy (with an \texttt{anchor} element id) & \texttt{h1}\ldots\texttt{h6} in
+  document order \\
+\texttt{:ixbrl} & the inline document's heading hierarchy & \texttt{h1}\ldots\texttt{h6}, or the statement roles \\
+\texttt{:xbrl} & the filing's statements --- its ``contents'' when there is no printed TOC & the presentation
+  linkbase's statement roles (\texttt{statement\_map}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Forms.} \texttt{toc} dispatches on what you hand it (the \texttt{TocNode} columns adapt to the
+source --- \S\ref{sec:api-tocnode}):
+\begin{lstlisting}
+julia> toc(fetch_filing(first(discover(HKEXFilings(); code = "02388"))))  # a Filing: the PDF bookmark outline
+julia> toc(read_structured_document(path))         # a StructuredDocument: its outline, else the section tree
+julia> toc("annual_report.pdf")                    # straight from a PDF path (no Docling)
+\end{lstlisting}
+
+\noindent A viewer uses \texttt{toc} to navigate and \texttt{facts}\,/\,\texttt{narratives} for the content
+under each node. The returned row table composes with DataFrames / CSV / DuckDB exactly as the other two do,
+and is trivially serialised --- \texttt{JSON3.write(toc(f))} --- so there is no separate \texttt{toc\_json}.
 
 \subsection{\texttt{narratives}}
 
@@ -6189,7 +6249,7 @@ local names. Classification keys on the namespace --- not the version or the pre
 linkbase must use the exact version \emph{and} sector the instance declares (the linkbases are bundled
 per-format, routed by the filename prefix).
 
-\subsection{Statement types and classification}\label{sec:india-statements}\label{sec:india-classify}
+\subsection{Statement Types and Classification}\label{sec:india-statements}\label{sec:india-classify}
 A results filing is a \textbf{condensed} statement set, \emph{not} the full annual accounts. In the general
 (\texttt{INDAS\_}) format it carries the \textbf{balance sheet} (\texttt{Assets},
 \texttt{EquityAndLiabilities}), the \textbf{statement of profit and loss} including \textbf{other
@@ -6223,7 +6283,7 @@ excise duty}, and a broad \emph{finance-costs} bucket --- are where our figures 
 third-party sources; \S\ref{sec:india-yahoo} is the reconciliation map (for the general format; banks reconcile on
 different lines).
 
-\section{Retrieving filings}\label{sec:india-retrieve}
+\section{Retrieving Filings}\label{sec:india-retrieve}
 
 Discovery is \textbf{keyless}. \texttt{discover(NSEFilings();\ symbol=\ldots)} lists a listed company's
 financial-results filings by its NSE ticker; each returned \texttt{FilingHandle} carries the Ind-AS XBRL URL,
@@ -6256,7 +6316,7 @@ facts(f)                                            # the statements  (narrative
     (\S\ref{sec:india-statements}).
 \end{itemize}
 
-\section{Reconciling income-statement figures with Yahoo Finance}\label{sec:india-yahoo}
+\section{Reconciling Income-Statement Figures with Yahoo}\label{sec:india-yahoo}
 
 India has no Arelle / \href{https://filings.xbrl.org}{filings.xbrl.org} oracle (the same gap as Korea,
 \S\ref{sec:dart-oracle}), so the cheap independent cross-check on a filer's headline numbers is
@@ -6301,7 +6361,7 @@ Each income-statement line, as \texttt{in-bse-fin:} concept $\leftrightarrow$ Ya
     \texttt{102.90} $\to$ Yahoo \texttt{51.45} after the 1:1 bonus).
 \end{itemize}
 
-\subsection{Revenue --- excise duty (\texttt{RevenueFromOperations} $-$ excise $=$ \texttt{TotalRevenue})}
+\subsection{Revenue --- Excise Duty (\texttt{RevenueFromOperations} $-$ excise $=$ \texttt{TotalRevenue})}
 Ind-AS reports \texttt{RevenueFromOperations} \textbf{gross of excise duty}, with the excise shown as a
 separate expense line --- tagged \texttt{in-bse-fin:OtherExpenses} in the operating-expense breakdown member
 whose \texttt{DescriptionOfOtherExpenses} is \texttt{"Excise Duty"}. Yahoo (like most data vendors) presents
@@ -6337,7 +6397,7 @@ quarterly results filing is sometimes insufficient, and one should anchor on pro
 associates-neutral) instead. \footnotesize$^{*}$Yahoo reports Infosys in \textbf{USD} (\$18.562~bn); see
 \emph{Caveats}.\normalsize
 
-\subsection{Finance costs --- a broader bucket than Yahoo's interest expense}
+\subsection{Finance Costs --- a broader bucket than Yahoo's interest expense}
 Ind-AS \texttt{FinanceCosts} is a \emph{superset} of Yahoo's \texttt{InterestExpense}: besides interest on
 borrowings it includes interest on \textbf{lease liabilities} (Ind-AS~116), \textbf{unwinding of discount}
 on provisions (decommissioning / asset-retirement) and other borrowing costs, whereas Yahoo's
@@ -6366,7 +6426,7 @@ Reliance and Indian~Oil are reported in INR. \textbf{Per-share restatement.} Yah
 \texttt{BasicEPS} across a corporate action (Reliance's filed \texttt{102.90} vs Yahoo's \texttt{51.45}
 after the 2024 1:1 bonus).
 
-\chapter{Russia \textemdash{} CBR and e-disclosure}
+\chapter{Russia: CBR and e-Disclosure}
 \label{sys:russia}
 
 \emph{Status: planned --- placeholder chapter, not yet researched or implemented.}
@@ -6378,14 +6438,17 @@ IFRS. The repository survey --- which venues expose machine-readable (XBRL) fili
 model, and any sanctions/access constraints from outside Russia --- is \textbf{not yet done}; this chapter is
 a scaffold to be filled once India is complete and Russia is picked up.
 
+\chapter{Generic Filing}
+
+
 \part{Analysis}
 
 
 \chapter{Capital Market Data}
 
-\chapter{News}
+\chapter{News and Alerts}
 
-\chapter{Analysis}
+\chapter{Product Market Data: Clients, Suppliers and Competitors}
 \label{ch:analysis}
 
 \texttt{EDGAR.jl} is meant to be a \emph{value-added} application, not merely a fetcher of filings. Once a
@@ -6397,7 +6460,7 @@ OLAP engines, forecasting, peer benchmarking), deserves its \emph{own} package b
 \texttt{EDGAR.jl}. The method signatures live in the Common API (\S\ref{sec:api-analysis}); here we give the
 concepts, the axes each jurisdiction actually exposes, and how to drive them from Julia.
 
-\section{Dimensional analysis (drill-down)}
+\section{Dimensional Analysis (drill-down)}
 \label{sec:analysis-dimensional}
 
 XBRL is dimensional \emph{by construction}. The XBRL Dimensions specification models a filing's facts as
@@ -6462,6 +6525,17 @@ same ``pure function of a \texttt{Filing}'' shape and will join this chapter. Th
 a filing's numbers are self-consistent --- \texttt{check\_calculations} and the accounting-rule checks --- is
 a distinct concern, \emph{validation} rather than analysis; it lives in \S\ref{sec:validation-rules}.) Each
 of these stays framed here and deep in its own package.
+
+
+\chapter{External Ratings Data and Internal Credit Scoring}
+
+\section{Credit Ratings}
+\section{User Ratings}
+\section{Internal Credit Scoring}
+
+
+\chapter{Valuation Models}
+
 
 \part{Reference}
 

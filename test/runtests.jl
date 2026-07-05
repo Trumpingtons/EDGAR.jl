@@ -552,6 +552,38 @@ end
     @test orphan.section_title == "s_ghost" && orphan.source == "pdf" # never dropped; sid is the title fallback
 end
 
+@testset "toc(): document structure across sources (offline)" begin
+    # The structure layer, parallel to facts()/narratives() — a source-agnostic row table (document order,
+    # `level` encoding the hierarchy). HTML → heading tree; StructuredDocument → its bookmark outline, else the
+    # parsed section tree. (PDF outline and XBRL statement roles are exercised live, not offline.)
+    html = "<html><body><h1 id='top'>Annual Report</h1><p>x</p><h2>Financials</h2>" *
+           "<h3 id='bs'>Balance Sheet</h3><h3>Income Statement</h3></body></html>"
+    th = collect(EDGAR._toc_html(html))
+    @test [r.title for r in th] == ["Annual Report", "Financials", "Balance Sheet", "Income Statement"]
+    @test [r.level for r in th] == [0, 1, 2, 2]            # h1→0, h2→1, h3→2
+    @test [r.ord for r in th] == [1, 2, 3, 4]              # document order
+    @test all(r -> r.source == "html", th)
+    @test th[1].anchor == "top" && th[3].anchor == "bs" && th[2].anchor == ""
+    @test eltype(th) == EDGAR.TocRow
+
+    meta = EDGAR.DocMeta("DOC", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 3, "test", "1", false)
+    sd = EDGAR.StructuredDocument("1.0", meta, EDGAR.DocSection[], EDGAR.TextBlock[], EDGAR.DocTable[],
+             EDGAR.DocFigure[], [EDGAR.TocEntry("CONTENTS", 0, 1), EDGAR.TocEntry("Balance Sheet", 1, 5)],
+             Dict{String,Vector{UInt8}}())
+    to = collect(toc(sd))
+    @test [r.title for r in to] == ["CONTENTS", "Balance Sheet"]
+    @test [r.page for r in to] == [1, 5] && [r.level for r in to] == [0, 1]
+    @test all(r -> r.source == "pdf" && r.accession == "DOC", to)
+
+    # no bookmark outline → fall back to the parsed section tree (anchor = section id, so a viewer can jump)
+    S(id, t, pg) = EDGAR.DocSection(id, nothing, 1, t, "en", 0, pg, pg, nothing)
+    sd2 = EDGAR.StructuredDocument("1.0", meta, [S("s1", "Chairman's Statement", 2), S("s2", "Notes", 9)],
+             EDGAR.TextBlock[], EDGAR.DocTable[], EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    tf = collect(toc(sd2))
+    @test [r.title for r in tf] == ["Chairman's Statement", "Notes"]
+    @test tf[1].anchor == "s1" && tf[1].page == 2
+end
+
 @testset "negated presentation labels flip the sign (offline)" begin
     # A face-statement role may present a concept with a negatedLabel/negatedTerseLabel, so the rendered
     # statement shows the opposite sign of the stored value (general: treasury stock as contra-equity, or

@@ -79,6 +79,7 @@ include("filing_systems/china/portfolio.jl") # 🟡 China fund §8 portfolio (�
 include("extractors/ifrs_pdf.jl")           # 🟢 English-PDF statement extraction: primary statements → Facts on ifrs-full via vocab_ifrs_labels (extract_ifrs_pdf) — shared by HK (HKFRS) + UK Companies House
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
+include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
@@ -86,6 +87,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, born_digital, extract_fund_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
+       toc, TocNode, TocRow,
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,
        classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,
