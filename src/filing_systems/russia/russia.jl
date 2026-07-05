@@ -88,3 +88,15 @@ function _rfsd_facts(f::Filing; classify::Bool=false, labels::Bool=false)
     end
     return [fact_row(fc) for fc in out]
 end
+
+# ── R2: the RFSD fetch is a DuckDB query (weakdep) ───────────────────────────────────────────────
+#
+# `fetch_filing(::Russia, h)` reads one (inn, year) row from the year-partitioned RFSD parquet with
+# DuckDB. DuckDB is an OPTIONAL dependency (the `EDGARDuckDBExt` package extension), so the real query
+# method — `_rfsd_query(parquet_url, inn, year) -> JSON String` (the `:ras` filing content) — lives in
+# that extension and is available once `using DuckDB` has loaded it. This core stub is a catch-all
+# fallback (`args...`, strictly less specific than the extension's typed method, so the extension adds
+# rather than overwrites — the same weakdep pattern as `to_duckdb`); it explains the need when unloaded.
+_rfsd_query(args...) =
+    error("fetch_filing(::Russia, …) needs DuckDB.jl to read the RFSD parquet — run `using DuckDB` " *
+          "to load the RFSD reader (the EDGARDuckDBExt extension).")

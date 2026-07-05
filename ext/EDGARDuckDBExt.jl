@@ -865,4 +865,50 @@ function EDGAR.derive_facts!(
     end
 end
 
+# ── Russia RFSD reader (R2) — the DuckDB half of fetch_filing(::Russia, h) ───────────────────────
+#
+# Read one (inn, year) row from the year-partitioned RFSD parquet (`url`, a remote HuggingFace file read
+# over httpfs, or a local cache path) and serialise it to the JSON shape the core `_rfsd_facts` (R1)
+# consumes: `{inn, year, <id cols…>, flags:{…}, lines:{line_XXXX => value}}`. Returns "" if the INN has
+# no row in that partition. `httpfs` is installed/loaded on demand so remote URLs work with no download.
+const _RFSD_IDCOLS   = ("ogrn", "okved", "okved_section", "okopf", "region")
+const _RFSD_FLAGCOLS = ("filed", "eligible", "articulated", "outlier", "simplified", "imputed", "financial")
+
+function EDGAR._rfsd_query(url::AbstractString, inn::AbstractString, year::Integer)
+    con = DBInterface.connect(DuckDB.DB)
+    try
+        if startswith(url, "http")
+            DBInterface.execute(con, "INSTALL httpfs")
+            DBInterface.execute(con, "LOAD httpfs")
+        end
+        safe_inn = replace(inn, "'" => "''")            # RFSD INNs are digits, but guard anyway
+        q = "SELECT * FROM read_parquet('$url') WHERE inn = '$safe_inn' LIMIT 1"
+        row = nothing
+        for r in DBInterface.execute(con, q); row = r; break; end
+        row === nothing && return ""
+
+        gv(k) = hasproperty(row, Symbol(k)) ? getproperty(row, Symbol(k)) : missing
+        lines = Dict{String,Float64}()
+        for k in propertynames(row)
+            s = String(k)
+            startswith(s, "line_") || continue
+            v = getproperty(row, k)
+            v === missing && continue
+            lines[s] = Float64(v)
+        end
+        doc = Dict{String,Any}("inn" => inn, "year" => Int(year), "lines" => lines)
+        for k in _RFSD_IDCOLS
+            v = gv(k); doc[k] = v === missing ? nothing : v
+        end
+        flags = Dict{String,Any}()
+        for k in _RFSD_FLAGCOLS
+            v = gv(k); flags[k] = v === missing ? nothing : Float64(v)
+        end
+        doc["flags"] = flags
+        return EDGAR.JSON3.write(doc)
+    finally
+        DBInterface.close!(con)
+    end
+end
+
 end # module

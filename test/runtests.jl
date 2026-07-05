@@ -2087,6 +2087,31 @@ if RUN_NETWORK
 include(joinpath(@__DIR__, "..", "src", "sources", "arelle_esef_oracle.jl"))   # -> ArelleEsefOracle (needs only EDGAR)
 include(joinpath(@__DIR__, "..", "src", "sources", "yahoo_oracle.jl"))    # -> YahooOracle (uses YFinance)
 @testset "network (live)" begin
+@testset "Russia: RFSD discovery + fetch (R2, live)" begin
+    # discover (MOEX ISS ticker→INN) → fetch (DuckDB partition query over httpfs) → facts, end-to-end.
+    # Needs network (MOEX + the RFSD parquet) and DuckDB (loaded above). Validated on fresh non-financial
+    # filers (not the R1 fixtures). NB: large sanctioned "strategic" issuers are withheld from GIR BO from
+    # 2019 (filed=0, no lines) — a documented RFSD coverage gap — so these names are chosen for having
+    # public statements.
+    try
+        for tk in ("NLMK", "PHOR")            # steel, fertilizer — non-financial, filed
+            h = only(discover(RFSDFilings(); ticker = tk, year = 2023))
+            @test h.system isa Russia
+            @test h.entity.scheme === :inn
+            f = fetch_filing(h)
+            @test f.kind === :ras
+            rows = facts(f)
+            @test !isempty(rows)
+            val(code) = only(r.value for r in rows if r.concept == "ras:$code")
+            @test val("line_1600") ≈ val("line_1700")     # RAS cross-foot, live
+        end
+        # direct-INN path (no MOEX): Gazprom parent
+        f = fetch_filing(only(discover(RFSDFilings(); inn = "7736050003", year = 2023)))
+        @test !isempty(facts(f))
+    catch e
+        @info "Skipping Russia R2 live (network/DuckDB): $e"; @test true
+    end
+end
 @testset "EDGAR basic" begin
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try

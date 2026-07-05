@@ -70,7 +70,8 @@ include("filing_systems/china/china.jl")                     # 🟡 China (CSRC/
 include("filing_systems/china/discovery.jl")                 # 🟡 China discovery: CNINFOFilings source over the keyless CNINFO JSON API (topSearch + hisAnnouncement) [C1]
 include("filing_systems/hkex/hkex.jl")                       # 🟣 Hong Kong (HKEX/HKEXnews, HKFRS) FilingSystem — HK0 seam (2nd PDF-native jurisdiction; English/ifrs-full, facts via the PDF extractor)
 include("filing_systems/hkex/discovery.jl")                  # 🟣 HKEX discovery (HK1): HKEXFilings source over the keyless HKEXnews JSON API (prefix.do + titleSearchServlet.do) + fetch→:pdf
-include("filing_systems/russia/russia.jl")                   # 🔴 Russia (MOEX/CBR/e-Disclosure, RAS) FilingSystem — R0 seam only (route 1 = RFSD; first "filing = dataset row"; keyless, INN identity via MOEX ISS; DuckDB backend)
+include("filing_systems/russia/russia.jl")                   # 🔴 Russia (MOEX/CBR/e-Disclosure, RAS) FilingSystem — R0 seam + R1 :ras structured-row facts (route 1 = RFSD; first "filing = dataset row")
+include("filing_systems/russia/discovery.jl")                # 🔴 Russia discovery (R2): RFSDFilings source — MOEX ISS name/ticker→INN resolver + fetch_filing→DuckDB partition query (weakdep _rfsd_query in EDGARDuckDBExt)
 include("filing_systems/generic/generic.jl")                 # 🟢 Generic: the shared core with NO jurisdiction adapter — fetch_filing(Generic(), path/url) sniffs format → facts/narratives/toc via the generic extractors
 include("extractors/pdf.jl")                # 🟢 PDF extractor (Format axis): pdfjs-dist → words → row/column → coordinate-anchored Facts
 include("extractors/structured_document.jl")# 🟢 StructuredDocument substrate (document-first PDF repository); Docling extraction via PythonCall ext
@@ -84,7 +85,7 @@ include("core/export.jl")                   # 🟢 save_selection + DuckDB exten
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
 
-export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, Generic, EntityId,
+export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, RFSDFilings, Generic, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
