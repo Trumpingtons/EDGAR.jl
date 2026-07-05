@@ -2038,6 +2038,49 @@ include(joinpath(@__DIR__, "test_decimal_comma.jl"))
 end
 
 
+@testset "Russia: RFSD structured-row facts (R1, offline)" begin
+    # Russia route 1 (the 9th FilingSystem, and the first whose "filing" is a structured DATASET ROW):
+    # an RFSD (inn, year) row, carried as JSON in Filing.content (kind :ras), becomes numeric Facts —
+    # one per non-null OKUD line_XXXX, scaled ×1000 (в тыс. руб → RUB). No network, no DuckDB at parse
+    # time (fetch is R2); classification is R3 (vocab_ras), so this asserts RAW extraction + the RAS
+    # cross-foot invariant only. Fixtures are real FY2023 rows for four diverse non-financial issuers.
+    dir = joinpath(@__DIR__, "data", "russia")
+    load(inn) = begin
+        json = read(joinpath(dir, "$(inn)-2023.json"), String)
+        Filing(Russia(), EntityId(:inn, inn), "rfsd:$inn:2023", "$(inn)-2023.json",
+               "rfsd://irlspbru/RFSD/year=2023", :ras, json)
+    end
+    val(rows, code) = only(r.value for r in rows if r.concept == "ras:$code")
+
+    # --- Gazprom parent FY2023 (inn 7736050003) ---
+    f = load("7736050003")
+    @test f.system isa Russia
+    @test f.kind === :ras
+    @test f.entity == EntityId(:inn, "7736050003")
+
+    rows = facts(f)
+    @test length(rows) > 100                              # 162 non-null OKUD lines
+    @test all(r -> startswith(r.concept, "ras:line_"), rows)
+    @test all(r -> r.unit == "RUB", rows)
+
+    # RAS cross-foot: total assets (1600) == total liabilities + equity (1700), in rubles (×1000)
+    @test val(rows, "line_1600") ≈ val(rows, "line_1700")
+    @test val(rows, "line_1600") ≈ 2.6347838009e10 * 1000  # Gazprom parent ≈ 26.3 trillion RUB
+
+    # period type by OKUD family: 1xxx balance sheet = instant (as-of 31 Dec); 2xxx P&L = duration
+    bs = only(r for r in rows if r.concept == "ras:line_1600")
+    @test bs.is_instant && bs.period_end == Date(2023, 12, 31) && bs.period_start === nothing
+    pl = only(r for r in rows if r.concept == "ras:line_2110")
+    @test !pl.is_instant && pl.period_start == Date(2023, 1, 1) && pl.period_end == Date(2023, 12, 31)
+    @test val(rows, "line_2110") ≈ 5.620061583e9 * 1000    # revenue
+
+    # --- cross-foot holds across all four diverse fixtures (oil-gas, retail, oil, oil) ---
+    for inn in ("7736050003", "2309085638", "7708004767", "1644003838")
+        r = facts(load(inn))
+        @test val(r, "line_1600") ≈ val(r, "line_1700")    # balance sheet ties out (articulated = 1)
+    end
+end
+
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
