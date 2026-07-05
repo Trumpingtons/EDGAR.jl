@@ -2992,6 +2992,59 @@ mis-mapped, and we frequently conclude \texttt{EDGAR.jl} made the better call --
 a filer \emph{mis-tagging} a value (a reference parser reads the same wrong tag), but only
 \emph{approximately}, since providers round and normalize --- hence the 1\% tolerance.
 
+\subsection{Facts, not computed aggregates}\label{sec:benchmark-facts}
+
+The benchmark only compares like with like where both sides hold the same \emph{kind} of number.
+\texttt{EDGAR.jl} reports \textbf{facts}: for a tagged filing, the values as defined and tagged under
+\textbf{iXBRL/XBRL}; for a PDF-native filing (China, Hong~Kong, scanned UK), the line items the filing itself
+\emph{prints} on its primary statements, mapped to the same \texttt{ifrs-full} concepts. Either way EDGAR is
+bounded by the source --- it never \emph{synthesizes} a total the filing did not report. A provider such as
+Yahoo, by contrast, sometimes displays a \textbf{computed aggregate} of its own: a figure that is not a defined
+fact in any taxonomy. Where that happens \texttt{EDGAR.jl} leaves the value blank rather than mimic the
+provider --- and you reconstruct the aggregate yourself from the facts EDGAR \emph{does} carry.
+
+\paragraph{A fact that only looks like an aggregate.} It is tempting to assume a bank's \textbf{net interest
+income} is such a computation --- it reads like ``interest income minus interest expense''. It is not: it is a
+\emph{standard} \texttt{ifrs-full} element, \texttt{ifrs-full:InterestRevenueExpense} (confirmed against
+Santander's ESEF tagging, where \texttt{RevenueFromInterest} $-$ \texttt{InterestExpense} equals it to the
+euro). EDGAR therefore stores it as a fact in its own right, alongside the two gross components:
+
+\begin{lstlisting}
+f    = fetch_filing(first(discover(HKEXFilings(); code = "02388")))  # BOC Hong Kong (a bank)
+rows = facts(f)
+latest(c) = (rs = filter(r -> r.concept == c, rows); rs[argmax(getproperty.(rs, :period_end))].value)
+
+latest("ifrs-full:RevenueFromInterest")     # 120,355  interest income
+latest("ifrs-full:InterestExpense")         #  67,444  interest expense
+latest("ifrs-full:InterestRevenueExpense")  #  52,911  net interest income -- a fact, not a computation
+\end{lstlisting}
+
+\paragraph{A genuine non-fact aggregate.} The real case is a \textbf{non-GAAP} measure that IFRS and US~GAAP
+deliberately do \emph{not} define. \textbf{EBITDA} is the textbook one: there is no \texttt{ifrs-full:EBITDA}
+(IFRS classes it an alternative performance measure), so no filer tags it and \texttt{EDGAR.jl} stores none ---
+the benchmark for EBITDA is simply left blank. \textbf{Working capital} is the same in miniature: Yahoo reports
+it, but it is \emph{current assets minus current liabilities} --- two defined facts whose \emph{difference} is
+nowhere a tagged line. You compute it from what EDGAR provides:
+
+\begin{lstlisting}
+f    = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)  # Apple
+rows = facts(f; classify = true)
+latest(c) = (rs = filter(r -> r.concept == c, rows); rs[argmax(getproperty.(rs, :period_end))].value)
+
+working_capital = latest("us-gaap:AssetsCurrent") - latest("us-gaap:LiabilitiesCurrent")  # Yahoo's figure
+\end{lstlisting}
+
+\noindent The stored values are the taxonomy's; the aggregate is the reader's to compute --- EDGAR does not
+blur the two.
+
+\paragraph{The PDF qualification.} For a \textbf{PDF} source the dependency is doubled. With no XBRL layer,
+EDGAR reconstructs facts from the labels the filing \emph{prints}, so it can map only what appears on the
+primary statements it parses. Where a bank prints net interest income and its two components on the face of its
+income statement --- as BOC~Hong~Kong does, so all three become facts --- they are there; where a filing shows
+only a subtotal and relegates the pieces to an un-parsed note, EDGAR is contained by that presentation and
+cannot recover a line the page never shows. The principle is the same as for XBRL (report what the source
+defines, synthesize nothing), but a PDF binds us to the filing's \emph{layout}, not just to the taxonomy.
+
 \subsection{Yahoo Finance}
 
 An external \emph{benchmark} with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
