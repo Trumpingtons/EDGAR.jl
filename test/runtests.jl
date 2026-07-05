@@ -614,6 +614,111 @@ end
     @test V("ifrs-full:ProfitLoss")  == -5_000 * 1e6       # credit line: a loss keeps its reported sign
 end
 
+@testset "unlabeled subtotal inherits the section header, not an intervening nil line (offline)" begin
+    # Tencent's balance sheet: "Equity attributable to equity holders of the Company" is a section header
+    # (no value), then component lines, then an UNLABELED subtotal (973,548). Between them sits a nil line
+    # ("Share capital  -  -"): its value columns are filled with a dash, not empty, so it must NOT be taken
+    # as the section header — otherwise the unlabeled subtotal inherits "Share capital" and is lost, and the
+    # Yahoo benchmark sees total equity (incl. NCI) instead of the owners'-of-parent figure it reports.
+    S(id, t, pg) = EDGAR.DocSection(id, nothing, 1, t, "en", 0, pg, pg, nothing)
+    Cs(p) = EDGAR.TableCell[EDGAR.TableCell(r, c, 1, 1, r == 0, t) for (r, c, t) in p]
+    cells = Cs([(0,1,"2024"), (0,2,"2023"),
+                (1,0,"EQUITY"),
+                (2,0,"Equity attributable to equity holders of the Company"),   # section header (no value)
+                (3,0,"Share capital"), (3,1,"-"), (3,2,"-"),                     # NIL leaf — must not clobber it
+                (4,0,"Retained earnings"), (4,1,"892,030"), (4,2,"813,911"),
+                (5,1,"973,548"), (5,2,"808,591"),                               # UNLABELED attributable subtotal
+                (6,0,"Non-controlling interests"), (6,1,"80,348"), (6,2,"65,090"),
+                (7,0,"Total equity"), (7,1,"1,053,896"), (7,2,"873,681")])
+    tbl = EDGAR.DocTable("t", "s_bs", 0, "unknown", nothing, nothing, "en", 1, 1, nothing, 8, 3, cells)
+    blk = EDGAR.TextBlock("b", "s_bs", 0, "paragraph", "As at 31 December 2024 (RMB'Million)", "en", 1, nothing, 0)
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false),
+        [S("s_bs", "CONSOLIDATED BALANCE SHEET", 1)], [blk], [tbl],
+        EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    rows = EDGAR._ifrs_facts_from_sd(sd)
+    V(c) = (v = [r.value for r in rows if r.concept == c && r.period_end == Date(2024, 12, 31)];
+            isempty(v) ? nothing : v[1])
+    @test all(r -> r.unit == "CNY", rows)
+    @test V("ifrs-full:EquityAttributableToOwnersOfParent") ≈ 973_548e6   # the unlabeled subtotal, via the header
+    @test V("ifrs-full:Equity")                            ≈ 1_053_896e6
+    @test V("ifrs-full:NoncontrollingInterests")           ≈ 80_348e6
+    @test V("ifrs-full:EquityAttributableToOwnersOfParent") +
+          V("ifrs-full:NoncontrollingInterests") ≈ V("ifrs-full:Equity")   # owners + NCI = total equity
+end
+
+@testset "ifrs_label_concept: empirically-added HK vocab (offline)" begin
+    lc = EDGAR.ifrs_label_concept
+    # bank interest lines — all three are STANDARD ifrs-full elements (verified against Santander's ESEF
+    # tagging: RevenueFromInterest − InterestExpense = InterestRevenueExpense, i.e. net interest income).
+    @test lc("Interest income", "IncomeStatement").concept == "ifrs-full:RevenueFromInterest"
+    @test lc("Interest income", "IncomeStatement").balance == :credit
+    @test lc("Interest expense", "IncomeStatement").concept == "ifrs-full:InterestExpense"
+    @test lc("Interest expense", "IncomeStatement").balance == :debit        # stored positive; sign is the contribution
+    @test lc("Net interest income", "IncomeStatement").concept == "ifrs-full:InterestRevenueExpense"
+    @test lc("Net operating income", "IncomeStatement") === nothing          # a bank total with no ifrs-full element
+    # attribution — owners'-of-parent however phrased, and the NCI split (CK Hutchison / bank wordings)
+    @test lc("Capital and reserves attributable to equity holders of the Company", "BalanceSheet").concept ==
+          "ifrs-full:EquityAttributableToOwnersOfParent"
+    @test lc("Profit attributable to ordinary shareholders", "IncomeStatement").concept ==
+          "ifrs-full:ProfitLossAttributableToOwnersOfParent"
+    @test lc("Profit attributable to non-controlling interests and holders of perpetual capital securities", "IncomeStatement").concept ==
+          "ifrs-full:ProfitLossAttributableToNoncontrollingInterests"
+    # "equity shareholders" variant (China Mobile) — both statements; and "Operating revenue" (telco total)
+    @test lc("Total equity attributable to equity shareholders of the Company", "BalanceSheet").concept ==
+          "ifrs-full:EquityAttributableToOwnersOfParent"
+    @test lc("Equity shareholders of the Company", "IncomeStatement").concept ==
+          "ifrs-full:ProfitLossAttributableToOwnersOfParent"
+    @test lc("Operating revenue", "IncomeStatement").concept == "ifrs-full:Revenue"
+    # current/non-current subtotals — the net-assets-format balance sheet (PetroChina) reports these, not a
+    # single Total assets / Total liabilities (both verified against Inditex's ESEF tagging)
+    @test lc("TOTAL NON-CURRENT ASSETS", "BalanceSheet").concept == "ifrs-full:NoncurrentAssets"
+    @test lc("Total current assets", "BalanceSheet").concept == "ifrs-full:CurrentAssets"
+    @test lc("Total current liabilities", "BalanceSheet").concept == "ifrs-full:CurrentLiabilities"
+    @test lc("Total non-current liabilities", "BalanceSheet").concept == "ifrs-full:NoncurrentLiabilities"
+    # regressions — existing behaviour unchanged
+    @test lc("Non-controlling interests", "BalanceSheet").concept == "ifrs-full:NoncontrollingInterests"
+    @test lc("Equity attributable to equity holders of the Company", "BalanceSheet").concept ==
+          "ifrs-full:EquityAttributableToOwnersOfParent"
+end
+
+@testset "English-PDF extractor: single-statement comprehensive income + US date (offline)" begin
+    # A single-statement filer (China Mobile, PetroChina) presents profit-or-loss INSIDE the "Statement of
+    # Comprehensive Income" — no separate income statement — so it must NOT be skipped, and extraction must
+    # STOP at the OCI section so the second "attributable to owners" (comprehensive-income-attributable) is not
+    # mistaken for profit. Also exercises the US month-day date ("December 31, 2025") and the operating-revenue
+    # total recovered by section-header carry-down.
+    S(id, t, pg) = EDGAR.DocSection(id, nothing, 1, t, "en", 0, pg, pg, nothing)
+    Cs(p) = EDGAR.TableCell[EDGAR.TableCell(r, c, 1, 1, r == 0, t) for (r, c, t) in p]
+    cells = Cs([(0,1,"2025"), (0,2,"2024"),
+                (1,0,"Operating revenue"),                                       # section header (no value)
+                (2,0,"Revenue from principal businesses"), (2,1,"800.0"), (2,2,"750.0"),
+                (3,1,"1,000.0"), (3,2,"950.0"),                                  # UNLABELED operating-revenue total → Revenue
+                (4,0,"Profit before taxation"), (4,1,"200.0"), (4,2,"180.0"),
+                (5,0,"PROFIT FOR THE YEAR"), (5,1,"150.0"), (5,2,"140.0"),
+                (6,0,"Profit attributable to:"),
+                (7,0,"Equity shareholders of the Company"), (7,1,"145.0"), (7,2,"135.0"),  # PROFIT-attributable
+                (8,0,"Non-controlling interests"), (8,1,"5.0"), (8,2,"5.0"),
+                (9,0,"Other comprehensive income for the year"), (9,1,"10.0"), (9,2,"8.0"),  # OCI boundary → STOP
+                (10,0,"TOTAL COMPREHENSIVE INCOME"), (10,1,"160.0"), (10,2,"148.0"),
+                (11,0,"Total comprehensive income attributable to:"),
+                (12,0,"Equity shareholders of the Company"), (12,1,"155.0"), (12,2,"143.0")]) # comprehensive-attrib: IGNORED
+    tbl = EDGAR.DocTable("t", "s", 0, "unknown", nothing, nothing, "en", 1, 1, nothing, 13, 3, cells)
+    blk = EDGAR.TextBlock("b", "s", 0, "paragraph", "For the year ended December 31, 2025 (RMB million)", "en", 1, nothing, 0)
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false),
+        [S("s", "CONSOLIDATED STATEMENT OF COMPREHENSIVE INCOME", 1)], [blk], [tbl],
+        EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    @test EDGAR._ifrs_period(sd) == (12, 31, [2025, 2024])       # US "December 31" month-day format
+    rows = EDGAR._ifrs_facts_from_sd(sd)
+    @test all(r -> r.unit == "CNY", rows)
+    V(c) = [r.value for r in rows if r.concept == c && r.period_end == Date(2025, 12, 31)]
+    @test V("ifrs-full:Revenue") == [1_000e6]                    # single-statement kept; total via carry-down
+    @test V("ifrs-full:ProfitLossBeforeTax") == [200e6]
+    @test V("ifrs-full:ProfitLoss") == [150e6]
+    @test V("ifrs-full:ProfitLossAttributableToOwnersOfParent") == [145e6]  # PROFIT only; 155 comprehensive stopped
+end
+
 @testset "English-PDF extractor: scanned UK Companies House (net-assets, GBP £m, offline)" begin
     # A UK statutory account (FRS 101/102) is the OTHER consumer of the shared English-PDF path. It exercises
     # what HK does not: (1) the statement NAME sits in a SEPARATE section heading from the table's own section
