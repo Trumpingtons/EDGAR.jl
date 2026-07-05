@@ -38,6 +38,13 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
     if statement == "BalanceSheet"
         t == "total assets"                                    && return C("ifrs-full:Assets", :debit)
         t == "total liabilities"                               && return C("ifrs-full:Liabilities", :credit)
+        # current/non-current subtotals — standard ifrs-full elements (a net-assets-format balance sheet, e.g.
+        # PetroChina/CKH, carries these instead of a single Total assets/Total liabilities; Total assets is then
+        # NoncurrentAssets + CurrentAssets, a computation, not a stored line).
+        occursin(r"^total non.?current assets$", t)            && return C("ifrs-full:NoncurrentAssets", :debit)
+        t == "total current assets"                            && return C("ifrs-full:CurrentAssets", :debit)
+        occursin(r"^total non.?current liabilities$", t)       && return C("ifrs-full:NoncurrentLiabilities", :credit)
+        t == "total current liabilities"                       && return C("ifrs-full:CurrentLiabilities", :credit)
         # "Total ordinary shareholders' funds" is the owners'-of-parent subtotal (excludes NCI + perpetual
         # capital), so it must be tested BEFORE the whole-equity "shareholders' funds" rule below.
         (t == "total ordinary shareholders' funds" || occursin("ordinary shareholders' funds", t)) &&
@@ -47,15 +54,22 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
             return C("ifrs-full:Equity", :credit)             # whole equity: UK "Total shareholders' funds", "Total equity"
         (t == "total equity and liabilities" ||
          t == "total liabilities and equity")                 && return C("ifrs-full:EquityAndLiabilities", :credit)
-        occursin(r"^(total )?equity attributable to (equity holders|owners)", t) &&
-            return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
+        # the owners'-of-parent equity subtotal, however its leading noun is phrased — "Equity attributable
+        # to equity holders of the Company", a bank's "Capital and reserves attributable to equity holders".
+        (occursin(r"attributable to (?:the )?(?:equity holders|owners|(?:equity )?shareholders)", t) &&
+         !occursin("non-controlling", t))                     && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)  # incl. "equity shareholders"
         t == "non-controlling interests"                       && return C("ifrs-full:NoncontrollingInterests", :credit)
 
     elseif statement == "IncomeStatement"
-        (t == "revenue" || t == "revenues" || t == "turnover" ||
+        (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
          t == "total revenue" || t == "total revenues")       && return C("ifrs-full:Revenue", :credit)
         t == "gross profit"                                    && return C("ifrs-full:GrossProfit", :credit)
         occursin(r"^cost of (revenue|sales|goods sold)", t)    && return C("ifrs-full:CostOfSales", :debit)
+        # Bank interest lines — all three are STANDARD ifrs-full elements (verified against Santander's ESEF
+        # tagging: RevenueFromInterest − InterestExpense = InterestRevenueExpense, i.e. net interest income).
+        t == "interest income"                                 && return C("ifrs-full:RevenueFromInterest", :credit)
+        t == "interest expense"                                && return C("ifrs-full:InterestExpense", :debit)
+        t == "net interest income"                             && return C("ifrs-full:InterestRevenueExpense", :credit)
         (occursin(r"^operating profit", t) || occursin(r"^profit from operat", t)) &&
             return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
         (occursin("before tax", t) ||                                  # UK "…before taxation" / "…before tax"
@@ -64,7 +78,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
          t == "profit after tax" || t == "profit after taxation" ||          # CK Hutchison's net-income line
          occursin(r"^profit(/\(loss\))? for the (year|period)", t) ||
          occursin("for the financial year", t))                 && return C("ifrs-full:ProfitLoss", :credit)  # UK "Profit for the financial year" (OCR-tolerant)
-        occursin(r"(equity holders|owners) of the (company|parent)", t) &&
+        # profit attribution — test the NCI/minority split FIRST so it is not captured by the owners' rule
+        # (CK Hutchison: "Profit attributable to non-controlling interests and holders of perpetual capital…").
+        occursin(r"attributable to (non-controlling|minority)", t) &&
+            return C("ifrs-full:ProfitLossAttributableToNoncontrollingInterests", :credit)
+        (occursin(r"(?:equity holders|equity shareholders|owners) of the (?:company|parent)", t) ||
+         occursin(r"attributable to (?:the )?(?:ordinary |equity )?shareholders", t)) &&   # CKH "ordinary", China Mobile "equity"
             return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
 
     elseif statement == "CashFlow"
