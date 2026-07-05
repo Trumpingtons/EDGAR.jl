@@ -38,6 +38,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
     if statement == "BalanceSheet"
         t == "total assets"                                    && return C("ifrs-full:Assets", :debit)
         t == "total liabilities"                               && return C("ifrs-full:Liabilities", :credit)
+        # REIT / investment fund: units are the residual "net assets attributable to unitholders" (the equity-
+        # equivalent), and the liabilities line explicitly EXCLUDES them — test that liabilities line FIRST so
+        # it is not captured by the net-assets rule below.
+        occursin(r"(?i)total liabilities.*(excluding|net assets)", t) && return C("ifrs-full:Liabilities", :credit)
+        (occursin("net assets attributable to", t) && occursin("unitholder", t)) &&
+            return C("ifrs-full:Equity", :credit)             # REIT "Net assets attributable to Unitholders"
         # current/non-current subtotals — standard ifrs-full elements (a net-assets-format balance sheet, e.g.
         # PetroChina/CKH, carries these instead of a single Total assets/Total liabilities; Total assets is then
         # NoncurrentAssets + CurrentAssets, a computation, not a stored line).
@@ -78,6 +84,8 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
          t == "profit after tax" || t == "profit after taxation" ||          # CK Hutchison's net-income line
          occursin(r"^profit(/\(loss\))? for the (year|period)", t) ||
          occursin("for the financial year", t))                 && return C("ifrs-full:ProfitLoss", :credit)  # UK "Profit for the financial year" (OCR-tolerant)
+        (occursin(r"(?i)(profit|loss) for the (year|period)", t) && occursin("unitholder", t)) &&
+            return C("ifrs-full:ProfitLoss", :credit)          # REIT "Loss for the year, before transactions with Unitholders"
         # profit attribution — test the NCI/minority split FIRST so it is not captured by the owners' rule
         # (CK Hutchison: "Profit attributable to non-controlling interests and holders of perpetual capital…").
         occursin(r"attributable to (non-controlling|minority)", t) &&

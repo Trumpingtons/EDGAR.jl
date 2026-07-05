@@ -5785,12 +5785,26 @@ majority. A few issuers report under \textbf{US~GAAP} (certain secondary-listed 
 mainland-incorporated issuers, \textbf{CASBE} with reconciliation; those are edge cases whose face labels
 differ from the IFRS set.
 
-\paragraph{Boundary.} The scope is \textbf{listed-issuer annual reports} on HKEXnews (Main Board and GEM),
-with US-primary names better reached through the SEC. \textbf{REITs}, business trusts and listed funds file a
-different statement shape --- net-asset and distribution accounting, as in China --- and are a later addition;
-interim and quarterly reports use the same HKEXnews seam and are a straightforward extension. \textbf{Non-listed}
-Hong~Kong companies are out of reach: the Companies Registry holds only the accounts-free annual return and
-charges per document (\S\ref{sec:hk-repos}).
+\subsection{REITs, business trusts and investment funds}\label{sec:hk-reits}
+
+Hong~Kong's \textbf{REITs} (Link~REIT \texttt{00823}, Fortune~REIT \texttt{00778}, Sunlight~REIT \texttt{00435})
+and business trusts list and file on HKEXnews like any other issuer --- reached by the same
+\texttt{discover(HKEXFilings())} --- but their accounts take a \emph{net-asset} shape: under IAS~32 the units
+are puttable, so the balance sheet ends not in ``total equity'' but in \textbf{net assets attributable to
+Unitholders} (the residual), above a \textbf{total liabilities, excluding net assets attributable to
+Unitholders} line, and the income statement's bottom line is a \textbf{(loss)/profit for the year, before
+transactions with Unitholders}. \texttt{EDGAR.jl} maps these unit-holder lines to the same \texttt{ifrs-full}
+anchors (net assets attributable to unitholders $\to$ the equity-equivalent \texttt{Equity}; the
+excluding-units liabilities $\to$ \texttt{Liabilities}; the pre-transactions result $\to$ \texttt{ProfitLoss}),
+so a REIT's revenue, result and balance sheet extract through the ordinary path --- validated on Link~REIT (FY
+ending 31~March; property revaluations can push the year to a loss). The \emph{distribution} statement and the
+property \emph{portfolio} are REIT-specific extensions, the analogue of the fund-portfolio breakdown in India
+and China (\S\ref{sec:india-formats}).
+
+\paragraph{Boundary.} The scope is \textbf{listed-issuer annual and interim reports} on HKEXnews (Main Board
+and GEM) --- including REITs and business trusts (\S\ref{sec:hk-reits}) --- with US-primary names better
+reached through the SEC. \textbf{Non-listed} Hong~Kong companies are out of reach: the Companies Registry holds
+only the accounts-free annual return and charges per document (\S\ref{sec:hk-repos}).
 
 \section{Forms and Statement Types}\label{sec:hk-forms}
 

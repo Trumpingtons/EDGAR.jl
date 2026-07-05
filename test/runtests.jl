@@ -744,6 +744,14 @@ end
     @test lc("Non-controlling interests", "BalanceSheet").concept == "ifrs-full:NoncontrollingInterests"
     @test lc("Equity attributable to equity holders of the Company", "BalanceSheet").concept ==
           "ifrs-full:EquityAttributableToOwnersOfParent"
+    # REIT / investment fund: units are the residual "net assets attributable to unitholders" (equity-
+    # equivalent); the liabilities line EXCLUDES them and must be tested first (Link REIT wordings)
+    @test lc("Net assets attributable to Unitholders", "BalanceSheet").concept == "ifrs-full:Equity"
+    @test lc("Total liabilities, excluding net assets attributable to Unitholders", "BalanceSheet").concept ==
+          "ifrs-full:Liabilities"
+    @test lc("Loss for the year, before transactions with Unitholders", "IncomeStatement").concept ==
+          "ifrs-full:ProfitLoss"
+    @test lc("Total liabilities and equity", "BalanceSheet").concept == "ifrs-full:EquityAndLiabilities"  # not swept up by the REIT rule
 end
 
 @testset "English-PDF extractor: single-statement comprehensive income + US date (offline)" begin
