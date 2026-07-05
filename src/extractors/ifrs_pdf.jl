@@ -35,11 +35,19 @@ function _ifrs_period(sd)
     MON = "January|February|March|April|May|June|July|August|September|October|November|December"
     text = join(vcat([s.title for s in sd.sections], [something(t.caption, "") for t in sd.tables],
                      [b.text for b in sd.text_blocks], [c.text for t in sd.tables for c in t.cells]), " ")
-    m = match(Regex("(?i)(?:year|period)?\\s*(?:ended|ending|as at|as of)\\s+(\\d{1,2})\\s+($MON)"), text)
-    m === nothing && (m = match(Regex("(?i)(28|29|30|31)\\s+($MON)"), text))
-    m === nothing && (m = match(Regex("(?i)(\\d{1,2})\\s+($MON)"), text))
-    mo = m === nothing ? 12 : monthabbr_to_num(m.captures[2])
-    dy = m === nothing ? 31 : parse(Int, m.captures[1])
+    # Accept BOTH orders — "31 December" (day-month, HK/UK) and "December 31" (month-day, US-style, e.g.
+    # PetroChina). Priority: a fiscal-period phrase; then a month-END date (a real year-end, never a "1 January"
+    # / "January 1" opening line); then any date. `a1` tells whether the month was captured first.
+    fc = "(?:year|period)?\\s*(?:ended|ending|as at|as of)\\s+"
+    m = nothing
+    for rx in ["(?i)$fc(\\d{1,2})\\s+($MON)", "(?i)$fc($MON)\\s+(\\d{1,2})",
+               "(?i)(28|29|30|31)\\s+($MON)", "(?i)($MON)\\s+(28|29|30|31)\\b",
+               "(?i)(\\d{1,2})\\s+($MON)", "(?i)($MON)\\s+(\\d{1,2})\\b"]
+        m = match(Regex(rx), text); m === nothing || break
+    end
+    a1 = m !== nothing && occursin(r"[A-Za-z]", String(m.captures[1]))    # month captured first (month-day order)?
+    mo = m === nothing ? 12 : monthabbr_to_num(m.captures[a1 ? 1 : 2])
+    dy = m === nothing ? 31 : parse(Int, m.captures[a1 ? 2 : 1])
     return (mo, dy, uy)
 end
 
@@ -166,9 +174,19 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
              !_ifrs_isnoteref(s)) && push!(lcells, s)
         end
         label = strip(join(lcells, " "))
+        # In a COMBINED profit-or-loss-and-OCI statement, stop at the OCI / total-comprehensive-income section:
+        # everything below is other comprehensive income — including a second "attributable to owners" that is
+        # comprehensive-income-attributable, not profit (China Mobile lists it under "Total comprehensive income
+        # attributable to:" on a continuation page). The income statement we map ends at "profit for the year".
+        (stmt == "IncomeStatement" && occursin(r"(?i)(?:other|total) comprehensive income", label)) && break
         hasval = any(_ifrs_ismoney(get(grid, (r, c), "")) for c in keep)
-        if !hasval                                             # a section header / caption row — no fact
-            isempty(label) || (last_header = label)
+        if !hasval                                             # no monetary value on this row — no fact
+            # A section header has its value columns EMPTY and carries down to a later unlabeled subtotal
+            # (Tencent's "Revenues" / "Equity attributable to …" totals). A row whose value columns instead
+            # hold a nil dash ("-") is a NIL line item with its own label (e.g. Tencent "Share capital  -  -")
+            # — it must NOT overwrite the section header, or the subtotal inherits the wrong label and is lost.
+            filled = any(!isempty(get(grid, (r, c), "")) for c in keep)
+            (!filled && !isempty(label)) && (last_header = label)
             continue
         end
         # an UNLABELED value row inherits the section header (Tencent's Revenue total sits under a "Revenues"
@@ -194,6 +212,13 @@ end
 # Consolidated-statements page range, TOC-first (the AR outline's statement bookmarks), heading-scan fallback.
 const _IFRS_STMT_TITLES = [r"(?i)consolidated (?:income )?statement of (?:financial position|profit or loss|comprehensive income|cash flows|changes in equity)",
                             r"(?i)consolidated income statement", r"(?i)consolidated balance sheet"]
+# The four primary-statement TYPES, each keyed by its consolidated heading — used by the heading-scan fallback
+# to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray first mention.
+const _IFRS_STMT_TYPES = [
+    (:is, r"(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))"),
+    (:bs, r"(?i)consolidated (?:balance sheet|statement of financial position)"),
+    (:cf, r"(?i)consolidated (?:cash flow statement|statement of cash flows)"),
+    (:eq, r"(?i)consolidated statement of changes in equity")]
 
 function _ifrs_statement_pages(doc; window::Int = 14)
     npg = length(doc.pages)
@@ -206,12 +231,24 @@ function _ifrs_statement_pages(doc; window::Int = 14)
         end
         isempty(sp) || return (minimum(sp), min(maximum(sp) + 3, npg))
     end
-    lo = nothing
+    # Heading-scan fallback. A long report (especially a DUAL-STANDARD CAS+IFRS filing like PetroChina, whose
+    # outline is only two coarse Chinese section bookmarks) mentions statement titles many times — in the MD&A,
+    # the parent-company statements, note headings — before the real consolidated set. So take the primary
+    # CLUSTER: the `window` where the most DISTINCT consolidated statement types co-occur, not the first mention.
+    pgtypes = Dict{Int,Set{Symbol}}()
     for pg in doc.pages
-        any(occursin(rx, _cas_pagetext(pg)) for rx in _IFRS_STMT_TITLES) && (lo = Int(pg.page); break)
+        s = Set{Symbol}(); txt = _cas_pagetext(pg)
+        for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end
+        isempty(s) || (pgtypes[Int(pg.page)] = s)
     end
-    lo === nothing && return nothing
-    return (lo, min(lo + window, npg))
+    isempty(pgtypes) && return nothing
+    best_lo, best_n = minimum(keys(pgtypes)), 0
+    for lo in sort!(collect(keys(pgtypes)))
+        n = length(reduce(union, (get(pgtypes, p, Set{Symbol}()) for p in lo:min(lo + window, npg));
+                          init = Set{Symbol}()))
+        n > best_n && (best_n = n; best_lo = lo)      # strict >: on a tie the EARLIEST start wins
+    end
+    return (best_lo, min(best_lo + window, npg))
 end
 
 """
@@ -255,6 +292,17 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         push!(get!(pagetitles, Int(p), String[]), s.title)
     end
 
+    # Is there a SEPARATE income statement — a "profit or loss" / "income statement" table that is NOT the
+    # combined comprehensive-income one? If so, a standalone "statement of comprehensive income" is a DUPLICATE
+    # and is skipped (its attributable line is comprehensive-income-attributable, not profit). If NOT, the filer
+    # took the single-statement route (China Mobile, PetroChina): profit-or-loss lives INSIDE the "Statement of
+    # Comprehensive Income", so it must be KEPT — `_ifrs_table_facts` then stops at the OCI section (below).
+    _titleof(tbl) = strip(string(something(tbl.caption, ""), " ",
+                                 get(sectitle, something(tbl.section_id, ""), ""), " ",
+                                 join(get(pagetitles, Int(tbl.page_start), String[]), " ")))
+    has_sep_is = any(t -> occursin(r"(?i)income statement|profit or loss", _titleof(t)) &&
+                          !occursin(r"(?i)comprehensive income", _titleof(t)), sd.tables)
+
     facts = Fact[]
     for tbl in sd.tables
         # A statement table's own caption/section is often just the period line ("AS AT 31 MARCH 2025", "FOR
@@ -272,11 +320,12 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         stmt = cls == "balance_sheet" ? "BalanceSheet" : cls == "income_statement" ? "IncomeStatement" :
                cls == "cash_flow" ? "CashFlow" : nothing
         stmt === nothing && continue                          # skip equity-changes matrix + unrecognised
-        # Skip the STANDALONE statement of comprehensive income (title says "comprehensive income" but is not
-        # the income statement / profit-or-loss): its "Equity holders of the Company" line is comprehensive-
-        # income-attributable-to-owners, which would otherwise collide with profit-attributable-to-owners.
+        # Skip a STANDALONE statement of comprehensive income (title says "comprehensive income", not "income
+        # statement"/"profit or loss") — its "Equity holders of the Company" line is comprehensive-income-
+        # attributable, which would collide with profit-attributable — but ONLY when a separate income statement
+        # exists. A single-statement filer has none, so its comprehensive-income table IS the P&L and is kept.
         (stmt == "IncomeStatement" && occursin(r"(?i)comprehensive income", title) &&
-         !occursin(r"(?i)income statement|profit or loss", title)) && continue
+         !occursin(r"(?i)income statement|profit or loss", title) && has_sep_is) && continue
         tscale, tcur = _ifrs_table_unit(tbl, scale, currency)   # this statement's OWN unit (£m vs a note's £'000)
         append!(facts, _ifrs_table_facts(tbl, stmt, stmt == "BalanceSheet", pends, tscale, tcur))
     end
