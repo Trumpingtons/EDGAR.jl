@@ -5834,6 +5834,26 @@ units) and \texttt{pct\_total\_assets} (its share of the portfolio). Swap the co
 (Fortune~\texttt{00778}, Sunlight~\texttt{00435}) and the same three lines work; with the PDF already on disk,
 call \texttt{extract\_reit\_portfolio("path/to.pdf")} directly.
 
+\paragraph{Mutual-fund holdings --- the SFC gap.} A REIT's portfolio is on HKEXnews (in the annual report); a
+\emph{mutual} fund's is not. Hong~Kong's fund holdings sit in each fund's annual / semi-annual report on its
+\emph{manager's} website --- there is \textbf{no central, keyless repository}, unlike India's NSE feed or
+China's CNINFO portfolio-report filing. The SFC \emph{authorises} products and publishes a \textbf{register}
+(fund name, manager, type, ISIN, authorisation status --- its ``List of publicly offered investment products''
+and ``List of Registered OFCs''), but \emph{not} holdings. So the India/China ``discover the portfolio filing''
+path has no HK analogue. Three ways forward, the choice \textbf{deferred} for now:
+\begin{enumerate}[nosep]
+  \item \textbf{Extract holdings from a fund's report PDF} --- the strong option, because it reuses everything.
+    The holdings \emph{are} in each fund's annual / semi-annual report; we simply cannot \emph{discover} them
+    centrally. Supply the PDF (or fetch it as a \texttt{Generic} filing, Chapter~\ref{ch:generic}) and a
+    portfolio parser --- \texttt{extract\_reit\_portfolio} / \texttt{extract\_fund\_portfolio} --- recovers the
+    holdings into a \texttt{FundPortfolio}. Discovery is blocked; extraction is not.
+  \item \textbf{An SFC fund-register lookup} --- a \texttt{discover}-style metadata search over the SFC register
+    (fund name $\to$ manager, ISIN, type, authorisation). Useful for \emph{finding} funds, but it returns no
+    holdings.
+  \item \textbf{HKEX-listed ETF daily PCFs} --- structured holdings (portfolio composition files), but scattered
+    on each manager's site: per-manager adapters, fragile.
+\end{enumerate}
+
 \paragraph{Boundary.} The scope is \textbf{listed-issuer annual and interim reports} on HKEXnews (Main Board
 and GEM) --- including REITs and business trusts (\S\ref{sec:hk-reits}) --- with US-primary names better
 reached through the SEC. \textbf{Non-listed} Hong~Kong companies are out of reach: the Companies Registry holds
