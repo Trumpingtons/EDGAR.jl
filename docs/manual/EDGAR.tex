@@ -556,13 +556,14 @@ end
 
 \paragraph{Russia (RFSD structured row --- \texttt{:ras}).}
 \begin{lstlisting}
-# Route 1: a Russian "filing" is one (inn, year) RFSD row (kind :ras). The facts(f) step below is
-# implemented (R1); the discovery/fetch seam (name/ticker -> INN via MOEX, then a DuckDB partition
-# query) is planned (R2), so today the :ras Filing is built from a fetched RFSD row.
-f    = fetch_filing(Russia(); inn = "7736050003", year = 2023)   # Gazprom parent (discovery/fetch: R2)
-rows = facts(f)                                                  # one Fact per OKUD line, in rubles
-# ras:line_1600 (total assets) == ras:line_1700 (total equity + liabilities) -- the RAS cross-foot
-select_statement(rows, "BalanceSheet")                          # after vocab_ras classification (R3)
+using EDGAR, DuckDB                                    # DuckDB reads the RFSD parquet partition
+h    = only(discover(RFSDFilings(); ticker = "GAZP", year = 2023))  # Gazprom -> its INN, via MOEX ISS
+f    = fetch_filing(h)                                 # one (inn, year) RFSD row, as a :ras Filing
+rows = facts(f)                                        # one Fact per OKUD line, in rubles
+# the RAS balance sheet cross-foots: total assets == total equity + liabilities
+assets = only(r.value for r in rows if r.concept == "ras:line_1600")
+claims = only(r.value for r in rows if r.concept == "ras:line_1700")
+@assert assets == claims
 \end{lstlisting}
 
 \noindent (For a born-digital PDF, the extractor call is \texttt{extract\_pdf(path)} --- see
@@ -6694,16 +6695,12 @@ of Russia} (CBR, the financial-sector regulator), and the tax-service corporate-
 primary agency is anti-bot-gated, so identity and facts must be assembled from the doors that are open.
 
 Issuers report under \textbf{\rus{РСБУ}} (RAS, Russian Accounting Standards --- statutory, unconsolidated)
-and, for large groups, \textbf{\rus{МСФО}} (IFRS, consolidated). The recon outcome, developed across the
-three sections below, is that two open channels carry the facts: an open, permissively-licensed derived
-dataset of the \emph{entire non-financial universe's} RAS statements (the \textbf{RFSD},
-\S\ref{sec:russia-forms}) is the \textbf{first route}, and the CBR's public \emph{bank} reporting is the
-\textbf{second}; MOEX supplies identity for both. The gated primary agency and the financial-sector XBRL are
-documented but deferred.
-
-\emph{Status:} \textbf{recon complete}; implementation pending. Route~1 (RFSD $\to$ RAS facts, keyed by INN)
-is chosen for the MVP because it is the fastest path to validated, cross-footed facts with the most reuse of
-the existing structured-fact model; route~2 (CBR bank forms) adds the financial sector afterwards.
+and, for large groups, \textbf{\rus{МСФО}} (IFRS, consolidated). Two open channels carry the facts:
+\texttt{EDGAR.jl}'s Russian source is the \textbf{RFSD} --- an open, permissively-licensed derived dataset of
+the \emph{entire non-financial universe's} RAS statements (\S\ref{sec:russia-forms}) --- with the CBR's public
+\emph{bank} reporting covering the financial sector the RFSD excludes; \textbf{MOEX} supplies identity for
+both. The gated primary agency (\texttt{e-disclosure.ru}) and the financial-sector XBRL are the harder,
+less-open channels.
 
 \section{Repositories}\label{sec:russia-repos}
 
@@ -6925,7 +6922,8 @@ Parquet; the rest are extensions.}
 
 \paragraph{RFSD --- structured RAS, already mapped.} The route-1 source is the \textbf{Russian Financial
 Statements Database} (\texttt{irlspbru/RFSD} on HuggingFace; Zenodo DOI \texttt{10.5281/zenodo.14622208};
-CC-BY-4.0), a firm-level collection of the whole non-financial universe's unconsolidated RAS statements for
+CC-BY-4.0; cite Bondarkov, Ledenev, and Skougarevskiy (2025), App.~\ref{ch:references}), a firm-level
+collection of the whole non-financial universe's unconsolidated RAS statements for
 \textbf{2011--2024}. It is distributed as Apache \textbf{Parquet}, \emph{year-partitioned} (\texttt{year=2011}
 \ldots{} \texttt{year=2024}), $\sim$7.4~GB in total but $\sim$550~MB for the current year alone --- and a
 per-issuer lookup is a column-projected, INN-filtered read of a single partition, not a full scan. Crucially,
@@ -6935,8 +6933,19 @@ the OKUD line codes arrive \emph{already decoded}: a shipped dictionary maps \te
 the facts are structured, named, cross-footable (\texttt{line\_1600 = line\_1700}), and keyed by the INN that
 MOEX resolves. It refreshes annually (late July / early August; current v2.0.3). A fetched row is a
 \texttt{Filing} of kind \texttt{:ras}, and \texttt{facts(f)} maps each OKUD line to a \texttt{Fact} in rubles
-(the RFSD structured-row extractor, \S\ref{sys:extraction}); on the four FY2023 fixtures (Gazprom, Lukoil,
-Tatneft, Magnit) the balance sheet cross-foots exactly.
+(the RFSD structured-row extractor, \S\ref{sys:extraction}), with total assets and total
+equity-plus-liabilities cross-footing exactly.
+
+\paragraph{Coverage caveat --- the largest sanctioned firms.} RFSD is built from two public sources ---
+Rosstat open data (2012--2018) and the FNS's GIR~BO API (\texttt{bo.nalog.ru}, 2019 onward) --- and inherits
+the latter's gaps. Since financial statements for 2018, Russia's \emph{strategic} companies (1{,}133 firms by
+end-2023) have been permitted \emph{not} to disclose, and such firms are retrospectively withheld from the
+GIR~BO API (Bondarkov, Ledenev, and Skougarevskiy (2025), App.~\ref{ch:references}). The effect is sharp and
+datable: an issuer like \textbf{Rosneft}, \textbf{Surgutneftegas} or \textbf{Severstal} carries full RAS data
+through 2018 and then \emph{vanishes} from 2019 --- \texttt{facts(f)} returns \emph{no} lines, and the row's
+\texttt{filed = 0} flag is exactly how a caller detects it. So RFSD is near-complete for the broad economy
+but blind to a specific tail of large, sanctioned issuers in the GIR~BO years; for those names only the
+pre-2019 history remains.
 
 \paragraph{The RAS form is the ``taxonomy''.} Because every RAS filer uses the same numbered OKUD lines, the
 line codes function as a de-facto taxonomy --- the RAS analogue of \texttt{ifrs-full} concepts or CAS labels,
@@ -7252,4 +7261,25 @@ Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although m
     year, which need not match the calendar (Apple's \texttt{FY2023} ended in
     September 2023).
 \end{description}
+
+\chapter{References}
+\label{ch:references}
+
+\noindent Works and datasets cited in this manual (Econometrica style). \texttt{EDGAR.jl} consumes several
+sources under open licences; where a licence requires attribution --- notably the \textbf{RFSD} under
+CC\,BY\,4.0 --- the citation below is that attribution.
+
+\begingroup
+\setlength{\parindent}{-1.5em}
+\leftskip=1.5em
+\setlength{\parskip}{6pt}
+\par
+
+\textsc{Bondarkov, S., V. Ledenev, \textsc{and} D. Skougarevskiy} (2025): ``Russian Financial Statements
+Database: A Firm-Level Collection of the Universe of Financial Statements,'' \emph{Scientific Data}, 12.
+DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: HuggingFace
+\texttt{irlspbru/RFSD}; Zenodo DOI~\texttt{10.5281/zenodo.14622208}; CC\,BY\,4.0.
+\par
+
+\endgroup
 \end{document}
