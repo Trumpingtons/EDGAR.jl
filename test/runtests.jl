@@ -783,6 +783,33 @@ end
     @test V("ifrs-full:ProfitLossAttributableToOwnersOfParent") == [145e6]  # PROFIT only; 155 comprehensive stopped
 end
 
+@testset "English-PDF extractor: interim IS prefers the six-month (YTD) column, not the quarter (offline)" begin
+    # An interim income statement prints BOTH a "three months ended" and a "six months ended" (year-to-date)
+    # column per year — same year, so they can't be told apart by year. The six-month header spans two columns
+    # (a colspan), so it is expanded before matching; when a year appears twice, the cumulative (YTD) column
+    # wins and the quarter column is dropped. Modelled on Xiaomi's interim report.
+    T(r, c, span, h, t) = EDGAR.TableCell(r, c, 1, span, h, t)
+    cells = EDGAR.TableCell[
+        T(0,1,2,true,"Three months ended June 30,"), T(0,3,2,true,"Six months ended June 30,"),
+        T(1,1,1,true,"2025"), T(1,2,1,true,"2024"), T(1,3,1,true,"2025"), T(1,4,1,true,"2024"),
+        T(2,0,1,false,"Revenue"),
+        T(2,1,1,false,"115,956.0"), T(2,2,1,false,"88,887.0"), T(2,3,1,false,"227,249.0"), T(2,4,1,false,"164,394.0"),
+        T(3,0,1,false,"Profit for the period"),
+        T(3,1,1,false,"4,000.0"), T(3,2,1,false,"5,000.0"), T(3,3,1,false,"22,800.0"), T(3,4,1,false,"11,000.0")]
+    tbl = EDGAR.DocTable("t", "s", 0, "unknown", nothing, nothing, "en", 1, 1, nothing, 4, 5, cells)
+    blk = EDGAR.TextBlock("b", "s", 0, "paragraph", "For the six months ended June 30, 2025 (RMB million)", "en", 1, nothing, 0)
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false),
+        [EDGAR.DocSection("s", nothing, 1, "CONDENSED CONSOLIDATED STATEMENT OF PROFIT OR LOSS", "en", 0, 1, 1, nothing)],
+        [blk], [tbl], EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    @test EDGAR._ifrs_period(sd) == (6, 30, [2025, 2024])           # interim period end June 30
+    rows = EDGAR._ifrs_facts_from_sd(sd)
+    V(c) = [r.value for r in rows if r.concept == c && r.period_end == Date(2025, 6, 30)]
+    @test V("ifrs-full:Revenue") == [227_249.0e6]                  # the six-month YTD, NOT the 115,956 quarter
+    @test V("ifrs-full:ProfitLoss") == [22_800.0e6]
+    @test !(115_956.0e6 in [r.value for r in rows])                # the three-month column is dropped entirely
+end
+
 @testset "English-PDF extractor: scanned UK Companies House (net-assets, GBP £m, offline)" begin
     # A UK statutory account (FRS 101/102) is the OTHER consumer of the shared English-PDF path. It exercises
     # what HK does not: (1) the statement NAME sits in a SEPARATE section heading from the table's own section

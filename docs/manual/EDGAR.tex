@@ -5938,6 +5938,52 @@ julia> facts(f)                                       # consolidated statements 
     extraction.
 \end{itemize}
 
+\subsection{Worked example: from PDF to spreadsheet}\label{sec:hk-workflow}
+
+One end-to-end pass ties the whole pipeline together --- fetch a Hong~Kong half-year report, parse it with
+Docling, pull one statement, land it in DuckDB, and export it --- through the generic, source-agnostic
+interface (Xiaomi, \texttt{01810}):
+
+\begin{lstlisting}
+using EDGAR
+
+# (a) fetch the half-year report — interim discovery, then download the PDF
+hs = discover(HKEXFilings(); code = "01810", report = :interim)   # Xiaomi interim reports, newest first
+f  = fetch_filing(first(hs))                                      # downloads the PDF; f.content is the path
+cp(f.content, "xiaomi_interim.pdf"; force = true)                 # (c) keep the PDF
+
+# (b) send it to Docling — just the statement pages (locate them in the outline with toc(f))
+sd = structured_document("xiaomi_interim.pdf"; pages = (57, 66))  # -> a StructuredDocument
+write_structured_document(sd, "xiaomi_interim.sd.json")           # (c) persist the SD (reload later, no Docling)
+
+# (d) analyse: the income statement, on ifrs-full concepts, from the already-parsed SD
+rows = extract_ifrs_pdf(sd)                                       # facts from the SD — no second parse
+is   = select_statement(rows, "IncomeStatement")                 # the six-month (year-to-date) figures
+
+# (e) store just the income statement in DuckDB — EDGAR's generic sink
+using DuckDB, DBInterface        # DBInterface: the generic DB API DuckDB.jl implements (EDGAR uses it too)
+to_duckdb(is, "xiaomi.duckdb"; table = "income_statement")
+
+# (f) export the table — DuckDB writes CSV and Excel natively, through the generic DBInterface
+con = DBInterface.connect(DuckDB.DB, "xiaomi.duckdb")
+DBInterface.execute(con, "COPY income_statement TO 'income_statement.csv' (HEADER, FORMAT CSV)")
+DBInterface.execute(con, "INSTALL excel"); DBInterface.execute(con, "LOAD excel")
+DBInterface.execute(con, "COPY income_statement TO 'income_statement.xlsx' WITH (FORMAT xlsx)")
+
+# (g) the narrative layer — the simplest analysis: word-count a section
+nar   = narratives(sd)
+words = length(split(nar[1].text))
+\end{lstlisting}
+
+\noindent Every step is jurisdiction-agnostic: swap the first line for a \texttt{China}, \texttt{SEC} or
+\texttt{Generic} fetch and the rest is unchanged. \texttt{extract\_ifrs\_pdf(sd)} takes the \emph{already-parsed}
+\texttt{StructuredDocument}, so the PDF is sent to Docling exactly once and its facts \emph{and} narratives come
+from the one parse. \texttt{to\_duckdb} is EDGAR's own DuckDB sink (the package extension loads automatically
+when \texttt{DuckDB} is in the session), and the CSV / Excel exports are DuckDB's native \texttt{COPY}, issued
+through the generic \texttt{DBInterface} --- so no writer beyond DuckDB itself is needed. (The interim income
+statement prints \emph{both} a three-month and a six-month column per year; \texttt{select\_statement} returns
+the six-month, year-to-date figures --- see \S\ref{sec:hk-forms-financial}.)
+
 \chapter{India: NSE, BSE and MCA21}
 \label{sys:india}
 

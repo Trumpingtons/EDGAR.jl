@@ -135,8 +135,13 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
                             scale::Float64, currency::AbstractString)
     nr, nc = tbl.n_rows, tbl.n_cols
     isempty(pends) && return Fact[]
-    grid = Dict{Tuple{Int,Int},String}()
-    for c in tbl.cells; grid[(c.row, c.col)] = strip(c.text); end
+    grid = Dict{Tuple{Int,Int},String}(); hdr = Dict{Tuple{Int,Int},String}()
+    for c in tbl.cells
+        grid[(c.row, c.col)] = strip(c.text)
+        for cc in c.col:(c.col + max(c.colspan, 1) - 1)          # expand colspans for HEADER lookup: a spanning
+            hdr[(c.row, cc)] = strip(c.text)                     # header ("Six months ended" over both year cols)
+        end                                                     # must reach every column it covers
+    end
     # value columns: ≥2 monetary body cells (a Note column of "13" / "32 (a)" is not monetary, so it is excluded)
     valcols = [c for c in 0:nc-1 if count(r -> _ifrs_ismoney(get(grid, (r, c), "")), 0:nr-1) >= 2]
     isempty(valcols) && return Fact[]
@@ -145,19 +150,30 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
 
     # per value column: its header year, currency, and whether it is a "#" convenience or a "1 January" opening
     colyear = Dict{Int,Union{Int,Nothing}}(); colcur = Dict{Int,Union{String,Nothing}}()
-    colconv = Dict{Int,Bool}(); colopen = Dict{Int,Bool}()
+    colconv = Dict{Int,Bool}(); colopen = Dict{Int,Bool}(); colcumul = Dict{Int,Bool}()
     for c in valcols
-        h = join([get(grid, (r, c), "") for r in 0:firstbody-1], " ")
+        h = join([get(hdr, (r, c), "") for r in 0:firstbody-1], " ")
         ym = match(r"(20\d{2})", h); colyear[c] = ym === nothing ? nothing : parse(Int, ym.captures[1])
         colcur[c] = occursin(r"(?i)HK\$", h) ? "HKD" : occursin(r"(?i)US\$|\bUSD\b", h) ? "USD" :
                     occursin(r"(?i)\bRMB\b|人民[币幣]", h) ? "CNY" : occursin('£', h) ? "GBP" : nothing
         colconv[c] = occursin('#', h)
         colopen[c] = occursin(r"(?i)1\s+january", h)
+        colcumul[c] = occursin(r"(?i)(six|nine|twelve|half.?year|year.?to.?date) month|period ended|year ended", h)
     end
     stated = [colcur[c] for c in valcols if !colconv[c] && colcur[c] !== nothing]
     primary = isempty(stated) ? currency : _ifrs_mode(stated)   # the PRIMARY presentation currency (HK$, not US$)
     keep = [c for c in valcols if !colconv[c] && !colopen[c] && (colcur[c] === nothing || colcur[c] == primary)]
     isempty(keep) && (keep = valcols)                           # degenerate: no column matched — keep them all
+    # An interim income statement shows BOTH a "three months" and a "six months" (year-to-date) column PER YEAR
+    # — same year, so they can't be told apart by year. When a year appears in more than one kept column, prefer
+    # the CUMULATIVE (year-to-date) one (a "six/nine months" / "period ended" / "year ended" header). Leaves the
+    # annual case untouched: there each year appears once, so nothing is dropped.
+    byyear = Dict{Int,Vector{Int}}()
+    for c in keep; y = colyear[c]; y === nothing || push!(get!(byyear, y, Int[]), c); end
+    for (_, cs) in byyear
+        (length(cs) > 1 && any(colcumul[c] for c in cs)) || continue
+        keep = filter(c -> !(c in cs) || colcumul[c], keep)     # drop this year's non-cumulative (quarter) columns
+    end
     sort!(keep)
     mo, dy = month(pends[1]), day(pends[1])                     # the fiscal year-end; each column's year sets its end
     colend = Dict{Int,Date}(c => (colyear[c] === nothing ? pends[min(i, length(pends))] : Date(colyear[c], mo, dy))
@@ -270,6 +286,16 @@ function extract_ifrs_pdf(path::AbstractString)
     sd = structured_document(path; pages = rng, jurisdiction = "HK", language = "en")
     return _ifrs_facts_from_sd(sd; accession = basename(path), url = path)
 end
+
+"""
+    extract_ifrs_pdf(sd::StructuredDocument; accession="", url="") -> Vector{FactRow}
+
+Classify and extract the primary statements from an ALREADY-parsed [`StructuredDocument`] — the same result as
+`extract_ifrs_pdf(path)` but without re-running Docling, for when you have parsed the PDF once (with
+`structured_document`) and want both its facts and, say, its `narratives` from the one parse.
+"""
+extract_ifrs_pdf(sd::StructuredDocument; accession::AbstractString = "", url::AbstractString = "") =
+    _ifrs_facts_from_sd(sd; accession, url)
 
 # The SD → classified-facts core (shared by extract_ifrs_pdf and offline tests). Classifies each statement
 # table and extracts the headline lines AS REPORTED — no identity-derived (computed) values, so the balance-

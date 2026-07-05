@@ -86,24 +86,25 @@ function hkex_stock(query::AbstractString; market::AbstractString = "SEHK")
     return (_hkex_str(e, :code), _hkex_str(e, :stockId))
 end
 
-# Turn a parsed `titleSearchServlet.do` document array into annual-report FilingHandles. PURE (no network) —
-# testable offline against a saved query JSON. Keeps documents whose headline category is [Annual Report]
-# (dropping the paired [Summary Financial Report], and the ESG/results siblings the title filter already
-# narrows). HK fiscal years VARY (Dec-31 is common but many issuers close 31 Mar / 30 Jun); the report year is
-# parsed from the TITLE ("ANNUAL REPORT 2024") into a NOMINAL 31-Dec period end — the exact fiscal date is
-# recovered from the statements at extraction (HK2). `url` is the absolute PDF on the portal. Newest first.
-function _hkex_annual_handles(records, code::AbstractString, stockId::AbstractString)
+# Turn a parsed `titleSearchServlet.do` document array into report FilingHandles. PURE (no network) — testable
+# offline against a saved query JSON. Keeps documents whose headline category matches `category` (the [Annual
+# Report] or [Interim/Half-Year Report] subtype), dropping the paired [Summary Financial Report]. HK fiscal
+# years VARY (Dec-31 is common but many issuers close 31 Mar / 30 Jun); the report year is parsed from the
+# TITLE ("ANNUAL REPORT 2024") into a NOMINAL period end (`nominal` month/day — 31 Dec for an annual report,
+# 30 Jun for an interim) — the exact fiscal date is recovered from the statements at extraction. Newest first.
+function _hkex_report_handles(records, code::AbstractString, stockId::AbstractString;
+                              category::Regex, nominal::Tuple{Int,Int})
     ent = EntityId(:hkex, code)
     handles = FilingHandle[]
     for r in records
         long = _hkex_str(r, :LONG_TEXT)
-        occursin("Annual Report", long) || continue               # the [Annual Report] category
+        occursin(category, long) || continue                      # the target category subtype
         occursin("Summary", long) && continue                     # drop the Summary Financial Report
         link = _hkex_str(r, :FILE_LINK); isempty(link) && continue
         title = _hkex_str(r, :TITLE)
         m = match(r"\b((?:19|20)\d{2})\b", title)
         m === nothing && (m = match(r"\b((?:19|20)\d{2})\b", long))
-        pend = m === nothing ? nothing : Date(parse(Int, m.captures[1]), 12, 31)
+        pend = m === nothing ? nothing : Date(parse(Int, m.captures[1]), nominal[1], nominal[2])
         ref = _hkex_str(r, :NEWS_ID); isempty(ref) && (ref = basename(link))
         url = startswith(link, "http") ? link : string(_HKEXNEWS_BASE, link)
         push!(handles, FilingHandle(; system = HKEX(), entity = ent, ref = ref,
@@ -117,22 +118,29 @@ end
     discover(::HKEXFilings; code=nothing, name=nothing, market=:sehk, from=nothing, to=nothing,
              years=8, rowrange=100) -> Vector{FilingHandle}
 
-List a company's **annual-report** filings from HKEXnews, by five-digit stock `code` (e.g. `"00700"`) or
-company `name`. The issuer is resolved to its `(code, stockId)` via [`hkex_stock`](@ref); `market` selects
-the board (`:sehk` Main Board, `:gem`). The date window is `[from, to]` (`Date`s or `"YYYY-MM-DD"` strings);
-by default the last `years` (8) up to today. Returns [`FilingHandle`](@ref)s tagged `HKEX()`, newest first —
-each `url` a direct annual-report **PDF** on `www1.hkexnews.hk`; fetch one with [`fetch_filing`](@ref).
-Keyless — no API key and no cookie bootstrap.
+List a company's periodic-report filings from HKEXnews, by five-digit stock `code` (e.g. `"00700"`) or company
+`name`. `report` selects the form: `:annual` (the annual report, default) or `:interim` (the interim /
+half-year report) — both full HKFRS statement sets, same seam and extractor. The issuer is resolved to its
+`(code, stockId)` via [`hkex_stock`](@ref); `market` selects the board (`:sehk` Main Board, `:gem`). The date
+window is `[from, to]` (`Date`s or `"YYYY-MM-DD"` strings); by default the last `years` (8) up to today. Returns
+[`FilingHandle`](@ref)s tagged `HKEX()`, newest first — each `url` a direct **PDF** on `www1.hkexnews.hk`; fetch
+one with [`fetch_filing`](@ref). Keyless — no API key and no cookie bootstrap.
 
 ```julia
-hs = discover(HKEXFilings(); code = "00700")   # Tencent annual reports, newest first
-f  = fetch_filing(first(hs))                     # downloads the HKFRS annual-report PDF
+hs = discover(HKEXFilings(); code = "00700")                    # Tencent annual reports, newest first
+hi = discover(HKEXFilings(); code = "00700", report = :interim) # …its half-year reports
+f  = fetch_filing(first(hs))                                    # downloads the HKFRS PDF
 ```
 """
 function discover(::HKEXFilings; code=nothing, name=nothing, market::Symbol=:sehk,
-                  from=nothing, to=nothing, years::Int=8, rowrange::Int=100)
+                  from=nothing, to=nothing, years::Int=8, rowrange::Int=100, report::Symbol=:annual)
     q = code !== nothing ? String(code) : name !== nothing ? String(name) : nothing
     q === nothing && throw(ArgumentError("discover(HKEXFilings(); …) needs a `code` or `name`"))
+    # form → (title text search, LONG_TEXT category match, nominal period-end month/day)
+    title, category, nominal =
+        report === :annual  ? ("Annual Report",  r"Annual Report",     (12, 31)) :
+        report === :interim ? ("Interim Report", r"Interim|Half-Year", (6, 30))  :
+        throw(ArgumentError("discover(HKEXFilings(); report=…) must be :annual or :interim, got $(repr(report))"))
     mkt = uppercase(String(market))
     sec, stockId = hkex_stock(q; market = mkt)
     isempty(stockId) && throw(ArgumentError("could not resolve an HKEXnews stockId for $(repr(q))"))
@@ -145,13 +153,13 @@ function discover(::HKEXFilings; code=nothing, name=nothing, market::Symbol=:seh
     url = string(_HKEX_TITLE, "?sortDir=0&sortByOptions=DateTime&category=0&market=", mkt,
                  "&stockId=", stockId, "&documentType=-1",
                  "&fromDate=", fmt(lo), "&toDate=", fmt(hi),
-                 "&title=", HTTP.URIs.escapeuri("Annual Report"), "&searchType=1",
+                 "&title=", HTTP.URIs.escapeuri(title), "&searchType=1",
                  "&t1code=-2&t2Gcode=-2&t2code=-2&rowRange=", rowrange, "&lang=E")
     outer = JSON3.read(_hkex_get(url))
     result = get(outer, :result, nothing)
     (result === nothing || isempty(string(result))) && return FilingHandle[]
     records = JSON3.read(String(result))                          # result is a JSON-encoded string
-    return _hkex_annual_handles(records, sec, stockId)
+    return _hkex_report_handles(records, sec, stockId; category, nominal)
 end
 
 # ── fetch → PDF Filing ──────────────────────────────────────────────────────────────────────────
