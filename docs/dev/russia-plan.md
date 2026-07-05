@@ -142,17 +142,29 @@ Documented in the manual at `sec:russia-axes` (Table `tab:russia-axes`).
   `@testset "Russia: RFSD structured-row facts (R1, offline)"` added to `runtests.jl`; gate verified via the
   equivalent offline run (full suite not run — house rule).
 
-### R2 — Discovery + fetch (`RFSDFilings` + MOEX) ☐
-- ☐ R2.1 `RFSDFilings <: FilingSource`. `discover(::RFSDFilings; …)` exposes **both query modes** over the
-  dimension axes (see "Query axes"):
-  - *point:* `inn` / `ogrn` / `okpo`, or `name` / `ticker` (→INN via MOEX ISS);
-  - *population:* `okved` / `okved_section`, `okopf`, `okfc` / `okogu`, `region` / `oktmo`, `age`;
-  - *always:* `year=latest`, plus predicate kwargs `eligible=true, filed=true, articulated=nothing,
-    outlier=false`.
-  Returns one `FilingHandle(EntityId(:inn, …), year)` (point) or a bounded set (population).
-- ☐ R2.2 `fetch_filing(::Russia, h)` = a single DuckDB `SELECT … WHERE <axes> AND <predicates>` over the
-  `year=Y` partition (column-projected: id cols + needed `line_XXXX`) → `Filing(kind=:ras)` per firm-year row.
-- ☐ R2.3 **🚦 GATE (live):** discover→fetch→`facts` end-to-end on **2 fresh listed non-financial filers**.
+### R2 — Discovery + fetch (`RFSDFilings` + MOEX) ✅ DONE (point query)
+- ✅ R2.1 `RFSDFilings <: FilingSource` (`russia/discovery.jl`). `discover(::RFSDFilings; inn|name|ticker,
+  year=RFSD_LATEST_YEAR)` — the **point** path: `name`/`ticker` → INN via the open MOEX ISS
+  `securities.json` resolver (`_moex_resolve_inn`, exact-ticker-wins), or a direct `inn`; returns one
+  `FilingHandle(EntityId(:inn,…), url=partition, period_end=Dec 31)`. *(Population axes — okved/region/…
+  — are a later increment; discover is DuckDB-free so it stays in core.)*
+- ✅ R2.2 `fetch_filing(::Russia, h)` reads the `(inn, year)` row via DuckDB and wraps it as an `:ras`
+  `Filing` (JSON content in the R1 shape). DuckDB is a **weakdep**: the query `EDGAR._rfsd_query(url, inn,
+  year)` lives in `EDGARDuckDBExt` (installs/loads `httpfs`, so the remote HF parquet is range-read with
+  **no download**); the core stub is a `_rfsd_query(args...)` catch-all (strictly less specific, so the ext
+  *adds* rather than *overwrites* — the `to_duckdb` pattern; a same-signature stub broke precompilation).
+- ✅ R2.3 **🚦 GATE met (live):** discover→fetch→`facts` on fresh non-financial filers — NLMK, PhosAgro,
+  MTS, Aeroflot, Rosneft·Severstal·Surgut(empty, see below), + direct-INN Gazprom; all present ones
+  cross-foot. `year=2024` also works. Live testset added to `runtests.jl` (RUN_NETWORK).
+
+**Finding — the GIR BO sanctioned-firm coverage gap (verified 2026-07-06).** Some large issuers (Rosneft,
+Surgutneftegas, Severstal) return **0 facts**: their RFSD row exists but `filed=0`, no `line_*`. Not a bug
+(single row per INN; not a `LIMIT 1` artefact). The break is **exactly at 2018→2019** — the Rosstat→GIR BO
+source switch: full RAS data ≤2018, nothing from 2019. Confirmed by the RFSD authors: strategic companies
+(1,133 by end-2023) were authorised **not to disclose** from FY2018 and are *"retrospectively excluded from
+the FNS API after 2018"* (Bondarkov, Ledenev & Skougarevskiy 2025; README cites Gazprom/Novatek examples).
+So it is a **source-side** gap, faithfully reflected by RFSD, detectable via `filed=0`. Documented in the
+manual (coverage-caveat paragraph + References, Econometrica style).
 
 ### R3 — Classification: `vocab_ras` (OKUD code map) ☐
 - ☐ R3.1 `vocab_ras.jl` — static `line_XXXX` → statement-type concept map (balance sheet + income statement;
