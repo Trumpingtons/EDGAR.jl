@@ -118,6 +118,16 @@ function _edgar_rows(system::Symbol, locator::AbstractString)
             String(fetch_filing(China(), first(hs)).content)
         end
         return EDGAR.extract_cas_pdf(path)
+    elseif system === :hkex
+        # `locator` is an HKEXnews five-digit stock code (annual report auto-selected) OR a local PDF path
+        # (a stashed filer). Facts come from the shared English-PDF path (Docling), on ifrs-full concepts —
+        # so the IFRS metric concepts apply unchanged.
+        path = isfile(locator) ? String(locator) : begin
+            hs = discover(HKEXFilings(); code = String(locator), years = 2)
+            isempty(hs) && return nothing
+            String(fetch_filing(first(hs)).content)
+        end
+        return EDGAR.extract_ifrs_pdf(path)
     end
     return nothing                       # :edinet not implemented yet
 end
@@ -162,9 +172,11 @@ const TOL = 0.01   # 1% (Yahoo rounds / standardizes)
     validate(system::Symbol, locator, ticker) -> Vector{Row}
 
 Validate EDGAR.jl's extraction against Yahoo Finance for one filer, across the three statements.
-`system` is `:sec`, `:esef`, `:dart`, or `:india`; `locator` is the CIK (SEC), LEI (ESEF), corp/stock
-code (DART), or NSE ticker (India); and `ticker` is the Yahoo symbol (e.g. `"AAPL"`, `"CTY1S.HE"`,
-`"TCS.NS"`) — needed because a filing knows only its own identifier, not the exchange symbol. Returns
+`system` is `:sec`, `:esef`, `:dart`, `:india`, `:china` or `:hkex`; `locator` is the CIK (SEC), LEI
+(ESEF), corp/stock code (DART), NSE ticker (India), CNINFO code (China) or HKEXnews five-digit code
+(Hong Kong) — or, for the PDF systems, a local report path; and `ticker` is the Yahoo symbol (e.g.
+`"AAPL"`, `"CTY1S.HE"`, `"TCS.NS"`, `"0700.HK"`) — needed because a filing knows only its own
+identifier, not the exchange symbol. Returns
 one [`Row`](@ref) per metric (tagged `:bs`/`:is`/`:cf`): EDGAR's value, Yahoo's, the `rel_diff`, and
 whether they `match` within 1%.
 """
