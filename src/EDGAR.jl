@@ -78,6 +78,7 @@ include("extractors/facts_derive.jl")        # 🟢 facts derivation core: local
 include("filing_systems/china/cas.jl")       # 🟡 China CAS PDF extraction (C3): consolidated statements → Facts via vocab_cas (extract_cas_pdf)
 include("filing_systems/china/portfolio.jl") # 🟡 China fund §8 portfolio (投资组合报告): holdings + summaries (extract_fund_portfolio)
 include("extractors/ifrs_pdf.jl")           # 🟢 English-PDF statement extraction: primary statements → Facts on ifrs-full via vocab_ifrs_labels (extract_ifrs_pdf) — shared by HK (HKFRS) + UK Companies House
+include("filing_systems/hkex/reit_portfolio.jl") # 🟣 HK REIT property-portfolio composition (extract_reit_portfolio) — the REIT analogue of extract_fund_portfolio, reusing FundPortfolio
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
@@ -86,7 +87,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, born_digital, extract_fund_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, born_digital, extract_fund_portfolio, extract_reit_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
        toc, TocNode, TocRow,
        structured_document, StructuredDocument, persist_document, write_structured_document,

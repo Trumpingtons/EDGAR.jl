@@ -5797,9 +5797,12 @@ transactions with Unitholders}. \texttt{EDGAR.jl} maps these unit-holder lines t
 anchors (net assets attributable to unitholders $\to$ the equity-equivalent \texttt{Equity}; the
 excluding-units liabilities $\to$ \texttt{Liabilities}; the pre-transactions result $\to$ \texttt{ProfitLoss}),
 so a REIT's revenue, result and balance sheet extract through the ordinary path --- validated on Link~REIT (FY
-ending 31~March; property revaluations can push the year to a loss). The \emph{distribution} statement and the
-property \emph{portfolio} are REIT-specific extensions, the analogue of the fund-portfolio breakdown in India
-and China (\S\ref{sec:india-formats}).
+ending 31~March; property revaluations can push the year to a loss). Its \textbf{property portfolio} is the REIT
+analogue of a fund's holdings: \texttt{extract\_reit\_portfolio} recovers the by-segment valuation breakdown
+(Link~REIT: Destination / Community / Neighbourhood, each with its valuation and share of the portfolio) into
+the \emph{same} \texttt{FundPortfolio} type \texttt{extract\_fund\_portfolio} returns for China and India
+(\S\ref{sec:india-formats}), so funds and REITs share one portfolio API. The \emph{distribution} statement is a
+further REIT-specific extension.
 
 \paragraph{Boundary.} The scope is \textbf{listed-issuer annual and interim reports} on HKEXnews (Main Board
 and GEM) --- including REITs and business trusts (\S\ref{sec:hk-reits}) --- with US-primary names better

@@ -818,6 +818,30 @@ end
     @test !(115_956.0e6 in [r.value for r in rows])                # the three-month column is dropped entirely
 end
 
+@testset "extract_reit_portfolio: REIT property composition as a FundPortfolio (offline)" begin
+    # A REIT summarises its portfolio by type/segment (Link REIT: Destination/Community/Neighbourhood), each with
+    # a valuation. That maps onto the SAME FundPortfolio the fund path returns — asset_composition entries with
+    # item=segment, amount=valuation, pct=share of the portfolio — so funds and REITs share one portfolio API.
+    T(r, c, t) = EDGAR.TableCell(r, c, 1, 1, r <= 1, t)
+    cells = EDGAR.TableCell[
+        T(0,1,"No. of properties"), T(0,2,"Retail property valuation"),
+        T(1,2,"HK\$'M"),
+        T(2,0,"Destination"), T(2,1,"6"), T(2,2,"21,786"),
+        T(3,0,"Community"), T(3,1,"35"), T(3,2,"61,364"),
+        T(4,0,"Neighbourhood"), T(4,1,"57"), T(4,2,"26,342"),
+        T(5,0,"Total"), T(5,1,"98"), T(5,2,"109,492")]
+    tbl = EDGAR.DocTable("t", "s", 0, "unknown", nothing, nothing, "en", 21, 21, nothing, 6, 3, cells)
+    sd = EDGAR.StructuredDocument("1.0",
+        EDGAR.DocMeta("d", "p", nothing, nothing, "en", nothing, nothing, nothing, nothing, nothing, 1, "test", "1", false),
+        EDGAR.DocSection[], EDGAR.TextBlock[], [tbl], EDGAR.DocFigure[], EDGAR.TocEntry[], Dict{String,Vector{UInt8}}())
+    pf = extract_reit_portfolio(sd)
+    @test pf isa FundPortfolio                                     # the SAME type the fund path returns
+    @test [a.item for a in pf.asset_composition] == ["Destination", "Community", "Neighbourhood"]  # "Total" excluded
+    @test pf.asset_composition[1].amount == 21_786.0e6            # HK$'M scaled to full units
+    @test pf.asset_composition[2].pct_total_assets == 56.0        # 61,364 / 109,492
+    @test isapprox(sum(a.pct_total_assets for a in pf.asset_composition), 100.0; atol = 0.2)
+end
+
 @testset "English-PDF extractor: scanned UK Companies House (net-assets, GBP £m, offline)" begin
     # A UK statutory account (FRS 101/102) is the OTHER consumer of the shared English-PDF path. It exercises
     # what HK does not: (1) the statement NAME sits in a SEPARATE section heading from the table's own section
