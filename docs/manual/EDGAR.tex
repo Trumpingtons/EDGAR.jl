@@ -5849,10 +5849,50 @@ report.}
 \end{tabular}
 \end{table}
 
-\noindent The annual report and the half-year report carry the \emph{full} HKFRS statement set; a results
-announcement carries the same face statements in \emph{condensed} form, weeks earlier --- so the same PDF
-extractor serves both, the difference being completeness, not shape. The per-statement classification ---
-mapping the English line labels to \texttt{ifrs-full} concepts --- follows as the implementation lands.
+\noindent The table above is organised by HKEXnews's \emph{own} headline categories; for extraction what
+matters is a different axis --- which documents carry \emph{accounts}. Three groups.
+
+\subsection{Financial-statement-bearing forms}\label{sec:hk-forms-financial}
+The extraction candidates --- all English PDF, all mapping to \texttt{ifrs-full}:
+\begin{itemize}[nosep]
+  \item \textbf{Annual Report} --- the target: the complete annual HKFRS accounts (retrieved as
+    \S\ref{sec:hk-retrieve}).
+  \item \textbf{Interim / Half-Year Report} --- the full mid-year accounts, under \emph{Financial Statements /
+    ESG Information}; the natural first extension --- same seam and extractor as the annual report.
+  \item \textbf{Results announcements} --- the \emph{Annual} and \emph{Interim Results} announcements (under
+    \emph{Announcements and Notices}) carry the same face statements in \emph{condensed} form, weeks ahead of
+    the full report; the same extractor serves them, the difference being completeness, not shape.
+  \item \textbf{Quarterly results} --- only \emph{some} issuers report quarterly (Tencent, US-style); most HK
+    issuers report half-yearly, so quarterlies are not universal.
+  \item \textbf{ESG Report} --- non-financial but narrative-rich: a \texttt{narratives} target, not
+    \texttt{facts}.
+\end{itemize}
+
+\subsection{Governance and corporate-action filings}\label{sec:hk-forms-governance}
+Structured disclosures that carry \emph{no} accounts --- not targeted:
+\begin{itemize}[nosep]
+  \item \textbf{Announcements and Notices} --- the catch-all: dividends, board-meeting dates, poll results,
+    inside information, share-scheme grants, directorate changes, connected transactions.
+  \item \textbf{Circulars} --- general mandates, AGM / M\&A circulars.
+  \item \textbf{Proxy forms} and \textbf{notices of AGM / EGM}.
+  \item \textbf{Constitutional Documents} --- Memorandum \& Articles of Association.
+\end{itemize}
+
+\subsection{Market and registry filings}\label{sec:hk-forms-registry}
+Also structured, also without accounts --- not targeted:
+\begin{itemize}[nosep]
+  \item \textbf{Monthly Returns} --- ``Movements in Securities'' (the monthly share count).
+  \item \textbf{Next Day Disclosure Returns} --- share buybacks / capital changes; by volume the most frequent
+    document type (500+ for an active issuer such as Tencent).
+  \item \textbf{Debt and Structured Products} --- MTN-programme notes, offering circulars, pricing supplements.
+\end{itemize}
+
+\paragraph{The discovery lever.} \texttt{titleSearchServlet.do} filters on the headline \emph{category} plus the
+Tier-1/Tier-2 subtype codes (\texttt{t2Gcode}\,/\,\texttt{t2code}), or on a free title-text search. HK1 discovery
+(\S\ref{sec:hk-retrieve}) uses a \texttt{title\ =\ "Annual Report"} text match (\texttt{searchType\ =\ 1}),
+which resolves the annual report cleanly; the robust production filter is the \emph{Financial Statements / ESG
+Information}\,$\to$\,[Annual Report] category codes, to be mapped as the interim and results-announcement
+extensions land.
 
 \section{Retrieving filings}\label{sec:hk-retrieve}
 
