@@ -146,8 +146,7 @@ Documented in the manual at `sec:russia-axes` (Table `tab:russia-axes`).
 - ✅ R2.1 `RFSDFilings <: FilingSource` (`russia/discovery.jl`). `discover(::RFSDFilings; inn|name|ticker,
   year=RFSD_LATEST_YEAR)` — the **point** path: `name`/`ticker` → INN via the open MOEX ISS
   `securities.json` resolver (`_moex_resolve_inn`, exact-ticker-wins), or a direct `inn`; returns one
-  `FilingHandle(EntityId(:inn,…), url=partition, period_end=Dec 31)`. *(Population axes — okved/region/…
-  — are a later increment; discover is DuckDB-free so it stays in core.)*
+  `FilingHandle(EntityId(:inn,…), url=partition, period_end=Dec 31)`. The point path is HTTP-only (no DuckDB).
 - ✅ R2.2 `fetch_filing(::Russia, h)` reads the `(inn, year)` row via DuckDB and wraps it as an `:ras`
   `Filing` (JSON content in the R1 shape). DuckDB is a **weakdep**: the query `EDGAR._rfsd_query(url, inn,
   year)` lives in `EDGARDuckDBExt` (installs/loads `httpfs`, so the remote HF parquet is range-read with
@@ -165,6 +164,21 @@ source switch: full RAS data ≤2018, nothing from 2019. Confirmed by the RFSD a
 the FNS API after 2018"* (Bondarkov, Ledenev & Skougarevskiy 2025; README cites Gazprom/Novatek examples).
 So it is a **source-side** gap, faithfully reflected by RFSD, detectable via `filed=0`. Documented in the
 manual (coverage-caveat paragraph + References, Econometrica style).
+
+### R2b — Population discover (cohort by dimension axis) ✅ DONE
+- ✅ R2b.1 `discover(::RFSDFilings; okved|okved_section|okopf|okfc|okogu|region|region_taxcode|oktmo, year,
+  filed=true, eligible=true, outlier=false, limit=100)` — the **population** path. Unlike the point path
+  it must scan the parquet to enumerate the cohort, so it needs DuckDB: the weakdep `_rfsd_discover(url,
+  dims, preds, limit)` (ext) runs **one** `SELECT inn … WHERE <dim=code> AND <predicates> LIMIT n` and
+  returns the matching INNs → `Vector{FilingHandle}`. Point identity and population axes are mutually
+  exclusive (`ArgumentError`); hitting `limit` fires a `@warn` (no silent cap).
+- ✅ R2b.2 Predicates default to a sound population (`filed & eligible & !outlier`) — which also **excludes
+  the withheld strategic firms** (Rosneft `filed=0` is absent from its own crude-oil `okved=06.10` cohort,
+  asserted live). Dimension keys come from a fixed allow-list (safe column identifiers); values are escaped.
+- ✅ R2b.3 **🚦 GATE met (live):** `okved=46.71` → a 15-firm cohort; a member fetches and cross-foots; point
+  path intact; guards fire. Live testset added (RUN_NETWORK). *Note: cohort listing is one scan; fetching
+  all N members is N point queries — a batch-fetch / download-once cache is the future optimisation for
+  large cohorts (still noted in R1.3).*
 
 ### R3 — Classification: `vocab_ras` (OKUD code map) ☐
 - ☐ R3.1 `vocab_ras.jl` — static `line_XXXX` → statement-type concept map (balance sheet + income statement;
