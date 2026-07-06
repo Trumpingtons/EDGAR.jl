@@ -986,4 +986,27 @@ function EDGAR._rfsd_download(remote_url::AbstractString, dest::AbstractString)
     end
 end
 
+# CBR bank directory (route 2, C1): read the downloaded UniDbQuery XLSX (a LOCAL path) with DuckDB read_xlsx
+# into (regnum, name, ogrn, status) rows — the regnum resolver for CBRBankFilings discovery.
+function EDGAR._cbr_directory_rows(path::AbstractString)
+    con = DBInterface.connect(DuckDB.DB)
+    try
+        DBInterface.execute(con, "INSTALL excel")
+        DBInterface.execute(con, "LOAD excel")
+        safe = replace(path, "'" => "''")
+        out = @NamedTuple{regnum::String, name::String, ogrn::String, status::String}[]
+        for r in DBInterface.execute(con,
+                "SELECT cregnum, bnk_name, ogrn, lic_status FROM read_xlsx('$safe', header=true)")
+            r.cregnum === missing && continue
+            push!(out, (regnum = string(Int(r.cregnum)),
+                        name   = r.bnk_name === missing ? "" : String(r.bnk_name),
+                        ogrn   = r.ogrn === missing ? "" : string(Int(r.ogrn)),
+                        status = r.lic_status === missing ? "" : String(r.lic_status)))
+        end
+        return out
+    finally
+        DBInterface.close!(con)
+    end
+end
+
 end # module

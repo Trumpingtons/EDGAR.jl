@@ -207,7 +207,13 @@ banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry re
 
 - ✅ **C0 — seam:** `CBRBankFilings <: FilingSource` + `_CBR_BASE` (`src/filing_systems/russia/cbr.jl`),
   included + exported; `using EDGAR` loads clean. Identity scheme `:cbr_regnum`.
-- ☐ **C1 — discovery:** `FullCoList` → `regnum` resolver; `discover(CBRBankFilings; regnum|name|inn)`.
+- ✅ **C1 — discovery:** `discover(CBRBankFilings; regnum|name|ogrn, form=:f101, dt=nothing)`. The bank
+  directory is the **UniDbQuery 98547 XLSX** (`cregnum`/`bnk_name`/`ogrn`/`lic_status`) — downloaded once
+  (browser UA, **no cookie**) and parsed by DuckDB `read_xlsx` on the LOCAL file (weakdep `_cbr_directory_rows`;
+  direct-URL read fails DuckDB's httpfs random-access, so download-first), cached in-process. `cbr_bank_directory`
+  (exported) lists **359 active** banks (of 1893 incl. revoked). `regnum` builds a handle with no directory
+  hit; `name`/`ogrn` resolve through active banks. Live-verified: "Сбербанк"→regnum 1481. Handle carries
+  `EntityId(:cbr_regnum, …)` + the f101/f102 URL. Offline (regnum-path) + live (resolver) testsets added.
 - ☐ **C2 — fetch:** Form 0409101/102 HTML per `regnum`+`dt` (ddos-guard cookie bootstrap) → a `Filing`
   (new kind, e.g. `:cbr_form`).
 - ☐ **C3 — extractor:** parse the Form 101 HTML account table (5-digit account → balance) → `Fact`s.

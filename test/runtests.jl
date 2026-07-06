@@ -2138,6 +2138,17 @@ end
     @test !EDGAR._rfsd_json_outlier(mkjson(0))
 end
 
+@testset "Russia: CBR bank discovery — regnum path (C1, offline)" begin
+    # The regnum path builds a route-2 handle without hitting the directory (no network).
+    h = only(discover(CBRBankFilings(); regnum = "1481"))                       # Sberbank
+    @test h.system isa Russia && h.entity == EntityId(:cbr_regnum, "1481")
+    @test occursin("coinfo/f101/?regnum=1481", h.url)
+    h2 = only(discover(CBRBankFilings(); regnum = 1000, form = :f102, dt = Date(2024, 1, 1)))
+    @test occursin("f102/?regnum=1000&dt=2024-01-01", h2.url) && h2.period_end == Date(2024, 1, 1)
+    @test_throws ArgumentError discover(CBRBankFilings(); regnum = "1", form = :f999)  # bad form
+    @test_throws ArgumentError discover(CBRBankFilings())                              # needs an identifier
+end
+
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
@@ -2218,6 +2229,18 @@ end
         @test length(fetch_filing([h]; allow_outliers = true)) == 1
     catch e
         @info "Skipping Russia R4 live (network/DuckDB): $e"; @test true
+    end
+end
+@testset "Russia: CBR bank directory resolver (C1, live)" begin
+    # Route 2 discovery: the bank directory (XLSX) resolves a name → regnum, and lists active banks.
+    try
+        hs = discover(CBRBankFilings(); name = "Сбербанк")                # → Sberbank, regnum 1481
+        @test !isempty(hs) && any(h -> h.entity == EntityId(:cbr_regnum, "1481"), hs)
+        dir = cbr_bank_directory()                                        # currently-licensed banks
+        @test 200 < length(dir) < 700 && all(b -> b.status == "Действующая", dir)
+        @test length(cbr_bank_directory(active_only = false)) > length(dir)   # incl. revoked/liquidated
+    catch e
+        @info "Skipping CBR C1 live (network/DuckDB): $e"; @test true
     end
 end
 @testset "EDGAR basic" begin
