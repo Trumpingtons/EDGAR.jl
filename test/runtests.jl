@@ -2112,8 +2112,14 @@ end
     @test only(r.period_end for r in eq if r.concept == "ras:line_3200") == Date(2022, 12, 31)
     @test !(only(r for r in eq if r.concept == "ras:line_3311").is_instant)   # a movement is a duration
     @test all(r -> isempty(r.statement), facts(f))                      # classify=false → raw, unclassified
-    # only the 6xxx targeted-use-of-funds codes (not one of the four statements) stay unclassified
-    @test all(startswith(replace(r.concept, "ras:" => ""), "line_6") for r in rows if isempty(r.statement))
+    # targeted-use-of-funds report (6xxx) is first-class too — the non-profit analogue of the income statement
+    @test stmt("line_6310") == "TargetedFunds"
+    @test only(r.label for r in rows if r.concept == "ras:line_6311") == "Used — social and charitable aid"
+    tf = select_statement(rows, "TargetedFunds")
+    @test !isempty(tf)
+    @test only(r.period_end for r in tf if r.concept == "ras:line_6100") == Date(2022, 12, 31)  # opening balance
+    @test only(r for r in tf if r.concept == "ras:line_6400").is_instant                        # closing = instant
+    @test all(!isempty(r.statement) for r in rows)                      # every OKUD family now classifies
 end
 
 @testset "Russia: RFSD quality flags + outlier exclusion (R4, offline)" begin

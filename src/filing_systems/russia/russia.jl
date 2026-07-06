@@ -68,7 +68,7 @@ system_headers(::Russia) = ["User-Agent"      => _RUSSIA_UA,
 # span — an instant for balance-sheet and equity-balance lines, a duration otherwise, with the equity
 # statement's prior-year comparatives stamped at the correct earlier year-ends. Under `classify`,
 # `_ras_statement` fills `statement` from the code's OKUD family (1xxx→BalanceSheet, 2xxx→IncomeStatement,
-# 3xxx→Equity, 4xxx→CashFlow); under `labels`, `ras_label` fills the English label for the headline lines.
+# 3xxx→Equity, 4xxx→CashFlow, 6xxx→TargetedFunds); under `labels`, `ras_label` fills the English label.
 function _rfsd_facts(f::Filing; classify::Bool=false, labels::Bool=false)
     doc = JSON3.read(f.content)
     inn = String(doc.inn)

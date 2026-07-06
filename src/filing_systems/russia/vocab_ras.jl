@@ -16,6 +16,7 @@ function _ras_statement(code::AbstractString)
     d == UInt8('2') && return "IncomeStatement"
     d == UInt8('3') && return "Equity"
     d == UInt8('4') && return "CashFlow"
+    d == UInt8('6') && return "TargetedFunds"       # 0710006 report on targeted use of funds (non-profits)
     return ""
 end
 
@@ -36,7 +37,11 @@ function _ras_period(code::AbstractString, year::Integer)
         code == "line_3600" && return (true, nothing, Date(year, 12, 31))       # net assets = instant
         off = startswith(code, "line_32") ? -1 : 0                              # 32xx = prior-year movements
         return (false, Date(year + off, 1, 1), Date(year + off, 12, 31))
-    else                                                                        # IncomeStatement / CashFlow / 6xxx
+    elseif stmt == "TargetedFunds"
+        code == "line_6100" && return (true, nothing, Date(year - 1, 12, 31))   # opening balance = instant
+        code == "line_6400" && return (true, nothing, Date(year, 12, 31))       # closing balance = instant
+        return (false, Date(year, 1, 1), Date(year, 12, 31))                    # receipts / uses = duration
+    else                                                                        # IncomeStatement / CashFlow
         return (false, Date(year, 1, 1), Date(year, 12, 31))
     end
 end
@@ -155,6 +160,30 @@ const _RAS_LABELS = Dict{String,String}(
     "line_4400" => "Net increase (decrease) in cash and cash equivalents",
     "line_4450" => "Balance of cash at beginning of period",
     "line_4500" => "Balance of cash at end of period",
+    # ── Report on targeted use of funds (0710006) — non-profits ──
+    "line_6100" => "Funds balance at beginning of year",
+    "line_6200" => "Total funds received",
+    "line_6210" => "Received — entrance fees",
+    "line_6215" => "Received — membership fees",
+    "line_6220" => "Received — targeted contributions",
+    "line_6230" => "Received — voluntary contributions and donations",
+    "line_6240" => "Received — profit from income-generating activity",
+    "line_6250" => "Received — other",
+    "line_6300" => "Total funds used",
+    "line_6310" => "Used — targeted events / programmes",
+    "line_6311" => "Used — social and charitable aid",
+    "line_6312" => "Used — conferences, meetings and seminars",
+    "line_6313" => "Used — other events",
+    "line_6320" => "Used — administrative upkeep",
+    "line_6321" => "Used — wages",
+    "line_6322" => "Used — non-wage payments",
+    "line_6323" => "Used — travel and business trips",
+    "line_6324" => "Used — upkeep of premises, buildings and transport",
+    "line_6325" => "Used — repair of fixed assets",
+    "line_6326" => "Used — other administrative",
+    "line_6330" => "Used — acquisition of fixed assets and inventory",
+    "line_6350" => "Used — other",
+    "line_6400" => "Funds balance at end of year",
 )
 
 """
