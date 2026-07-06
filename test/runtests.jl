@@ -2081,6 +2081,31 @@ end
     end
 end
 
+@testset "Russia: vocab_ras classification (R3, offline)" begin
+    # The OKUD line-code → statement-type map (vocab_ras): `classify` fills each fact's `statement` from
+    # the code's OKUD family; `labels` fills the English headline label; `select_statement` then works.
+    dir = joinpath(@__DIR__, "data", "russia")
+    f = Filing(Russia(), EntityId(:inn, "7736050003"), "rfsd:7736050003:2023", "gazprom.json",
+               "rfsd://irlspbru/RFSD/year=2023", :ras, read(joinpath(dir, "7736050003-2023.json"), String))
+    rows = facts(f; classify = true, labels = true)
+    stmt(code) = only(r.statement for r in rows if r.concept == "ras:$code")
+    @test stmt("line_1600") == "BalanceSheet"           # 1xxx → balance sheet
+    @test stmt("line_2110") == "IncomeStatement"        # 2xxx → income statement
+    @test stmt("line_4300") == "CashFlow"               # 4xxx → cash flow
+    @test only(r.label for r in rows if r.concept == "ras:line_2110") == "Revenue"
+    @test only(r.label for r in rows if r.concept == "ras:line_1600") == "Total assets"
+    @test ras_label("line_2400") == "Net profit (loss)"                 # utility, bare code
+    @test ras_label("ras:line_1700") == "Total equity and liabilities"  # accepts the prefixed concept
+
+    bs = select_statement(rows, "BalanceSheet")         # classification makes select_statement work
+    valc(rs, c) = only(r.value for r in rs if r.concept == "ras:$c")
+    @test valc(bs, "line_1600") ≈ valc(bs, "line_1700")                 # the classified BS cross-foots
+    @test !isempty(select_statement(rows, "IncomeStatement"))
+    @test all(r -> isempty(r.statement), facts(f))                      # classify=false → raw, unclassified
+    # only the 6xxx targeted-use-of-funds codes (not one of the four statements) stay unclassified
+    @test all(startswith(replace(r.concept, "ras:" => ""), "line_6") for r in rows if isempty(r.statement))
+end
+
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests

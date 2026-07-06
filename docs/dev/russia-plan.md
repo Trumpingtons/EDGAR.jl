@@ -195,10 +195,16 @@ manual (coverage-caveat paragraph + References, Econometrica style).
 - Resolves the R1.3 acquisition fork: **both** (a) download-once and (b) remote httpfs are supported, with
   remote the zero-config default and local/cache the bulk fast path.
 
-### R3 — Classification: `vocab_ras` (OKUD code map) ☐
-- ☐ R3.1 `vocab_ras.jl` — static `line_XXXX` → statement-type concept map (balance sheet + income statement;
-  cash-flow/equity as a subset). Scheme `EntityId(:inn, …)`.
-- ☐ R3.2 **🚦 GATE:** full statement classification on the R1 fixtures (all mapped lines land in the model).
+### R3 — Classification: `vocab_ras` (OKUD code map) ✅ DONE
+- ✅ R3.1 `vocab_ras.jl` — `_ras_statement(code)` assigns a statement to **every** code by its OKUD leading
+  digit (1xxx→BalanceSheet, 2xxx→IncomeStatement, 3xxx→Equity, 4xxx→CashFlow; 6xxx targeted-funds left
+  unclassified), and `_RAS_LABELS` gives English labels for the headline lines (`ras_label`, exported).
+  `_rfsd_facts` now fills `statement`/`statements` under `classify` and `label` under `labels`. No new
+  architecture, no network — a static numeric map (the simplest of the national vocabs).
+- ✅ R3.2 **🚦 GATE met (offline):** on the Gazprom fixture, `classify=true` gives line_1600→BalanceSheet,
+  2110→IncomeStatement, 4300→CashFlow; `labels=true` gives "Total assets"/"Revenue"; `select_statement(…,
+  "BalanceSheet")` returns 37 rows that **cross-foot**; only the 23 `line_6xxx` targeted-funds codes stay
+  unclassified. Offline testset added (`Russia: vocab_ras classification (R3, offline)`).
 
 ### R4 — Validation + benchmark caveats ☐
 - ☐ R4.1 Cross-foot testset (internal, from `articulated`); RAS-parent spot-check vs a published RAS report.
