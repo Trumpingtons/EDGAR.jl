@@ -180,6 +180,21 @@ manual (coverage-caveat paragraph + References, Econometrica style).
   all N members is N point queries — a batch-fetch / download-once cache is the future optimisation for
   large cohorts (still noted in R1.3).*
 
+### R2c — Bulk: batch fetch + download-once / local partitions ✅ DONE
+- ✅ R2c.1 **Batch fetch** `fetch_filing(::Russia, hs::Vector{FilingHandle})` — reads a whole cohort in
+  **one** scan per year (weakdep `_rfsd_query_many`: `SELECT * WHERE inn IN (…)`), returning one `:ras`
+  `Filing` per handle that has a row. A generic `fetch_filing(hs)` entry was added in core (default =
+  per-handle; Russia overrides). Live: an 8-firm `okved=46.71` cohort → 8 filings, **8/8 cross-foot**, and
+  **batch == point** (identical facts).
+- ✅ R2c.2 **Local / cached partitions.** `_rfsd_partition(year)` resolves **local → cache → remote**, so
+  point / population / batch reads all use a local parquet when present (DuckDB reads local paths with no
+  httpfs). `set_rfsd_local(dir)` points at an existing dataset; `set_rfsd_cache_dir(dir)` sets the cache
+  (default `~/EDGAR-Reports/rfsd/`); `rfsd_download(year)` COPYs a partition once (DuckDB `COPY` of the
+  remote parquet → local, **no extra HTTP dep**). Handles keep the canonical remote URL as identity;
+  fetch re-resolves to local at read time (so download-anytime works).
+- Resolves the R1.3 acquisition fork: **both** (a) download-once and (b) remote httpfs are supported, with
+  remote the zero-config default and local/cache the bulk fast path.
+
 ### R3 — Classification: `vocab_ras` (OKUD code map) ☐
 - ☐ R3.1 `vocab_ras.jl` — static `line_XXXX` → statement-type concept map (balance sheet + income statement;
   cash-flow/equity as a subset). Scheme `EntityId(:inn, …)`.
