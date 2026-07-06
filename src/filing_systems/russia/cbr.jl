@@ -209,9 +209,14 @@ function _cbr_form_facts(f::Filing; classify::Bool=false, labels::Bool=false)
             # some account codes are displayed with a dot (e.g. "45.0" = 450, "32.1" = 321) — normalise it
             closing = _cbr_num(cells[13])                   # Исходящие остатки, ИТОГО
             closing === nothing && continue
+            isbal    = startswith(part, "А.")               # classify only the balance-sheet part (C4)
+            stmt, ln = isbal ? _cbr_classify(acct, section) : ("", "")
             push!(out, Fact(; concept = "cbr:$acct", value = closing * 1000.0, unit = "RUB",
                             cik = regnum, accession = f.ref, period_end = dt, is_instant = true,
-                            decimals = -3, dimensions = Dict("section" => section, "part" => part)))
+                            decimals = -3, dimensions = Dict("section" => section, "part" => part),
+                            statement = classify ? stmt : "",
+                            statements = (classify && !isempty(stmt)) ? [stmt] : String[],
+                            label = labels ? ln : ""))
         end
     end
     return [fact_row(fc) for fc in out]

@@ -229,9 +229,38 @@ banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry re
   (`45.0`=450, `32.1`=321) — normalised by stripping `[\s.]`. **Validated:** Sberbank FY2023 → 179 accounts,
   **Σ Актив == Σ Пассив == 609.55 T RUB** (the turnover sheet balances — the extraction is complete). Live
   testset asserts the balance identity. Form 0409102 (P&L) is a later extension; classification is C4.
-- ☐ **C4 — accounts→statements:** the **План счетов** (bank chart of accounts) → a **bank statement model**
-  (Form 101 is a trial balance, not a presentation BS; Form 102 = P&L symbols). The crux — banks don't fit
-  the BS/IS/CF/revenue model.
+- ✅ **C4 — accounts → statements DONE.** `vocab_cbr.jl`: `_cbr_line(account)` maps 1st-order accounts → 14
+  condensed lines; `_cbr_classify(account, section)` → `("BankBalanceSheet", line)` with unmapped → "Other
+  assets/liabilities" by section. `_cbr_form_facts` fills `statement`/`label` under `classify`/`labels` (only
+  part А). `cbr_line` exported. **Validated (Sberbank FY2023):** 154 classified facts, `select_statement(…,
+  "BankBalanceSheet")` still balances (Σ Актив = Σ Пассив = 609.55 T), and the lines are sensible — Loans to
+  customers 39.5 T, Customer deposits 21 T + current accounts 15 T, Securities 7 T, Cash 0.79 T. (The gross
+  contra/P&L accounts 303/706 dominate but net out; presentation netting is a follow-on.) Offline
+  (`cbr_line`) + live (classified-balance) testsets. Fix: some codes render with a dot (`45.0`=450); the
+  account cell is normalised by stripping `[\s.]`.
+- (superseded design note) Map the ~180 Form-101 account codes (`cbr:<account>`, currently
+  `statement=""`) onto a **bank statement model** via `vocab_cbr` — a static account-code → line map, the
+  bank analogue of `vocab_ras`. Decisions:
+  - **Statement:** one presentation statement, `"BankBalanceSheet"` (not the RFSD BS/IS/CF — a bank has no
+    revenue/COGS). Its lines are the condensed bank balance sheet; the `section` dimension (Актив/Пассив)
+    already fixes the side, and Σ Актив = Σ Пассив is the invariant (validated in C3).
+  - **Line grouping** (by 1st-order account, Положение 809-П), ~8 asset + ~7 equity/liability lines:
+    - *Assets:* Cash & precious metals (202–203) · Due from the CBR / correspondent (301–302) · Due from
+      banks / interbank loans (319–323) · **Loans to customers** (440–457, 460–473) · Securities (501–519) ·
+      Fixed & intangible assets (604–610) · Other assets (rest of Актив).
+    - *Liabilities:* Due to the CBR / banks (312–317, 30x loro) · **Customer accounts & deposits** (401–426,
+      440 dep) · Issued debt securities (520–525) · Other liabilities.
+    - *Equity:* Share capital (102) · Additional/reserve capital (106–107) · Retained earnings / financial
+      result (108, 70601–70801) · (revaluation, etc.).
+  - **Concept map:** `_cbr_line(account) -> (line, is_asset)` — a `Dict` of 1st-order codes → line label; the
+    fact's `statement="BankBalanceSheet"`, `label=<line>`, applied under `classify`/`labels` in
+    `_cbr_form_facts` (mirrors R3). Unmapped accounts fall to "Other assets"/"Other liabilities" by section
+    (never dropped, so the balance identity is preserved).
+  - **Validation:** the Актив/Пассив totals already balance (C3); C4 additionally checks each *line* sums its
+    accounts, and spot-checks Sberbank's condensed figures (loans-to-customers, customer-deposits, capital)
+    against its published RAS/IFRS balance sheet order-of-magnitude.
+  - **Out of scope:** Form 0409102 (P&L → a `BankIncomeStatement`) is a follow-on; off-balance parts (В/Г)
+    stay tagged but unmapped.
 - ☐ **C5 — validate + manual.** Documented in the manual: Repositories (CBR row), Entities Covered
   (`sec:russia-banks`), and the financial-sector gap.
 

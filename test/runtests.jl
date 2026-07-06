@@ -2149,6 +2149,16 @@ end
     @test_throws ArgumentError discover(CBRBankFilings())                              # needs an identifier
 end
 
+@testset "Russia: vocab_cbr account lines (C4, offline)" begin
+    # Bank chart-of-accounts → condensed BankBalanceSheet line.
+    @test cbr_line("450") == "Loans to customers"
+    @test cbr_line("cbr:102") == "Share capital"       # accepts the prefixed concept
+    @test cbr_line("410") == "Customer deposits"
+    @test cbr_line("501") == "Securities"
+    @test cbr_line("200") == "Cash and precious metals"
+    @test cbr_line("999") == ""                        # unmapped → "" (falls to Other by section)
+end
+
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
@@ -2272,6 +2282,21 @@ end
         @test isapprox(bal("Актив"), bal("Пассив"); rtol = 1e-6)   # assets == liabilities + equity
     catch e
         @info "Skipping CBR C3 live (network): $e"; @test true
+    end
+end
+@testset "Russia: CBR bank balance-sheet classification (C4, live)" begin
+    # classify → statement "BankBalanceSheet" + account line labels; the classified BS still balances.
+    try
+        f = fetch_filing(only(discover(CBRBankFilings(); regnum = "1481", form = :f101, dt = Date(2024, 1, 1))))
+        rows = facts(f; classify = true, labels = true)
+        bs = select_statement(rows, "BankBalanceSheet")
+        @test !isempty(bs) && all(r -> r.statement == "BankBalanceSheet", bs)
+        @test first(r.label for r in rows if r.concept == "cbr:450") == "Loans to customers"
+        dims(r) = EDGAR.JSON3.read(r.dimensions)
+        bal(s) = sum((r.value for r in bs if get(dims(r), :section, "") == s); init = 0.0)
+        @test isapprox(bal("Актив"), bal("Пассив"); rtol = 1e-6)   # classified BS still balances
+    catch e
+        @info "Skipping CBR C4 live (network): $e"; @test true
     end
 end
 @testset "EDGAR basic" begin
