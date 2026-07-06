@@ -195,6 +195,28 @@ manual (coverage-caveat paragraph + References, Econometrica style).
 - Resolves the R1.3 acquisition fork: **both** (a) download-once and (b) remote httpfs are supported, with
   remote the zero-config default and local/cache the bulk fast path.
 
+## Route 2 — CBR bank channel (the financial sector, excluded from RFSD)
+
+The financial sector is carved out of RFSD by law, reachable only via the CBR. **Recon (2026-07-06):** only
+**banks** are publicly reachable per-entity — CBR **Form 0409101** (turnover balance by account) / **0409102**
+(financial results), served as **HTML** per `regnum` + reporting date (`coinfo/f101/?regnum=…&dt=…`, ~138 KB
+table), behind **ddos-guard** (replayable cookie). `FullCoList` is the bank directory (`regnum ↔ name ↔ INN`).
+**Insurers / NPFs are NOT available** — verified: CBR publishes only aggregate sector statistics for them
+(`/statistics/insurance`, `/statistics/nfo`), their per-entity XBRL instances are not public, and (unlike
+banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry registry/status, not statements.
+
+- ✅ **C0 — seam:** `CBRBankFilings <: FilingSource` + `_CBR_BASE` (`src/filing_systems/russia/cbr.jl`),
+  included + exported; `using EDGAR` loads clean. Identity scheme `:cbr_regnum`.
+- ☐ **C1 — discovery:** `FullCoList` → `regnum` resolver; `discover(CBRBankFilings; regnum|name|inn)`.
+- ☐ **C2 — fetch:** Form 0409101/102 HTML per `regnum`+`dt` (ddos-guard cookie bootstrap) → a `Filing`
+  (new kind, e.g. `:cbr_form`).
+- ☐ **C3 — extractor:** parse the Form 101 HTML account table (5-digit account → balance) → `Fact`s.
+- ☐ **C4 — accounts→statements:** the **План счетов** (bank chart of accounts) → a **bank statement model**
+  (Form 101 is a trial balance, not a presentation BS; Form 102 = P&L symbols). The crux — banks don't fit
+  the BS/IS/CF/revenue model.
+- ☐ **C5 — validate + manual.** Documented in the manual: Repositories (CBR row), Entities Covered
+  (`sec:russia-banks`), and the financial-sector gap.
+
 ### R3 — Classification: `vocab_ras` (OKUD code map) ✅ DONE
 - ✅ R3.1 `vocab_ras.jl` — `_ras_statement(code)` assigns a statement to **every** code by its OKUD leading
   digit (1xxx→BalanceSheet, 2xxx→IncomeStatement, 3xxx→Equity, 4xxx→CashFlow; 6xxx targeted-funds left
