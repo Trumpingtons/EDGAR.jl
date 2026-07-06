@@ -6792,6 +6792,14 @@ consolidation live, and is reached for \emph{identity} through MOEX. The \emph{f
 non-credit financial organisations --- is carved out of the RAS universe entirely and reachable only through
 CBR, and only in part.
 
+\paragraph{The universe is not the data.} RFSD spans of order \textbf{9.6~million} firms across 2011--2024
+($\sim$\textbf{56.6~million} firm-year observations), but \emph{eligibility} to file is not the same as
+\emph{having} filed: only about \textbf{44\%} of eligible firm-years actually carry a filed statement (rising
+to $\sim$71\% by 2023) --- the rest are eligible \emph{non-filers}, present as rows but empty, marked
+\texttt{filed = 0} (Bondarkov, Ledenev, and Skougarevskiy (2025), App.~\ref{ch:references}). A
+\emph{population} query therefore defaults to \texttt{filed = 1} (\S\ref{sec:russia-axes}); a \emph{point}
+fetch of a non-filer returns a \texttt{Filing} with no facts.
+
 \begin{table}[h]
 \centering
 \small
@@ -6833,6 +6841,19 @@ CBR's public data is itself split (\S\ref{sec:russia-repos}): banks are public b
 while the true XBRL filers' instances are not published. So the financial sector is reachable only through the
 bank-forms route, and only for credit institutions --- the cleanest reason to sequence RFSD first and CBR
 second.
+
+\subsection{Banks --- the CBR channel (route 2)}\label{sec:russia-banks}
+The financial sector that route 1 excludes is reached through the \textbf{Bank of Russia} (CBR), and of it
+only \textbf{credit institutions} (banks, $\sim$320) are publicly reachable \emph{per entity}. Each publishes
+its statutory reporting as CBR \textbf{Form 0409101} (turnover balance by account) and \textbf{0409102}
+(financial results), served as HTML by registration number (\texttt{regnum}) and reporting date --- the
+\textbf{route-2} channel (\texttt{CBRBankFilings}, \S\ref{sec:russia-repos}). These are \emph{not} RFSD-style
+structured rows and \emph{not} XBRL: they sit on the bank chart of accounts, so route~2 has its own fetch,
+extractor and account\,$\to$\,statement map, and its own statement model (a bank has no revenue/COGS ---
+interest income, provisions, account-level assets and liabilities). \textbf{Insurers and non-state pension
+funds are \emph{not} available}: they report to the CBR in XBRL whose per-entity instances are not published
+(the CBR releases only aggregate sector statistics), and --- unlike banks --- their per-entity accounts are
+not served in HTML. So route~2 covers banks only; the remainder of the financial sector stays out of reach.
 
 \subsection{Non-profit organisations (\rus{НКО})}
 A large slice of the RFSD non-financial universe --- of order \textbf{130{,}000} filers in 2023 --- is
