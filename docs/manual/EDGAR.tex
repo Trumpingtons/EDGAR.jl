@@ -6952,8 +6952,57 @@ line codes function as a de-facto taxonomy --- the RAS analogue of \texttt{ifrs-
 but numeric and fixed by regulation. Classification is therefore a static code map (balance-sheet and
 income-statement lines to the shared statement-type model), not a per-filing label-matching problem. This is
 why RFSD is the highest-reuse first route: it slots into the existing structured-fact machinery on the same
-axes (revenue, net income, total assets) as every XBRL jurisdiction, and validates against MOEX/Yahoo figures
-for listed non-financial names.
+axes (revenue, net income, total assets) as every XBRL jurisdiction. Those RAS figures are the
+\emph{unconsolidated} legal-entity accounts, so they are \emph{not} comparable to the \emph{consolidated}
+IFRS numbers Yahoo / MOEX report for a listed \emph{group} --- there is no market-data oracle for RAS,
+unlike the IFRS jurisdictions, so validation rests on internal cross-footing and the quality flags below.
+
+\paragraph{The full statement set --- and the absence of narratives.} RFSD carries the \emph{complete}
+statutory RAS \emph{numeric} set, not only the three headline statements: the balance sheet (OKUD 0710001),
+the income statement (0710002), the \textbf{statement of changes in equity} (0710003, the \texttt{line\_3xxx}
+codes) and the \textbf{cash-flow statement} (0710004), plus the \textbf{report on the targeted use of funds}
+(0710006, the \texttt{line\_6xxx} codes --- a non-profit form, usually zero for commercial filers).
+\texttt{facts(f; classify = true)} classifies the first four (\texttt{BalanceSheet} / \texttt{IncomeStatement}
+/ \texttt{Equity} / \texttt{CashFlow}); the targeted-funds lines are carried but left unclassified. What RFSD
+does \emph{not} contain is the \textbf{narrative} layer --- the explanatory notes (\rus{пояснения}),
+management commentary and the auditor's report --- which are free text in the PDF \rus{годовой отчёт} held by
+the e-disclosure agencies (the gated channel, \S\ref{sec:russia-repos}), \emph{not} in the structured
+dataset. A \texttt{:ras} filing therefore has \emph{no} text layer: \texttt{narratives(f)} returns an empty
+vector, and the notes / MD\&A are reachable only through the (unbuilt) agency-PDF path.
+
+\subsection{Data-quality flags: articulation, totals adjustment, and super-outliers}\label{sec:russia-flags}
+
+RFSD ships a set of per-firm-year \textbf{quality flags} --- computed by its authors --- that
+\texttt{EDGAR.jl} carries on every \texttt{:ras} filing and exposes through \texttt{rfsd\_flags(f)}. Three
+bear directly on whether a firm-year's numbers can be trusted.
+
+\paragraph{Articulation (\texttt{articulated}).} A statement is \emph{articulated} when its own lines sum to
+their subtotals --- the asset lines to total assets, the income lines to net profit, and so on --- within
+the official 4{,}000-ruble tolerance (22 identities for the full form, 4 for the simplified one). About 5\%
+of filings fail. A non-articulated statement is one whose \emph{own arithmetic does not tie out}: the filer
+could not reconcile the form it submitted. \texttt{EDGAR.jl} \emph{keeps} such rows rather than discard
+them, because the flag is itself a \textbf{signal} --- notably for \textbf{credit analysis}. A company that
+cannot sum its own balance sheet is, other things equal, a worse risk, and an internal scoring model may
+well pick \texttt{articulated~=~false} up as a risk factor.
+
+\paragraph{Totals adjustment (\texttt{totals\_adjustment}).} Where a \emph{stated} total was wrong, RFSD's
+authors substituted the \emph{calculated} total (again beyond the 4{,}000-ruble threshold). A
+\texttt{totals\_adjustment~=~true} row therefore carries figures that were \emph{repaired}, not exactly
+as-filed --- a related reliability signal, and a caution when reconciling back to the original document.
+
+\paragraph{Super-outliers (\texttt{outlier}) --- excluded by default.} Separately, the authors
+\emph{manually} reviewed the largest firms per industry, the biggest year-on-year swings and the largest
+imputed filers, and flagged \textbf{436 firms / 1{,}130 firm-years} as anomalous --- e.g.\ two firms
+reporting revenue 8--26$\times$ Gazprom's --- and recommend excluding them (Bondarkov, Ledenev, and
+Skougarevskiy (2025), App.~\ref{ch:references}). \texttt{EDGAR.jl} does so \textbf{by default}: a point
+\texttt{fetch\_filing} on an \texttt{outlier} row errors, a batch fetch skips it (logging how many), and
+population \texttt{discover} filters them in SQL. Pass \texttt{allow\_outliers~=~true} to fetch one anyway.
+
+\paragraph{Granularity --- a company-\emph{year}, not a company.} All three flags are per \textbf{firm-year}:
+RFSD has one row per \texttt{(inn, year)} holding that firm's entire statement set, so a company can be
+flagged in one year and clean in the next --- and often is (a super-outlier in 2023 may be unremarkable in
+2019). Exclusion and the reliability signals therefore attach to a \emph{company-year}, never to the company
+as a whole.
 
 \chapter{Generic Filing}
 \label{ch:generic}
