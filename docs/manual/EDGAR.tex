@@ -6834,6 +6834,18 @@ while the true XBRL filers' instances are not published. So the financial sector
 bank-forms route, and only for credit institutions --- the cleanest reason to sequence RFSD first and CBR
 second.
 
+\subsection{Non-profit organisations (\rus{НКО})}
+A large slice of the RFSD non-financial universe --- of order \textbf{130{,}000} filers in 2023 --- is
+\textbf{non-profit organisations} (\rus{НКО}): foundations and charities, associations and unions, consumer
+cooperatives, homeowners' associations (\rus{ТСЖ}), libraries, museums and the like (\emph{excluding} the
+religious and state organisations the carve-out above removes). Having no revenue or profit, in place of the
+income statement they file a \emph{dedicated} statement --- the \textbf{report on the targeted use of funds}
+(OKUD 0710006): funds received (entrance and membership fees, voluntary donations, grants) against funds used
+(targeted programmes, administrative upkeep, acquisitions). \texttt{EDGAR.jl} carries this as a first-class
+statement, \texttt{TargetedFunds}, fetched and classified exactly like the other four (\S\ref{sec:russia-forms});
+\texttt{select\_statement(rows, "TargetedFunds")} returns it. For a commercial filer the same lines are simply
+zero.
+
 \subsection{Identity: the INN key}
 Every segment is keyed by the \textbf{INN} (\rus{ИНН}, the taxpayer identification number). MOEX ISS exposes it
 (\texttt{emitent\_inn}) for any listed name; RFSD is keyed by it; CBR bank cards resolve from it via the
@@ -6962,8 +6974,8 @@ statutory RAS \emph{numeric} set, not only the three headline statements: the ba
 the income statement (0710002), the \textbf{statement of changes in equity} (0710003, the \texttt{line\_3xxx}
 codes) and the \textbf{cash-flow statement} (0710004), plus the \textbf{report on the targeted use of funds}
 (0710006, the \texttt{line\_6xxx} codes --- a non-profit form, usually zero for commercial filers).
-\texttt{facts(f; classify = true)} classifies the first four (\texttt{BalanceSheet} / \texttt{IncomeStatement}
-/ \texttt{Equity} / \texttt{CashFlow}); the targeted-funds lines are carried but left unclassified. What RFSD
+\texttt{facts(f; classify = true)} classifies \emph{all five} (\texttt{BalanceSheet} / \texttt{IncomeStatement}
+/ \texttt{Equity} / \texttt{CashFlow} / \texttt{TargetedFunds}). What RFSD
 does \emph{not} contain is the \textbf{narrative} layer --- the explanatory notes (\rus{пояснения}),
 management commentary and the auditor's report --- which are free text in the PDF \rus{годовой отчёт} held by
 the e-disclosure agencies (the gated channel, \S\ref{sec:russia-repos}), \emph{not} in the structured
