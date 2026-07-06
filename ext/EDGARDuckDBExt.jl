@@ -911,4 +911,34 @@ function EDGAR._rfsd_query(url::AbstractString, inn::AbstractString, year::Integ
     end
 end
 
+# Population discover (R2b): one scan of the year partition enumerates the INNs matching the dimension
+# filters (`dims`, column => code, exact match) under the sound-population predicates (`preds`, a NamedTuple
+# `(filed, eligible, outlier)`), bounded by `limit`. `dims` keys come from a fixed allow-list (`_RFSD_DIM_KWARGS`)
+# so they are safe column identifiers; values are single-quote-escaped.
+function EDGAR._rfsd_discover(url::AbstractString, dims::AbstractDict, preds, limit::Integer)
+    con = DBInterface.connect(DuckDB.DB)
+    try
+        if startswith(url, "http")
+            DBInterface.execute(con, "INSTALL httpfs")
+            DBInterface.execute(con, "LOAD httpfs")
+        end
+        where = String[]
+        for (k, v) in dims
+            push!(where, "$k = '$(replace(string(v), "'" => "''"))'")
+        end
+        preds.filed    && push!(where, "filed = 1")
+        preds.eligible && push!(where, "eligible = 1")
+        preds.outlier  || push!(where, "(outlier = 0 OR outlier IS NULL)")
+        clause = isempty(where) ? "" : "WHERE " * join(where, " AND ")
+        q = "SELECT inn FROM read_parquet('$url') $clause LIMIT $(Int(limit))"
+        inns = String[]
+        for r in DBInterface.execute(con, q)
+            r.inn === missing || push!(inns, string(r.inn))
+        end
+        return inns
+    finally
+        DBInterface.close!(con)
+    end
+end
+
 end # module

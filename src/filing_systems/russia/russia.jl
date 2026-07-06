@@ -100,3 +100,11 @@ end
 _rfsd_query(args...) =
     error("fetch_filing(::Russia, …) needs DuckDB.jl to read the RFSD parquet — run `using DuckDB` " *
           "to load the RFSD reader (the EDGARDuckDBExt extension).")
+
+# Weakdep (R2b): a POPULATION `discover` — a cohort selected by RFSD dimension columns (sector, region,
+# legal form, ownership) — must scan the parquet to enumerate matching INNs, so unlike the point path
+# (MOEX, HTTP-only) it needs DuckDB. `_rfsd_discover(url, dims, predicates, limit) -> Vector{String}` (the
+# matching INNs) is the real method in EDGARDuckDBExt; this catch-all stub explains the need when unloaded.
+_rfsd_discover(args...) =
+    error("population discover(RFSDFilings(); okved=…, region=…, …) needs DuckDB.jl to scan the RFSD " *
+          "parquet — run `using DuckDB` to load the RFSD reader (the EDGARDuckDBExt extension).")

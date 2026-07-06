@@ -2112,6 +2112,22 @@ include(joinpath(@__DIR__, "..", "src", "sources", "yahoo_oracle.jl"))    # -> Y
         @info "Skipping Russia R2 live (network/DuckDB): $e"; @test true
     end
 end
+@testset "Russia: RFSD population discover (R2b, live)" begin
+    # A cohort selected by an RFSD dimension axis (industry) — one DuckDB scan enumerates the matching
+    # INNs. The default filed & eligible & !outlier predicate excludes the withheld strategic firms.
+    try
+        hs = discover(RFSDFilings(); okved = "46.71", year = 2023, limit = 10)   # wholesale of fuels
+        @test hs isa Vector{FilingHandle}
+        @test !isempty(hs) && all(h -> h.system isa Russia && h.entity.scheme === :inn, hs)
+        @test !isempty(facts(fetch_filing(hs[1])))                               # a cohort member fetches
+        # filed=1 (default) excludes a withheld strategic firm from its own sector
+        crude = Set(h.entity.value for h in discover(RFSDFilings(); okved = "06.10", year = 2023, limit = 100))
+        @test "7706107510" ∉ crude                                              # Rosneft: filed=0, withheld
+        @test_throws ArgumentError discover(RFSDFilings(); inn = "7736050003", okved = "46.71")  # point XOR pop
+    catch e
+        @info "Skipping Russia R2b live (network/DuckDB): $e"; @test true
+    end
+end
 @testset "EDGAR basic" begin
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try

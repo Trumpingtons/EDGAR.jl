@@ -54,15 +54,56 @@ function _moex_resolve_inn(query::AbstractString)
     return best
 end
 
-"""
-    discover(::RFSDFilings; inn=nothing, name=nothing, ticker=nothing, year=RFSD_LATEST_YEAR)
+# The RFSD dimension columns a population query filters on (name => the caller kwarg). Sector, legal form,
+# ownership and geography — the OK-classifier axes. Matches are exact code equality.
+const _RFSD_DIM_KWARGS = (:okved, :okved_section, :okopf, :okfc, :okogu, :region, :region_taxcode, :oktmo)
 
-Resolve a Russian non-financial filer to a [`FilingHandle`](@ref) for its `(inn, year)` RFSD row. Pass a
-bare `inn`, or a `name` / `ticker` resolved to an INN via MOEX ISS. Returns a one-element vector (the
-handle), or throws if no INN can be resolved.
+"""
+    discover(::RFSDFilings; <point | population>; year=RFSD_LATEST_YEAR,
+             filed=true, eligible=true, outlier=false, limit=100)
+
+Return [`FilingHandle`](@ref)s for RFSD `(inn, year)` rows, in one of **two modes**:
+
+- **Point** — one firm: pass `inn`, or a `name` / `ticker` resolved to an INN via MOEX ISS. Returns a
+  one-element vector.
+- **Population** — a cohort: pass one or more **dimension axes** — `okved` / `okved_section` (industry),
+  `okopf` (legal form), `okfc` / `okogu` (ownership), `region` / `region_taxcode` / `oktmo` (geography) —
+  and a single DuckDB scan enumerates the matching INNs (needs `using DuckDB`). The `filed` / `eligible` /
+  `outlier` predicates default to a sound population (`filed & eligible & !outlier`) — which also excludes
+  the withheld `filed=0` strategic firms — and `limit` bounds the result (a `@warn` fires if it is hit).
+
+Point identity and population axes are mutually exclusive.
+
+```julia
+discover(RFSDFilings(); ticker = "GAZP", year = 2023)          # point
+discover(RFSDFilings(); okved = "46.71", year = 2023, limit = 50)  # population: a sector cohort
+```
 """
 function discover(::RFSDFilings; inn=nothing, name=nothing, ticker=nothing,
-                  year::Integer=RFSD_LATEST_YEAR)
+                  year::Integer=RFSD_LATEST_YEAR, limit::Integer=100,
+                  filed::Bool=true, eligible::Bool=true, outlier::Bool=false, dimkw...)
+    dims = Dict{String,String}()
+    for (k, v) in pairs(dimkw)
+        k in _RFSD_DIM_KWARGS ||
+            throw(ArgumentError("unknown discover keyword `$k` (RFSD axes: $(join(_RFSD_DIM_KWARGS, ", ")))"))
+        v === nothing || (dims[String(k)] = string(v))
+    end
+    point = inn !== nothing || name !== nothing || ticker !== nothing
+    url = _rfsd_partition_url(year)
+    mkhandle(s) = FilingHandle(; system = Russia(), entity = EntityId(:inn, string(s)),
+                               ref = "rfsd:$s:$year", url = url,
+                               period_end = Date(year, 12, 31), country = "RU")
+
+    if !isempty(dims)                                    # ── population ──
+        point && throw(ArgumentError("discover(RFSDFilings(); …): give point identity " *
+                                     "(inn/name/ticker) OR population axes, not both."))
+        preds = (filed = filed, eligible = eligible, outlier = outlier)
+        inns = _rfsd_discover(url, dims, preds, Int(limit))
+        length(inns) ≥ limit &&
+            @warn "RFSD population hit limit=$limit — narrow the axes or raise `limit` to see more."
+        return [mkhandle(s) for s in inns]
+    end
+                                                         # ── point ──
     resolved = if inn !== nothing
         string(inn)
     elseif name !== nothing || ticker !== nothing
@@ -72,12 +113,10 @@ function discover(::RFSDFilings; inn=nothing, name=nothing, ticker=nothing,
                                "(unlisted names are not resolvable — pass `inn` directly).")
         r.inn
     else
-        throw(ArgumentError("discover(RFSDFilings(); …) needs one of `inn`, `name` or `ticker`."))
+        throw(ArgumentError("discover(RFSDFilings(); …) needs a point identity (`inn`/`name`/`ticker`) " *
+                            "or population axes (`okved`, `region`, …)."))
     end
-    h = FilingHandle(; system = Russia(), entity = EntityId(:inn, resolved),
-                     ref = "rfsd:$resolved:$year", url = _rfsd_partition_url(year),
-                     period_end = Date(year, 12, 31), country = "RU")
-    return [h]
+    return [mkhandle(resolved)]
 end
 
 # Fetch: read the (inn, year) row from the parquet partition (DuckDB, via the weakdep `_rfsd_query`) and
