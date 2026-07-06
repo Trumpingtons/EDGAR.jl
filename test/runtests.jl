@@ -2243,6 +2243,20 @@ end
         @info "Skipping CBR C1 live (network/DuckDB): $e"; @test true
     end
 end
+@testset "Russia: CBR bank Form 101/102 fetch (C2, live)" begin
+    # fetch_filing on a :cbr_regnum handle → the Form HTML as a :cbr_form Filing; the latest reporting date
+    # is auto-resolved; the numeric forms carry no narrative (empty, by design).
+    try
+        f = fetch_filing(only(discover(CBRBankFilings(); regnum = "1481", form = :f101)))  # Sberbank, latest
+        @test f.kind === :cbr_form && f.entity == EntityId(:cbr_regnum, "1481")
+        @test ncodeunits(f.content) > 100_000 && occursin("<td", f.content)   # the account table
+        @test isempty(narratives(f))                                          # numeric-only → no narratives
+        f2 = fetch_filing(only(discover(CBRBankFilings(); regnum = "1481", form = :f102, dt = Date(2024, 1, 1))))
+        @test f2.kind === :cbr_form && occursin("f102", f2.document)
+    catch e
+        @info "Skipping CBR C2 live (network): $e"; @test true
+    end
+end
 @testset "EDGAR basic" begin
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try

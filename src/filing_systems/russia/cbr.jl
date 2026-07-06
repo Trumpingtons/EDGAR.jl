@@ -125,3 +125,50 @@ function discover(::CBRBankFilings; regnum=nothing, name=nothing, ogrn=nothing,
     end
     return [_cbr_handle(rn, form, dt) for rn in regnums]
 end
+
+# ── C2: fetch the Form 0409101/102 HTML → a :cbr_form Filing ─────────────────────────────────────
+#
+# `fetch_filing` routes a `:cbr_regnum` handle here. The reporting date matters: a valid month-first with a
+# published form returns a ~130–210 KB account table; a not-yet-published month returns a ~29 KB shell. When
+# `dt` is unset, the latest available is resolved by probing month-firsts back from the current month (the
+# forms lag ~1 month). No cookie is needed (browser UA only). The HTML is the payload; the account-table
+# extractor is C3.
+
+# GET a CBR page as a String (utf-8), browser UA, no cookie. `nothing` on request failure.
+_cbr_get(url::AbstractString) =
+    (b = fetch_url(url; headers = system_headers(Russia())); b === nothing ? nothing : String(b))
+
+# A fetched page holds the account table (has data) when it is well past the empty-shell size.
+_cbr_has_data(html::AbstractString) = ncodeunits(html) > 50_000 && occursin("<td", html)
+
+_cbr_form_of(url::AbstractString) = occursin("/f102/", url) ? :f102 : :f101
+_cbr_url(regnum::AbstractString, form::Symbol, dt::Date) =
+    "$_CBR_BASE/banking_sector/credit/coinfo/$(_cbr_form_path(form))/?regnum=$regnum&dt=$dt"
+
+# The latest published reporting date for a bank's form: probe month-firsts back from the current month,
+# returning the first with data, or `nothing` after ~8 months of misses.
+function _cbr_latest_dt(regnum::AbstractString, form::Symbol)
+    d = firstdayofmonth(today())
+    for _ in 1:8
+        html = _cbr_get(_cbr_url(regnum, form, d))
+        html !== nothing && _cbr_has_data(html) && return d
+        d -= Month(1)
+    end
+    return nothing
+end
+
+function _cbr_fetch(h::FilingHandle)
+    regnum = h.entity.value
+    form   = _cbr_form_of(h.url)
+    fp     = _cbr_form_path(form)
+    dt     = h.period_end === nothing ? _cbr_latest_dt(regnum, form) : h.period_end
+    dt === nothing &&
+        error("no published Form $(uppercase(fp)) for bank regnum $regnum in the last 8 months.")
+    url  = _cbr_url(regnum, form, dt)
+    html = _cbr_get(url)
+    (html === nothing || !_cbr_has_data(html)) &&
+        error("Form $(uppercase(fp)) for bank regnum $regnum at dt=$dt has no data (pick another " *
+              "reporting date; forms are published monthly as of the 1st).")
+    return Filing(Russia(), h.entity, "cbr:$fp:$regnum:$dt", "cbr-$fp-$regnum-$dt.html",
+                  url, :cbr_form, html)
+end

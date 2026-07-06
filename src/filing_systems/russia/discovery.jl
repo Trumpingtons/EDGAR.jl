@@ -176,6 +176,7 @@ end
 # Fetch: read the (inn, year) row from the parquet partition (DuckDB, via the weakdep `_rfsd_query`) and
 # wrap it as an `:ras` Filing whose JSON content the shared `_rfsd_facts` path (R1) turns into Facts.
 function fetch_filing(::Russia, h::FilingHandle; allow_outliers::Bool=false)
+    h.entity.scheme === :cbr_regnum && return _cbr_fetch(h)      # route 2 — CBR bank Form 101/102 (C2)
     inn  = h.entity.value
     yr   = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)
     json = _rfsd_query(_rfsd_partition(yr), inn, yr)
@@ -197,6 +198,8 @@ partition when available (see [`rfsd_download`](@ref)).
 """
 function fetch_filing(::Russia, hs::AbstractVector{FilingHandle}; allow_outliers::Bool=false)
     isempty(hs) && return Filing[]
+    all(h -> h.entity.scheme === :cbr_regnum, hs) &&        # route 2 — no batch scan; fetch each bank form
+        return Filing[_cbr_fetch(h) for h in hs]
     byyear = Dict{Int,Vector{FilingHandle}}()
     for h in hs
         yr = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)

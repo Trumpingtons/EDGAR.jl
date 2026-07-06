@@ -214,8 +214,13 @@ banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry re
   (exported) lists **359 active** banks (of 1893 incl. revoked). `regnum` builds a handle with no directory
   hit; `name`/`ogrn` resolve through active banks. Live-verified: "Сбербанк"→regnum 1481. Handle carries
   `EntityId(:cbr_regnum, …)` + the f101/f102 URL. Offline (regnum-path) + live (resolver) testsets added.
-- ☐ **C2 — fetch:** Form 0409101/102 HTML per `regnum`+`dt` (ddos-guard cookie bootstrap) → a `Filing`
-  (new kind, e.g. `:cbr_form`).
+- ✅ **C2 — fetch:** `fetch_filing` routes a `:cbr_regnum` handle to `_cbr_fetch` → GET the Form
+  0409101/102 HTML (browser UA, **no cookie**) → a `Filing` of kind **`:cbr_form`** (the raw HTML is the
+  payload; extractor is C3). The reporting `dt` matters (a valid month-first returns a ~130–210 KB account
+  table; a not-yet-published month a ~29 KB shell), so `dt=nothing` auto-resolves the **latest** by probing
+  month-firsts back from the current month. `narratives(:cbr_form)` returns **empty** (numeric-only, by
+  design; kind-based dispatch, no special-casing). Live-verified: Sberbank f101 → 2026-06-01, 211 KB;
+  f102 explicit date. Live testset added.
 - ☐ **C3 — extractor:** parse the Form 101 HTML account table (5-digit account → balance) → `Fact`s.
 - ☐ **C4 — accounts→statements:** the **План счетов** (bank chart of accounts) → a **bank statement model**
   (Form 101 is a trial balance, not a presentation BS; Form 102 = P&L symbols). The crux — banks don't fit
