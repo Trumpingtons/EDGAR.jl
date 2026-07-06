@@ -7037,6 +7037,51 @@ flagged in one year and clean in the next --- and often is (a super-outlier in 2
 2019). Exclusion and the reliability signals therefore attach to a \emph{company-year}, never to the company
 as a whole.
 
+\section{Banks --- the CBR channel (route 2)}\label{sec:russia-cbr}
+
+The financial sector that RFSD excludes by law is reached, for \textbf{banks}, through the \textbf{Bank of
+Russia}. Each credit institution publishes its statutory reporting as CBR \textbf{Form 0409101} (\rus{оборотная
+ведомость} --- a turnover balance by account) and \textbf{0409102} (financial results), served as \textbf{HTML}
+by registration number (\texttt{regnum}) and reporting date. This is a wholly different channel from route~1
+--- a different source, format (bank chart of accounts, not RFSD rows or XBRL), identity (\texttt{regnum}, not
+INN) and statement model --- so it is a distinct \texttt{FilingSource}, \texttt{CBRBankFilings}.
+
+\paragraph{The channel.} \texttt{discover(CBRBankFilings(); regnum \textbar{} name \textbar{} ogrn)} resolves a
+bank through the CBR directory (the UniDbQuery XLSX, $\sim$360 currently-licensed banks; \texttt{name} matches
+active banks, so ``\rus{Сбербанк}'' $\to$ \texttt{regnum} 1481). \texttt{fetch\_filing} then GETs the Form
+HTML --- browser User-Agent, \emph{no} cookie --- as a \texttt{Filing} of kind \texttt{:cbr\_form}; the
+reporting date matters (a published month-first returns the full account table, a not-yet-published month an
+empty shell), so an unset \texttt{dt} auto-resolves the latest by probing month-firsts back from the current
+month.
+
+\paragraph{The bank statement model.} A bank has no revenue or cost of sales, so route~2 uses \emph{one}
+presentation statement, \texttt{BankBalanceSheet}. \texttt{facts(f; classify = true)} maps each account (a
+\texttt{cbr:<account>} concept, its closing balance in rubles, an instant) to one of $\sim$14 condensed lines
+--- \emph{Cash}, \emph{Correspondent accounts}, \emph{Interbank loans and deposits}, \emph{Loans to
+customers}, \emph{Securities}, \emph{Fixed \& intangible assets} on the asset side; \emph{Customer current
+accounts}, \emph{Customer deposits}, \emph{Issued debt securities} on the liability side; \emph{Share
+capital}, \emph{Reserves}, \emph{Retained earnings} in equity --- with the \rus{Актив} / \rus{Пассив}
+\texttt{section} dimension fixing the side. The governing invariant is that the turnover balance sheet
+\textbf{balances}: $\Sigma\,\rus{Актив} = \Sigma\,\rus{Пассив}$. It holds exactly on every bank tested
+(Sberbank 609.55~T~RUB; VTB, Alfa-Bank, Gazprombank and T-Bank all balance), and the headline lines
+match the banks' published figures (VTB $\sim$17~T loans / $\sim$19~T customer funds, T-Bank $\sim$1~T).
+
+\paragraph{No narratives; and what is out of scope.} Like the RFSD forms, Form 101/102 are \emph{numeric only}
+--- account tables --- so \texttt{narratives(f)} on a \texttt{:cbr\_form} filing returns empty; a bank's
+narrative (its annual report and explanatory notes, \rus{пояснительная информация}) lives on the bank's own
+disclosure pages, not this channel. Three limits: only \textbf{banks} are reachable (insurers and non-state
+pension funds report XBRL to the CBR whose instances are not public); the gross ``paired'' accounts
+(inter-branch \texttt{303}, the financial-result \texttt{706}) are classified but not \emph{netted}, so they
+dominate the raw totals; and Form 0409102 (the P\&L, a \texttt{BankIncomeStatement}) is a planned extension.
+
+\begin{lstlisting}
+using EDGAR, DuckDB
+h    = only(discover(CBRBankFilings(); name = "Сбербанк"))  # -> regnum 1481 (active-bank directory match)
+f    = fetch_filing(h)                                      # Form 0409101 HTML, latest published month
+rows = facts(f; classify = true, labels = true)             # one fact per account, tagged Актив/Пассив
+select_statement(rows, "BankBalanceSheet")                  # the condensed bank balance sheet (it balances)
+\end{lstlisting}
+
 \chapter{Generic Filing}
 \label{ch:generic}
 
