@@ -2091,9 +2091,11 @@ end
     stmt(code) = only(r.statement for r in rows if r.concept == "ras:$code")
     @test stmt("line_1600") == "BalanceSheet"           # 1xxx → balance sheet
     @test stmt("line_2110") == "IncomeStatement"        # 2xxx → income statement
+    @test stmt("line_3300") == "Equity"                 # 3xxx → statement of changes in equity (first-class)
     @test stmt("line_4300") == "CashFlow"               # 4xxx → cash flow
     @test only(r.label for r in rows if r.concept == "ras:line_2110") == "Revenue"
     @test only(r.label for r in rows if r.concept == "ras:line_1600") == "Total assets"
+    @test only(r.label for r in rows if r.concept == "ras:line_3311") == "Increase — net profit"
     @test ras_label("line_2400") == "Net profit (loss)"                 # utility, bare code
     @test ras_label("ras:line_1700") == "Total equity and liabilities"  # accepts the prefixed concept
 
@@ -2101,6 +2103,14 @@ end
     valc(rs, c) = only(r.value for r in rs if r.concept == "ras:$c")
     @test valc(bs, "line_1600") ≈ valc(bs, "line_1700")                 # the classified BS cross-foots
     @test !isempty(select_statement(rows, "IncomeStatement"))
+    # equity statement: first-class, and its comparatives get the correct period. Balances are instants;
+    # the prior-year closing (3200) is stamped at the PRIOR year-end, the reporting-year closing (3300) at year-end.
+    eq = select_statement(rows, "Equity")
+    @test !isempty(eq)
+    e3300 = only(r for r in eq if r.concept == "ras:line_3300")
+    @test e3300.is_instant && e3300.period_end == Date(2023, 12, 31) && e3300.period_start === nothing
+    @test only(r.period_end for r in eq if r.concept == "ras:line_3200") == Date(2022, 12, 31)
+    @test !(only(r for r in eq if r.concept == "ras:line_3311").is_instant)   # a movement is a duration
     @test all(r -> isempty(r.statement), facts(f))                      # classify=false → raw, unclassified
     # only the 6xxx targeted-use-of-funds codes (not one of the four statements) stay unclassified
     @test all(startswith(replace(r.concept, "ras:" => ""), "line_6") for r in rows if isempty(r.statement))

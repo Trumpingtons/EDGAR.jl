@@ -64,29 +64,25 @@ system_headers(::Russia) = ["User-Agent"      => _RUSSIA_UA,
 #   • The leading digit of the code fixes the statement family and period type — `1xxx` = balance sheet
 #     (an INSTANT, as-of 31 Dec); `2/3/4/6xxx` = income / equity / cash-flow / targeted-funds (a
 #     DURATION over the reporting year). Some codes are aggregates with a trailing letter (`line_321x`).
-# The concept is the raw `ras:line_XXXX` code. Under `classify`, `_ras_statement` (vocab_ras, R3) fills each
-# fact's `statement` from the code's OKUD family (1xxx→BalanceSheet, 2xxx→IncomeStatement, 4xxx→CashFlow,
-# 3xxx→Equity); under `labels`, `ras_label` fills the English label for the headline lines.
-
-# "line_1XXX" (a balance-sheet line) is an instant; every other family is a duration.
-_ras_is_instant(code::AbstractString) = ncodeunits(code) ≥ 6 && codeunit(code, 6) == UInt8('1')
-
+# The concept is the raw `ras:line_XXXX` code. `_ras_period` (vocab_ras) gives each fact's period type and
+# span — an instant for balance-sheet and equity-balance lines, a duration otherwise, with the equity
+# statement's prior-year comparatives stamped at the correct earlier year-ends. Under `classify`,
+# `_ras_statement` fills `statement` from the code's OKUD family (1xxx→BalanceSheet, 2xxx→IncomeStatement,
+# 3xxx→Equity, 4xxx→CashFlow); under `labels`, `ras_label` fills the English label for the headline lines.
 function _rfsd_facts(f::Filing; classify::Bool=false, labels::Bool=false)
-    doc    = JSON3.read(f.content)
-    inn    = String(doc.inn)
-    yr     = Int(doc.year)
-    pend   = Date(yr, 12, 31)
-    pstart = Date(yr, 1, 1)
-    out    = Fact[]
+    doc = JSON3.read(f.content)
+    inn = String(doc.inn)
+    yr  = Int(doc.year)
+    out = Fact[]
     for (k, v) in pairs(doc.lines)
         v === nothing && continue
         code = String(k)
-        inst = _ras_is_instant(code)
-        stmt = classify ? _ras_statement(code) : ""     # OKUD code → BalanceSheet/IncomeStatement/… (R3)
+        inst, pstart, pend = _ras_period(code, yr)
+        stmt = classify ? _ras_statement(code) : ""
         push!(out, Fact(; concept = "ras:$code", value = Float64(v) * 1000.0, unit = "RUB",
-                        cik = inn, accession = f.ref, period_end = pend,
-                        period_start = inst ? nothing : pstart, is_instant = inst, decimals = -3,
-                        statement = stmt, statements = isempty(stmt) ? String[] : [stmt],
+                        cik = inn, accession = f.ref, period_end = pend, period_start = pstart,
+                        is_instant = inst, decimals = -3, statement = stmt,
+                        statements = isempty(stmt) ? String[] : [stmt],
                         label = labels ? ras_label(code) : ""))
     end
     return [fact_row(fc) for fc in out]

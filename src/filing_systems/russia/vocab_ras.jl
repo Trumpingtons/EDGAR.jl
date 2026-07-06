@@ -19,6 +19,28 @@ function _ras_statement(code::AbstractString)
     return ""
 end
 
+# Period type + span for a code, given the reporting `year`. Balance-sheet lines and the equity-statement
+# balances are INSTANTS; income / cash-flow / equity-movement lines are DURATIONS. The statement of changes
+# in equity (0710003) carries prior-year comparatives, so its opening balances (3100 = two years back,
+# 3200 = prior year) and its prior-year movements (`line_32xx`) are stamped at the correct EARLIER year-ends;
+# the reporting-year balance (3300), net assets (3600) and reporting-year movements (`line_33xx`) at `year`.
+const _RAS_EQ_BALANCE_OFFSET = Dict("line_3100" => -2, "line_3200" => -1, "line_3300" => 0)
+
+function _ras_period(code::AbstractString, year::Integer)
+    stmt = _ras_statement(code)
+    if stmt == "BalanceSheet"
+        return (true, nothing, Date(year, 12, 31))                              # instant @ reporting year-end
+    elseif stmt == "Equity"
+        haskey(_RAS_EQ_BALANCE_OFFSET, code) &&
+            return (true, nothing, Date(year + _RAS_EQ_BALANCE_OFFSET[code], 12, 31))
+        code == "line_3600" && return (true, nothing, Date(year, 12, 31))       # net assets = instant
+        off = startswith(code, "line_32") ? -1 : 0                              # 32xx = prior-year movements
+        return (false, Date(year + off, 1, 1), Date(year + off, 12, 31))
+    else                                                                        # IncomeStatement / CashFlow / 6xxx
+        return (false, Date(year, 1, 1), Date(year, 12, 31))
+    end
+end
+
 # English labels for the standard OKUD headline lines (subtotals + major items). A firm reports only a
 # subset; unmapped codes still classify by statement but carry no label.
 const _RAS_LABELS = Dict{String,String}(
@@ -81,6 +103,45 @@ const _RAS_LABELS = Dict{String,String}(
     "line_2500" => "Total comprehensive result for the period",
     "line_2900" => "Basic earnings per share",
     "line_2910" => "Diluted earnings per share",
+    # ── Statement of changes in equity (0710003) ──
+    "line_3100" => "Equity at 31 Dec (two years before reporting)",
+    "line_3200" => "Equity at 31 Dec (prior year)",
+    "line_3300" => "Equity at 31 Dec (reporting year)",
+    "line_3210" => "Increase in equity, prior year (total)",
+    "line_3211" => "Increase, prior year — net profit",
+    "line_3212" => "Increase, prior year — revaluation of property",
+    "line_3213" => "Increase, prior year — income recognised directly in equity",
+    "line_3214" => "Increase, prior year — additional share issue",
+    "line_3215" => "Increase, prior year — increase in par value",
+    "line_3216" => "Increase, prior year — reorganisation",
+    "line_3220" => "Decrease in equity, prior year (total)",
+    "line_3221" => "Decrease, prior year — loss",
+    "line_3222" => "Decrease, prior year — revaluation of property",
+    "line_3223" => "Decrease, prior year — expenses recognised directly in equity",
+    "line_3224" => "Decrease, prior year — decrease in par value",
+    "line_3225" => "Decrease, prior year — decrease in number of shares",
+    "line_3226" => "Decrease, prior year — reorganisation",
+    "line_3227" => "Decrease, prior year — dividends",
+    "line_3230" => "Change in additional capital, prior year",
+    "line_3240" => "Change in reserve capital, prior year",
+    "line_3310" => "Increase in equity (total)",
+    "line_3311" => "Increase — net profit",
+    "line_3312" => "Increase — revaluation of property",
+    "line_3313" => "Increase — income recognised directly in equity",
+    "line_3314" => "Increase — additional share issue",
+    "line_3315" => "Increase — increase in par value",
+    "line_3316" => "Increase — reorganisation",
+    "line_3320" => "Decrease in equity (total)",
+    "line_3321" => "Decrease — loss",
+    "line_3322" => "Decrease — revaluation of property",
+    "line_3323" => "Decrease — expenses recognised directly in equity",
+    "line_3324" => "Decrease — decrease in par value",
+    "line_3325" => "Decrease — decrease in number of shares",
+    "line_3326" => "Decrease — reorganisation",
+    "line_3327" => "Decrease — dividends",
+    "line_3330" => "Change in additional capital",
+    "line_3340" => "Change in reserve capital",
+    "line_3600" => "Net assets",
     # ── Cash flow (0710004) ──
     "line_4100" => "Net cash flows from operating activities",
     "line_4110" => "Operating cash inflows",
