@@ -261,8 +261,16 @@ banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry re
     against its published RAS/IFRS balance sheet order-of-magnitude.
   - **Out of scope:** Form 0409102 (P&L → a `BankIncomeStatement`) is a follow-on; off-balance parts (В/Г)
     stay tagged but unmapped.
-- ☐ **C5 — validate + manual.** Documented in the manual: Repositories (CBR row), Entities Covered
-  (`sec:russia-banks`), and the financial-sector gap.
+- ✅ **C5 — validate + manual DONE.** *Validation:* the Σ Актив = Σ Пассив invariant holds on every bank
+  tested — Sberbank (609.55 T), VTB (17.1 T loans / 19.5 T customer funds), Alfa-Bank, Gazprombank, T-Bank —
+  all classify and balance, headline lines matching published RAS order-of-magnitude. *Manual:* the
+  `\section{Banks — the CBR channel (route 2)}` (`sec:russia-cbr`) — channel, bank statement model, the
+  balance invariant, the empty-narratives note, caveats, and a runnable example — plus the Entities `Banks`
+  subsection and the financial-sector gap.
+
+**Route 2 (CBR banks) is COMPLETE (C0–C5).** Follow-ons, noted not built: Form 0409102 → a
+`BankIncomeStatement`; netting the gross paired accounts (303 inter-branch, 706 financial result); a
+fresh-bank multi-bank test (validation done live, not yet locked in the suite).
 
 ### R3 — Classification: `vocab_ras` (OKUD code map) ✅ DONE
 - ✅ R3.1 `vocab_ras.jl` — `_ras_statement(code)` assigns a statement to **every** code by its OKUD leading
