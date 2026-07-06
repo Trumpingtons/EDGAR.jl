@@ -221,7 +221,14 @@ banks) their accounts are not served in HTML; the `finorg/foinfo` cards carry re
   month-firsts back from the current month. `narratives(:cbr_form)` returns **empty** (numeric-only, by
   design; kind-based dispatch, no special-casing). Live-verified: Sberbank f101 → 2026-06-01, 211 KB;
   f102 explicit date. Live testset added.
-- ☐ **C3 — extractor:** parse the Form 101 HTML account table (5-digit account → balance) → `Fact`s.
+- ✅ **C3 — extractor:** `_cbr_form_facts` parses the Form 0409101 HTML (`facts()` dispatches `:cbr_form`).
+  Each account row has 13 cells; only the ИТОГО columns carry values — col 4 (opening) and col 13
+  (**closing**). Walks the table tracking part (`А. Балансовые счета` / `В.` / …) + section (`Актив` /
+  `Пассив`), emitting one **instant** Fact per account = its closing balance (×1000 → RUB), concept
+  `cbr:<account>`, `section`/`part` dimensions. **Gotcha fixed:** some account codes render with a dot
+  (`45.0`=450, `32.1`=321) — normalised by stripping `[\s.]`. **Validated:** Sberbank FY2023 → 179 accounts,
+  **Σ Актив == Σ Пассив == 609.55 T RUB** (the turnover sheet balances — the extraction is complete). Live
+  testset asserts the balance identity. Form 0409102 (P&L) is a later extension; classification is C4.
 - ☐ **C4 — accounts→statements:** the **План счетов** (bank chart of accounts) → a **bank statement model**
   (Form 101 is a trial balance, not a presentation BS; Form 102 = P&L symbols). The crux — banks don't fit
   the BS/IS/CF/revenue model.

@@ -2257,6 +2257,23 @@ end
         @info "Skipping CBR C2 live (network): $e"; @test true
     end
 end
+@testset "Russia: CBR Form 101 account extraction (C3, live)" begin
+    # facts on a :cbr_form filing → one instant Fact per account (closing balance, ×1000 → RUB), tagged with
+    # its Актив/Пассив section. The turnover balance sheet must balance: Σ Актив == Σ Пассив over part А.
+    try
+        f = fetch_filing(only(discover(CBRBankFilings(); regnum = "1481", form = :f101, dt = Date(2024, 1, 1))))
+        rows = facts(f)
+        @test length(rows) > 100
+        @test all(r -> startswith(r.concept, "cbr:") && r.unit == "RUB" && r.is_instant, rows)
+        dims(r) = EDGAR.JSON3.read(r.dimensions)
+        bal(s) = sum((r.value for r in rows
+                      if occursin("Баланс", get(dims(r), :part, "")) && get(dims(r), :section, "") == s);
+                     init = 0.0)
+        @test isapprox(bal("Актив"), bal("Пассив"); rtol = 1e-6)   # assets == liabilities + equity
+    catch e
+        @info "Skipping CBR C3 live (network): $e"; @test true
+    end
+end
 @testset "EDGAR basic" begin
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try

@@ -581,6 +581,7 @@ facts(f; classify = true, labels = true)  # …with the `statement` and `label` 
 """
 facts(f::Filing; classify::Bool=false, labels::Bool=false, lang::Union{AbstractString,Nothing}=nothing) =
     f.kind === :ras ? _rfsd_facts(f; classify = classify, labels = labels) :
+    f.kind === :cbr_form ? _cbr_form_facts(f; classify = classify, labels = labels) :
     f.kind === :pdf ? _pdf_filing_facts(f; classify = classify, labels = labels) :
     facts(_filing_selection(f, _extract_facts(f;
         statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),

@@ -172,3 +172,47 @@ function _cbr_fetch(h::FilingHandle)
     return Filing(Russia(), h.entity, "cbr:$fp:$regnum:$dt", "cbr-$fp-$regnum-$dt.html",
                   url, :cbr_form, html)
 end
+
+# ── C3: extract the Form 0409101 account table → Facts ──────────────────────────────────────────
+#
+# Form 0409101 (оборотная ведомость) is a turnover balance by account. In the CBR published view each
+# account row has 13 cells: [account, Входящие остатки{rub,fx,ИТОГО}, Обороты{deb…,cred…}, Исходящие
+# остатки{rub,fx,ИТОГО}], of which only the ИТОГО columns carry values — col 4 (opening total) and col 13
+# (CLOSING total). Accounts sit under section markers "Актив" / "Пассив", themselves under a part
+# ("А. Балансовые счета", "В. Внебалансовые счета", …). `_cbr_form_facts` walks the table, tracks the current
+# part + section, and emits one instant Fact per account = its CLOSING balance (×1000 → rubles), tagged with
+# `section`/`part` dimensions. The account → statement-line map is C4; here `statement` stays empty and the
+# concept is the raw `cbr:<account>` code. (Form 0409102 / P&L is a later extension.)
+
+_cbr_num(s::AbstractString) = (t = replace(s, r"[\s ]" => ""); isempty(t) ? nothing : tryparse(Float64, t))
+_cbr_cells(row::AbstractString) =
+    [strip(replace(m.captures[1], r"<[^>]+>" => "", "&nbsp;" => " ", " " => " "))
+     for m in eachmatch(r"<t[dh][^>]*>(.*?)</t[dh]>"s, row)]
+_cbr_ref_date(ref::AbstractString) = (p = split(ref, ':'); length(p) ≥ 4 ? Date(p[end]) : nothing)
+
+function _cbr_form_facts(f::Filing; classify::Bool=false, labels::Bool=false)
+    _cbr_form_of(f.url) === :f101 ||
+        error("CBR form facts: only Form 0409101 (:f101) is supported so far.")
+    regnum = f.entity.value
+    dt     = _cbr_ref_date(f.ref)
+    dt === nothing && error("CBR form facts: could not read the reporting date from $(repr(f.ref)).")
+    out, section, part = Fact[], "", ""
+    for m in eachmatch(r"<tr[^>]*>(.*?)</tr>"s, f.content)
+        cells = _cbr_cells(m.captures[1])
+        isempty(cells) && continue
+        c1 = cells[1]
+        if occursin(r"^[А-Д]\.", c1)                        # part header (А. Балансовые счета, В. …)
+            part = c1
+        elseif c1 in ("Актив", "Пассив")                    # section within a part
+            section = c1
+        elseif length(cells) ≥ 13 && (acct = replace(c1, r"[\s.]" => ""); occursin(r"^\d{3,5}$", acct))
+            # some account codes are displayed with a dot (e.g. "45.0" = 450, "32.1" = 321) — normalise it
+            closing = _cbr_num(cells[13])                   # Исходящие остатки, ИТОГО
+            closing === nothing && continue
+            push!(out, Fact(; concept = "cbr:$acct", value = closing * 1000.0, unit = "RUB",
+                            cik = regnum, accession = f.ref, period_end = dt, is_instant = true,
+                            decimals = -3, dimensions = Dict("section" => section, "part" => part)))
+        end
+    end
+    return [fact_row(fc) for fc in out]
+end
