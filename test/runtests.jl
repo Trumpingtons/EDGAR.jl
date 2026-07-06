@@ -2106,6 +2106,21 @@ end
     @test all(startswith(replace(r.concept, "ras:" => ""), "line_6") for r in rows if isempty(r.statement))
 end
 
+@testset "Russia: RFSD quality flags + outlier exclusion (R4, offline)" begin
+    # rfsd_flags reads the data-quality flags off a :ras filing; the fetch-time exclusion predicate drops
+    # the author-flagged anomalies (outlier=1) by default. (End-to-end fetch exclusion is a live test.)
+    dir = joinpath(@__DIR__, "data", "russia")
+    gf = Filing(Russia(), EntityId(:inn, "7736050003"), "r", "gazprom.json", "u", :ras,
+                read(joinpath(dir, "7736050003-2023.json"), String))
+    fl = rfsd_flags(gf)
+    @test fl.outlier === false && fl.filed === true && fl.articulated === true   # Gazprom: clean, filed, ties out
+    @test_throws ArgumentError rfsd_flags(Filing("c", "a", "d", "u", :xbrl, ""))  # not a :ras filing
+    # the fetch-time exclusion predicate (offline, on synthetic :ras content)
+    mkjson(o) = "{\"inn\":\"1\",\"year\":2023,\"lines\":{},\"flags\":{\"outlier\":$o}}"
+    @test EDGAR._rfsd_json_outlier(mkjson(1))
+    @test !EDGAR._rfsd_json_outlier(mkjson(0))
+end
+
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
 # do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
@@ -2167,6 +2182,25 @@ end
         @test length(facts(fetch_filing(hs[1]))) == length(facts(only(fetch_filing([hs[1]]))))  # batch==point
     catch e
         @info "Skipping Russia R2c live (network/DuckDB): $e"; @test true
+    end
+end
+@testset "Russia: outlier exclusion (R4, live)" begin
+    # A firm-year the RFSD authors flagged anomalous (outlier=1) is excluded by default and admitted only
+    # with allow_outliers=true — on both the point and batch fetch paths.
+    try
+        con = DBInterface.connect(DuckDB.DB)
+        DBInterface.execute(con, "INSTALL httpfs"); DBInterface.execute(con, "LOAD httpfs")
+        url = "https://huggingface.co/datasets/irlspbru/RFSD/resolve/main/RFSD/year=2023/part-0.parquet"
+        oinn = first(string(r.inn) for r in DBInterface.execute(con,
+                   "SELECT inn FROM read_parquet('$url') WHERE outlier=1 AND filed=1 LIMIT 1"))
+        h = only(discover(RFSDFilings(); inn = oinn, year = 2023))
+        @test_throws ErrorException fetch_filing(h)                       # excluded by default (point)
+        f = fetch_filing(h; allow_outliers = true)                        # opt-in admits it
+        @test f.kind === :ras && rfsd_flags(f).outlier === true
+        @test isempty(fetch_filing([h]))                                  # excluded by default (batch)
+        @test length(fetch_filing([h]; allow_outliers = true)) == 1
+    catch e
+        @info "Skipping Russia R4 live (network/DuckDB): $e"; @test true
     end
 end
 @testset "EDGAR basic" begin

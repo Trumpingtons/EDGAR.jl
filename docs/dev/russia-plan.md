@@ -206,9 +206,20 @@ manual (coverage-caveat paragraph + References, Econometrica style).
   "BalanceSheet")` returns 37 rows that **cross-foot**; only the 23 `line_6xxx` targeted-funds codes stay
   unclassified. Offline testset added (`Russia: vocab_ras classification (R3, offline)`).
 
-### R4 — Validation + benchmark caveats ☐
-- ☐ R4.1 Cross-foot testset (internal, from `articulated`); RAS-parent spot-check vs a published RAS report.
-- ☐ R4.2 Document the **RAS-unconsolidated vs IFRS-consolidated** benchmark caveat (manual §).
+### R4 — Validation + quality flags + benchmark caveats ✅ DONE (validation); benchmark caveat = R5/manual
+- ✅ R4.1 **Cross-foot** validated across all fixtures (R1/R3) — `line_1600 = line_1700`, matching the
+  `articulated` flag. **Magnitude anchor** (externally grounded, non-circular): Gazprom FY2023 RAS-parent
+  revenue **5.62 T ₽** and net profit **695.57 bn ₽** match the figures Gazprom published under РСБУ in
+  Mar-2024 (Reuters/Interfax) — confirming our ×1000→RUB scaling and sign handling.
+- ✅ R4.2 **Author-flagged anomalies excluded by default** (user decision). The RFSD authors manually flag
+  ~436 firms / 1,130 firm-years as anomalous (`outlier=1`, e.g. revenue 8–26× Gazprom) and recommend
+  excluding them. `fetch_filing(::Russia, …)` now DROPS `outlier=1` rows by default — point → `error`,
+  batch → skip + `@info` — overridable with `allow_outliers=true`; population `discover` already filters
+  them in SQL. `rfsd_flags(f)` (exported) exposes `outlier`/`articulated`/`filed`/`eligible`/`imputed`/
+  `simplified`/`financial`. Offline testset (flags + predicate) + live testset (end-to-end exclusion).
+  Verified live: outlier INN 0277125521 → point errors, `allow_outliers` admits, batch drops.
+- ☐ R4.3 The **RAS-unconsolidated vs IFRS-consolidated** benchmark caveat (why Yahoo/MOEX ≠ RFSD) is
+  documentation — belongs in the manual (R5), not code. No market oracle is wired (unlike IFRS jurisdictions).
 
 ### R5 — Manual worked example + polish ☐
 - ☐ R5.1 A runnable `julia>` example (name → MOEX INN → RFSD facts → cross-foot) in the Russia chapter.

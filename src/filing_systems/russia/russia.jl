@@ -120,3 +120,30 @@ _rfsd_query_many(args...) =
     error("batch fetch_filing(::Russia, handles) needs DuckDB.jl — run `using DuckDB` (EDGARDuckDBExt).")
 _rfsd_download(args...) =
     error("rfsd_download needs DuckDB.jl to copy the RFSD partition — run `using DuckDB` (EDGARDuckDBExt).")
+
+# ── R4: data-quality flags — exclude author-flagged anomalies by default ─────────────────────────
+#
+# The RFSD authors manually flag ~436 firms (1,130 firm-years) whose statements are anomalous (e.g. revenue
+# many times Gazprom's) and RECOMMEND excluding them (`outlier=1`). So `fetch_filing(::Russia, …)` DROPS
+# such rows by default (point → error; batch → skip), overridable with `allow_outliers=true`; population
+# `discover` already filters them in SQL. `rfsd_flags` exposes the quality flags off a fetched `:ras` filing.
+
+"""
+    rfsd_flags(f::Filing) -> NamedTuple
+
+The RFSD data-quality flags carried by a Russian `:ras` [`Filing`](@ref), each `true` / `false` / `missing`:
+`outlier` (author-flagged anomalous — excluded by [`fetch_filing`](@ref) unless `allow_outliers=true`),
+`articulated` (statement lines sum to their subtotals), `filed`, `eligible`, `imputed` (reconstructed from
+adjacent years), `simplified` (abbreviated form), `financial`.
+"""
+function rfsd_flags(f::Filing)
+    f.kind === :ras || throw(ArgumentError("rfsd_flags: not a Russian :ras filing (kind = $(repr(f.kind)))"))
+    fl = JSON3.read(f.content).flags
+    g(k) = (v = get(fl, k, nothing); v === nothing ? missing : v == 1)
+    return (outlier = g(:outlier), articulated = g(:articulated), filed = g(:filed),
+            eligible = g(:eligible), imputed = g(:imputed), simplified = g(:simplified),
+            financial = g(:financial))
+end
+
+# True iff the :ras JSON content is flagged `outlier` (anomalous) — the fetch-time exclusion predicate.
+_rfsd_json_outlier(json::AbstractString) = get(JSON3.read(json).flags, :outlier, nothing) == 1

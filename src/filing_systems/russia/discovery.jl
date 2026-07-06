@@ -175,12 +175,15 @@ end
 
 # Fetch: read the (inn, year) row from the parquet partition (DuckDB, via the weakdep `_rfsd_query`) and
 # wrap it as an `:ras` Filing whose JSON content the shared `_rfsd_facts` path (R1) turns into Facts.
-function fetch_filing(::Russia, h::FilingHandle)
+function fetch_filing(::Russia, h::FilingHandle; allow_outliers::Bool=false)
     inn  = h.entity.value
     yr   = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)
     json = _rfsd_query(_rfsd_partition(yr), inn, yr)
     isempty(json) && error("no RFSD row for INN $inn in year=$yr (non-financial filers only; " *
                            "check the INN, or try another year).")
+    (!allow_outliers && _rfsd_json_outlier(json)) &&
+        error("RFSD flags INN $inn (year=$yr) as anomalous (outlier=1); the authors recommend excluding " *
+              "these ~436 firms. Pass allow_outliers=true to fetch it anyway.")
     return Filing(Russia(), h.entity, h.ref, "rfsd-$inn-$yr.json", h.url, :ras, json)
 end
 
@@ -192,22 +195,27 @@ population [`discover`](@ref) result, instead of one point query per firm. Retur
 for each handle that has a row (firms absent from the partition are dropped). Reads a local / cached
 partition when available (see [`rfsd_download`](@ref)).
 """
-function fetch_filing(::Russia, hs::AbstractVector{FilingHandle})
+function fetch_filing(::Russia, hs::AbstractVector{FilingHandle}; allow_outliers::Bool=false)
     isempty(hs) && return Filing[]
     byyear = Dict{Int,Vector{FilingHandle}}()
     for h in hs
         yr = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)
         push!(get!(byyear, yr, FilingHandle[]), h)
     end
-    out = Filing[]
+    out = Filing[]; dropped = 0
     for (yr, hh) in byyear
         rows = _rfsd_query_many(_rfsd_partition(yr), String[h.entity.value for h in hh], yr)  # inn => JSON
         for h in hh
             json = get(rows, h.entity.value, "")
             isempty(json) && continue
+            if !allow_outliers && _rfsd_json_outlier(json)
+                dropped += 1; continue                       # author-flagged anomalous → excluded
+            end
             push!(out, Filing(Russia(), h.entity, h.ref, "rfsd-$(h.entity.value)-$yr.json",
                               h.url, :ras, json))
         end
     end
+    dropped > 0 &&
+        @info "RFSD batch fetch dropped $dropped anomalous (outlier=1) firm-year(s); pass allow_outliers=true to keep them."
     return out
 end

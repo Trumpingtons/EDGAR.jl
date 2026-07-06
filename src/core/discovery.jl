@@ -61,17 +61,20 @@ Fetch a discovered filing into memory as a [`Filing`](@ref). Dispatches to the h
 [`FilingSystem`](@ref) (e.g. ESEF downloads and reads the report-package ZIP at `h.url`), so a single
 call resolves any handle [`discover`](@ref) produced regardless of which system it came from.
 """
-fetch_filing(h::FilingHandle) = fetch_filing(h.system, h)
+fetch_filing(h::FilingHandle; kwargs...) = fetch_filing(h.system, h; kwargs...)
 
 """
     fetch_filing(hs::AbstractVector{FilingHandle}) -> Vector{Filing}
 
 Fetch many discovered filings at once. Dispatches to the handles' [`FilingSystem`](@ref); the default
 fetches each in turn, but a system may override with a batch path — e.g. Russia reads a whole RFSD cohort
-in a single parquet scan (`WHERE inn IN (…)`) rather than one query per firm.
+in a single parquet scan (`WHERE inn IN (…)`) rather than one query per firm. System-specific keywords pass
+through (e.g. Russia's `allow_outliers`).
 """
-fetch_filing(hs::AbstractVector{FilingHandle}) = isempty(hs) ? Filing[] : fetch_filing(first(hs).system, hs)
-fetch_filing(sys::FilingSystem, hs::AbstractVector{FilingHandle}) = Filing[fetch_filing(sys, h) for h in hs]
+fetch_filing(hs::AbstractVector{FilingHandle}; kwargs...) =
+    isempty(hs) ? Filing[] : fetch_filing(first(hs).system, hs; kwargs...)
+fetch_filing(sys::FilingSystem, hs::AbstractVector{FilingHandle}; kwargs...) =
+    Filing[fetch_filing(sys, h; kwargs...) for h in hs]
 
 # ── Entity (company) search ────────────────────────────────────────────────────────────────────
 # The step *before* discovery: finding the entity whose filings you then `discover`. Discovery keys
