@@ -2128,6 +2128,22 @@ end
         @info "Skipping Russia R2b live (network/DuckDB): $e"; @test true
     end
 end
+@testset "Russia: RFSD batch fetch (R2c, live)" begin
+    # Batch-fetch a cohort in one parquet scan (WHERE inn IN …); assert it equals per-firm fetch and that
+    # every member cross-foots. (The download-once cache, rfsd_download, is not exercised here — ~550 MB.)
+    try
+        hs = discover(RFSDFilings(); okved = "46.71", year = 2023, limit = 6)
+        fs = fetch_filing(hs)                                     # generic vector entry → Russia batch
+        @test fs isa Vector{Filing} && !isempty(fs) && all(f -> f.kind === :ras, fs)
+        xf(f) = (rows = facts(f);
+                 only(r.value for r in rows if r.concept == "ras:line_1600") ≈
+                 only(r.value for r in rows if r.concept == "ras:line_1700"))
+        @test all(xf, fs)                                         # every cohort member cross-foots
+        @test length(facts(fetch_filing(hs[1]))) == length(facts(only(fetch_filing([hs[1]]))))  # batch==point
+    catch e
+        @info "Skipping Russia R2c live (network/DuckDB): $e"; @test true
+    end
+end
 @testset "EDGAR basic" begin
     # Smoke test: list a filer's filings (network request). Wrapped so CI/offline doesn't fail.
     try

@@ -63,6 +63,16 @@ call resolves any handle [`discover`](@ref) produced regardless of which system 
 """
 fetch_filing(h::FilingHandle) = fetch_filing(h.system, h)
 
+"""
+    fetch_filing(hs::AbstractVector{FilingHandle}) -> Vector{Filing}
+
+Fetch many discovered filings at once. Dispatches to the handles' [`FilingSystem`](@ref); the default
+fetches each in turn, but a system may override with a batch path — e.g. Russia reads a whole RFSD cohort
+in a single parquet scan (`WHERE inn IN (…)`) rather than one query per firm.
+"""
+fetch_filing(hs::AbstractVector{FilingHandle}) = isempty(hs) ? Filing[] : fetch_filing(first(hs).system, hs)
+fetch_filing(sys::FilingSystem, hs::AbstractVector{FilingHandle}) = Filing[fetch_filing(sys, h) for h in hs]
+
 # ── Entity (company) search ────────────────────────────────────────────────────────────────────
 # The step *before* discovery: finding the entity whose filings you then `discover`. Discovery keys
 # off a filer identity (a CIK, a company number, an LEI); `company_search` turns a name or a set of

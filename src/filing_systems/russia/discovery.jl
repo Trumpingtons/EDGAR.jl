@@ -31,6 +31,60 @@ const RFSD_LATEST_YEAR = 2023
 
 _rfsd_partition_url(year::Integer) = "$_RFSD_HF_BASE/year=$year/part-0.parquet"
 
+# ── Local / cached partitions (R2c, bulk) ────────────────────────────────────────────────────────
+# By default a query reads the remote parquet over httpfs. For repeated or bulk reads, either point at an
+# existing local RFSD dataset (`set_rfsd_local(dir)`) or download a year once (`rfsd_download(year)`) into
+# the cache dir (default `~/EDGAR-Reports/rfsd/`). `_rfsd_partition(year)` resolves local → cache → remote;
+# DuckDB reads a local parquet path directly (no httpfs), so cached/local scans are fast and offline.
+const _RFSD_LOCAL     = Ref{Union{Nothing,String}}(nothing)
+const _RFSD_CACHE_DIR = Ref{String}("")
+
+_rfsd_cache_dir() = isempty(_RFSD_CACHE_DIR[]) ? joinpath(homedir(), "EDGAR-Reports", "rfsd") : _RFSD_CACHE_DIR[]
+_rfsd_rel(year::Integer) = joinpath("year=$year", "part-0.parquet")
+_rfsd_cache_path(year::Integer) = joinpath(_rfsd_cache_dir(), _rfsd_rel(year))
+
+"""
+    set_rfsd_local(dir) / set_rfsd_local(nothing)
+
+Use an existing local RFSD dataset for all queries — `dir` is laid out like the dataset
+(`dir/year=YYYY/part-0.parquet`). Highest priority in partition resolution; `nothing` clears it.
+"""
+set_rfsd_local(dir::AbstractString) = (_RFSD_LOCAL[] = String(dir))
+set_rfsd_local(::Nothing) = (_RFSD_LOCAL[] = nothing)
+
+"""
+    set_rfsd_cache_dir(dir)
+
+Set the directory where [`rfsd_download`](@ref) stores downloaded partitions (default `~/EDGAR-Reports/rfsd/`).
+"""
+set_rfsd_cache_dir(dir::AbstractString) = (_RFSD_CACHE_DIR[] = String(dir))
+
+# The parquet a read should use: a local-dataset file, else a cached file, else the remote URL.
+function _rfsd_partition(year::Integer)
+    for base in (_RFSD_LOCAL[], _rfsd_cache_dir())
+        base === nothing && continue
+        p = joinpath(base, _rfsd_rel(year))
+        isfile(p) && return p
+    end
+    return _rfsd_partition_url(year)
+end
+
+"""
+    rfsd_download(year) -> String
+
+Download the RFSD `year` partition once (~550 MB) into the cache dir and return its local path (a no-op if
+already present). Subsequent point / population / batch queries for that year then read the local file ---
+fast and offline. Needs `using DuckDB`.
+"""
+function rfsd_download(year::Integer)
+    dest = _rfsd_cache_path(year)
+    isfile(dest) && return dest
+    mkpath(dirname(dest))
+    @info "Downloading RFSD year=$year partition (~550 MB) → $dest"
+    _rfsd_download(_rfsd_partition_url(year), dest)
+    return dest
+end
+
 # Resolve a company name or ticker to its INN via the open MOEX ISS securities API. Returns a
 # NamedTuple `(inn, secid, title)` or `nothing`. Prefers an exact ticker (secid) match; else the first
 # hit that carries an `emitent_inn`. Keyless — only the Russia browser headers.
@@ -124,8 +178,36 @@ end
 function fetch_filing(::Russia, h::FilingHandle)
     inn  = h.entity.value
     yr   = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)
-    json = _rfsd_query(h.url, inn, yr)
+    json = _rfsd_query(_rfsd_partition(yr), inn, yr)
     isempty(json) && error("no RFSD row for INN $inn in year=$yr (non-financial filers only; " *
                            "check the INN, or try another year).")
     return Filing(Russia(), h.entity, h.ref, "rfsd-$inn-$yr.json", h.url, :ras, json)
+end
+
+"""
+    fetch_filing(::Russia, hs::AbstractVector{FilingHandle}) -> Vector{Filing}
+
+Batch-fetch a whole cohort in **one** parquet scan per year (`WHERE inn IN (…)`) — the efficient path for a
+population [`discover`](@ref) result, instead of one point query per firm. Returns an `:ras` [`Filing`](@ref)
+for each handle that has a row (firms absent from the partition are dropped). Reads a local / cached
+partition when available (see [`rfsd_download`](@ref)).
+"""
+function fetch_filing(::Russia, hs::AbstractVector{FilingHandle})
+    isempty(hs) && return Filing[]
+    byyear = Dict{Int,Vector{FilingHandle}}()
+    for h in hs
+        yr = h.period_end === nothing ? RFSD_LATEST_YEAR : year(h.period_end)
+        push!(get!(byyear, yr, FilingHandle[]), h)
+    end
+    out = Filing[]
+    for (yr, hh) in byyear
+        rows = _rfsd_query_many(_rfsd_partition(yr), String[h.entity.value for h in hh], yr)  # inn => JSON
+        for h in hh
+            json = get(rows, h.entity.value, "")
+            isempty(json) && continue
+            push!(out, Filing(Russia(), h.entity, h.ref, "rfsd-$(h.entity.value)-$yr.json",
+                              h.url, :ras, json))
+        end
+    end
+    return out
 end

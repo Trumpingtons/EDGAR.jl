@@ -874,38 +874,48 @@ end
 const _RFSD_IDCOLS   = ("ogrn", "okved", "okved_section", "okopf", "region")
 const _RFSD_FLAGCOLS = ("filed", "eligible", "articulated", "outlier", "simplified", "imputed", "financial")
 
+# Load httpfs for a remote URL; a local parquet path is read directly (no extension).
+function _rfsd_httpfs!(con, src::AbstractString)
+    if startswith(src, "http")
+        DBInterface.execute(con, "INSTALL httpfs")
+        DBInterface.execute(con, "LOAD httpfs")
+    end
+end
+
+# Serialise one RFSD result row to the :ras JSON shape core `_rfsd_facts` consumes:
+# `{inn, year, <id cols…>, flags:{…}, lines:{line_XXXX => value}}`.
+function _rfsd_row_json(row, year::Integer)
+    gv(k) = hasproperty(row, Symbol(k)) ? getproperty(row, Symbol(k)) : missing
+    lines = Dict{String,Float64}()
+    for k in propertynames(row)
+        s = String(k)
+        startswith(s, "line_") || continue
+        v = getproperty(row, k)
+        v === missing && continue
+        lines[s] = Float64(v)
+    end
+    doc = Dict{String,Any}("inn" => string(gv("inn")), "year" => Int(year), "lines" => lines)
+    for k in _RFSD_IDCOLS
+        v = gv(k); doc[k] = v === missing ? nothing : v
+    end
+    flags = Dict{String,Any}()
+    for k in _RFSD_FLAGCOLS
+        v = gv(k); flags[k] = v === missing ? nothing : Float64(v)
+    end
+    doc["flags"] = flags
+    return EDGAR.JSON3.write(doc)
+end
+
 function EDGAR._rfsd_query(url::AbstractString, inn::AbstractString, year::Integer)
     con = DBInterface.connect(DuckDB.DB)
     try
-        if startswith(url, "http")
-            DBInterface.execute(con, "INSTALL httpfs")
-            DBInterface.execute(con, "LOAD httpfs")
-        end
+        _rfsd_httpfs!(con, url)
         safe_inn = replace(inn, "'" => "''")            # RFSD INNs are digits, but guard anyway
         q = "SELECT * FROM read_parquet('$url') WHERE inn = '$safe_inn' LIMIT 1"
-        row = nothing
-        for r in DBInterface.execute(con, q); row = r; break; end
-        row === nothing && return ""
-
-        gv(k) = hasproperty(row, Symbol(k)) ? getproperty(row, Symbol(k)) : missing
-        lines = Dict{String,Float64}()
-        for k in propertynames(row)
-            s = String(k)
-            startswith(s, "line_") || continue
-            v = getproperty(row, k)
-            v === missing && continue
-            lines[s] = Float64(v)
+        for r in DBInterface.execute(con, q)
+            return _rfsd_row_json(r, year)
         end
-        doc = Dict{String,Any}("inn" => inn, "year" => Int(year), "lines" => lines)
-        for k in _RFSD_IDCOLS
-            v = gv(k); doc[k] = v === missing ? nothing : v
-        end
-        flags = Dict{String,Any}()
-        for k in _RFSD_FLAGCOLS
-            v = gv(k); flags[k] = v === missing ? nothing : Float64(v)
-        end
-        doc["flags"] = flags
-        return EDGAR.JSON3.write(doc)
+        return ""
     finally
         DBInterface.close!(con)
     end
@@ -936,6 +946,40 @@ function EDGAR._rfsd_discover(url::AbstractString, dims::AbstractDict, preds, li
             r.inn === missing || push!(inns, string(r.inn))
         end
         return inns
+    finally
+        DBInterface.close!(con)
+    end
+end
+
+# Batch fetch (R2c): read many INNs in ONE scan (`WHERE inn IN (…)`). Returns inn => :ras JSON for the
+# INNs present in the partition (absent ones simply don't appear). One scan for a whole cohort, vs N.
+function EDGAR._rfsd_query_many(url::AbstractString, inns::AbstractVector, year::Integer)
+    out = Dict{String,String}()
+    isempty(inns) && return out
+    con = DBInterface.connect(DuckDB.DB)
+    try
+        _rfsd_httpfs!(con, url)
+        inlist = join(("'" * replace(string(s), "'" => "''") * "'" for s in inns), ", ")
+        q = "SELECT * FROM read_parquet('$url') WHERE inn IN ($inlist)"
+        for r in DBInterface.execute(con, q)
+            out[string(r.inn)] = _rfsd_row_json(r, year)
+        end
+        return out
+    finally
+        DBInterface.close!(con)
+    end
+end
+
+# Download-once (R2c): COPY a remote partition to a local parquet via DuckDB — no extra HTTP dependency,
+# and httpfs already handles the HuggingFace redirect. The local file is then read directly (no httpfs).
+function EDGAR._rfsd_download(remote_url::AbstractString, dest::AbstractString)
+    con = DBInterface.connect(DuckDB.DB)
+    try
+        _rfsd_httpfs!(con, remote_url)
+        safe_dest = replace(dest, "'" => "''")
+        DBInterface.execute(con,
+            "COPY (SELECT * FROM read_parquet('$remote_url')) TO '$safe_dest' (FORMAT PARQUET)")
+        return dest
     finally
         DBInterface.close!(con)
     end

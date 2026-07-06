@@ -108,3 +108,12 @@ _rfsd_query(args...) =
 _rfsd_discover(args...) =
     error("population discover(RFSDFilings(); okved=…, region=…, …) needs DuckDB.jl to scan the RFSD " *
           "parquet — run `using DuckDB` to load the RFSD reader (the EDGARDuckDBExt extension).")
+
+# Weakdep (R2c, bulk): the batch fetch — read MANY (inn, year) rows in one scan — and the download-once
+# cache (a DuckDB `COPY` of a remote partition to a local parquet). Real methods in EDGARDuckDBExt.
+#   `_rfsd_query_many(src, inns, year) -> Dict{String,String}`  (inn => :ras JSON) — one `WHERE inn IN (…)`.
+#   `_rfsd_download(remote_url, dest)`                          — COPY the partition to a local file.
+_rfsd_query_many(args...) =
+    error("batch fetch_filing(::Russia, handles) needs DuckDB.jl — run `using DuckDB` (EDGARDuckDBExt).")
+_rfsd_download(args...) =
+    error("rfsd_download needs DuckDB.jl to copy the RFSD partition — run `using DuckDB` (EDGARDuckDBExt).")
