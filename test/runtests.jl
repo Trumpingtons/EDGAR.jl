@@ -2114,6 +2114,7 @@ end
                 read(joinpath(dir, "7736050003-2023.json"), String))
     fl = rfsd_flags(gf)
     @test fl.outlier === false && fl.filed === true && fl.articulated === true   # Gazprom: clean, filed, ties out
+    @test hasproperty(fl, :totals_adjustment)                                    # the repaired-totals reliability flag
     @test_throws ArgumentError rfsd_flags(Filing("c", "a", "d", "u", :xbrl, ""))  # not a :ras filing
     # the fetch-time exclusion predicate (offline, on synthetic :ras content)
     mkjson(o) = "{\"inn\":\"1\",\"year\":2023,\"lines\":{},\"flags\":{\"outlier\":$o}}"

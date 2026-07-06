@@ -1,6 +1,7 @@
 {
     "okopf": "12247",
     "flags": {
+        "totals_adjustment": 1,
         "simplified": 0,
         "imputed": 0,
         "articulated": 1,

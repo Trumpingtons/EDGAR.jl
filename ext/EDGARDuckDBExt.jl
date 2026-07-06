@@ -872,7 +872,8 @@ end
 # consumes: `{inn, year, <id cols…>, flags:{…}, lines:{line_XXXX => value}}`. Returns "" if the INN has
 # no row in that partition. `httpfs` is installed/loaded on demand so remote URLs work with no download.
 const _RFSD_IDCOLS   = ("ogrn", "okved", "okved_section", "okopf", "region")
-const _RFSD_FLAGCOLS = ("filed", "eligible", "articulated", "outlier", "simplified", "imputed", "financial")
+const _RFSD_FLAGCOLS = ("filed", "eligible", "articulated", "totals_adjustment", "outlier",
+                        "simplified", "imputed", "financial")
 
 # Load httpfs for a remote URL; a local parquet path is read directly (no extension).
 function _rfsd_httpfs!(con, src::AbstractString)
