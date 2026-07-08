@@ -257,6 +257,36 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
                   source_selector = "{\"table\":$(repr(tbl.table_id)),\"row\":$r,\"col\":$c}"))
         end
     end
+
+    # Account-form (Kontoform) grand total. A two-sided German balance sheet prints the total (Bilanzsumme) on
+    # an UNLABELED foot row — no "Summe Aktiva"/"Summe Passiva" line — so the label pass above misses it. When
+    # the table is a single side ("Aktiva" alone, or "Passiva" alone; a combined table already carries labelled
+    # totals) and that side's total was not otherwise found, take the LAST unlabeled row whose every kept column
+    # holds a value: on the assets side it is Assets, on the equity+liabilities side EquityAndLiabilities.
+    if stmt == "BalanceSheet"
+        top = join([get(grid, (r, c), "") for r in 0:min(2, nr - 1) for c in 0:nc-1], " ")
+        has_ak = occursin(r"(?i)\baktiva\b", top); has_pa = occursin(r"(?i)\bpassiva\b", top)
+        side = (has_ak && !has_pa) ? "ifrs-full:Assets" : (has_pa && !has_ak) ? "ifrs-full:EquityAndLiabilities" : nothing
+        if side !== nothing && !any(f -> f.concept == side, out)
+            for r in (nr-1):-1:0
+                lc = String[]
+                for c in 0:nc-1
+                    s = get(grid, (r, c), "")
+                    (!isempty(s) && occursin(r"[A-Za-zÄÖÜäöüß]", s) && parse_amount(s; locale = loc) === nothing &&
+                     !_ifrs_isnoteref(s)) && push!(lc, s)
+                end
+                isempty(lc) && all(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in keep) || continue
+                for c in keep
+                    p = parse_amount(get(grid, (r, c), ""); locale = loc); (p === nothing || p.nil) && continue
+                    push!(out, Fact(; concept = side, label = "Bilanzsumme", value = p.val * scale, unit = primary,
+                          period_start = nothing, period_end = colend[c], is_instant = true, statement = stmt,
+                          context_ref = string(colend[c]), unit_ref = primary,
+                          source_selector = "{\"table\":$(repr(tbl.table_id)),\"row\":$r,\"col\":$c}"))
+                end
+                break
+            end
+        end
+    end
     return out
 end
 
