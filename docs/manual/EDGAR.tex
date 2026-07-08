@@ -1233,6 +1233,26 @@ timestamp). Speech-to-text turns a call into narratives; the downstream classifi
 are then unchanged. That multimedia ingestion is roadmap, not yet built; what follows is the text layer's
 first concrete capability.
 
+\section{The narratives spine}
+\label{sec:narratives-spine}
+
+Everything in this chapter --- the shipped audit-report read, and the frontiers below --- lands on one
+structure: the \texttt{Narrative} row that \texttt{narratives(f)} produces, the qualitative counterpart of the
+\texttt{Fact} row from \texttt{facts(f)}. A single call lifts a filing's written disclosures --- Management's
+Discussion, risk factors, governance, significant accounting policies, and every other block --- into a
+\texttt{Tables.jl} row table, \emph{source-agnostic}: whatever the origin (a tagged XBRL or inline-XBRL
+text-block, an ingested-PDF section, in time an SEC HTML \emph{Item}), each disclosure becomes the same row,
+so search, DuckDB export and feeding a language model are one code path. Each row carries the prose
+(\texttt{text}, \texttt{lang}), two titles (\texttt{section\_title} verbatim, \texttt{canonical\_title}
+normalised) and a thematic \texttt{tags} set, plus the \textbf{provenance} appropriate to its source ---
+\texttt{concept}/\texttt{context\_ref}/\texttt{period\_end} for XBRL, \texttt{page}/\texttt{block\_id} for a
+PDF --- so any row traces back to exactly where it came from. The method, its per-source producers and the
+dispatch forms are specified under the API (\S\ref{sec:api-narratives}); the \texttt{Narrative} type's fields
+under Core types (\S\ref{sec:api-types}). The point for this chapter is the \emph{shape}: a new capability is
+a new \emph{producer} onto this fixed spine, never a new row type or a new downstream --- which is exactly why
+the audit report (next) and the roadmap frontiers (\S\ref{sec:narratives-roadmap}) are all \emph{reads over}
+the narratives a filing already surfaces, not separate pipelines.
+
 \section{Audit Report}
 \label{sec:audit-report}
 
@@ -1318,6 +1338,40 @@ AuditorInfo("Ernst & Young LLP", "San Jose, California", firm_id=42, icfr=true)
 julia> a.name
 "Ernst & Young LLP"
 \end{lstlisting}
+
+\section{Roadmap: text beyond the audit report, and voice}
+\label{sec:narratives-roadmap}
+
+The audit report is the first \emph{identified statement} lifted off the narratives spine
+(\S\ref{sec:narratives-spine}); it is deliberately the shipped one, and the rest of this chapter is the plan
+for the same spine. Two directions extend it, and both follow one rule --- \textbf{a new capability is a new
+producer, not a new row type or a new downstream}.
+
+\paragraph{Text --- more identified statements.} Beyond free prose, several disclosures are really structured
+records worth their own read, by exactly the mechanism \texttt{auditor(f)} already uses --- a named-entity /
+pattern read over the audit-report and notes \texttt{narratives(f)} surfaces, tagged as a concept where the
+taxonomy carries one, else extracted from text:
+\begin{itemize}
+  \item \textbf{Going-concern} --- the going-concern paragraph and any material-uncertainty statement (a
+    boolean plus its supporting text), from the audit report and the basis-of-preparation note.
+  \item \textbf{Key audit matters (KAM) / critical audit matters} --- the enumerated matters an auditor
+    flags, each a titled record; already present as EDINET KAM text blocks (\S\ref{sec:audit-report}), to be
+    generalised across regimes.
+  \item \textbf{Emphasis-of-matter and opinion modifications} --- qualified / adverse / disclaimer opinions
+    and their reasons, refining the \texttt{opinion} field the \texttt{AuditorInfo} record already carries.
+\end{itemize}
+
+\paragraph{Voice --- media onto the same rows.} An entity increasingly publishes not only text but
+\textbf{media} --- earnings-call audio, investor-day video, webcasts, podcasts --- and third parties publish
+multimedia \emph{about} it (TV news, analyst briefings). The design is medium-agnostic: transcribe or extract
+the source with speech-to-text, then emit the \emph{same} \texttt{Narrative} rows, each carrying provenance
+back to the media file plus a timestamp (in place of a \texttt{concept}/\texttt{context\_ref} or a
+\texttt{page}/\texttt{block\_id}). A call becomes narratives; classification, search and export are then
+unchanged. This is the furthest-out frontier and is \textbf{not yet built}.
+
+\paragraph{Status.} Shipped: the narratives spine and \texttt{auditor(f)} for SEC and India (with the
+text-extraction regimes on the roadmap of Table~\ref{tab:auditor-split}). Everything above is future work; it
+is captured here so the chapter maps the whole layer, not only its first capability.
 
 \chapter{Announcements, News and Alerts}
 
