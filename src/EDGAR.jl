@@ -37,7 +37,7 @@ include("core/present.jl")                  # 🟢 markdown / facts_json exports
 include("core/facts.jl")                    # 🟢 facts(::Selection) row table
 include("filing_systems/sec/subsidiaries.jl")    # 🔵 EX-21 subsidiary-list extraction (subsidiaries)
 include("filing_systems/sec/current_report.jl")  # 🔵 8-K / 6-K press-release + exhibit discovery
-include("filing_systems/sec/auditor.jl")    # 🔵 auditor(::Filing) from DEI XBRL facts
+include("filing_systems/sec/auditor.jl")    # 🔵 _sec_auditor(::Filing): SEC reader behind auditor() — AuditorInfo from DEI XBRL facts
 include("filing_systems/sec/sixk.jl")       # 🔵 SEC Form 6-K cover-page metadata (sixk_cover) — per-form SEC accessor
 include("core/taxonomy/vocab_usgaap.jl")    # 🟢 us-gaap classification vocabulary
 include("core/taxonomy/vocab_ifrs.jl")      # 🟢 ifrs-full classification vocabulary (shared across IFRS regimes)
@@ -66,6 +66,7 @@ include("filing_systems/dart/dart.jl")                       # 🔵 DART (KR FSS
 include("filing_systems/dart/discovery.jl")                  # 🔵 DART discovery: OpenDARTApi source over the OpenDART REST API (by-company) + corp_code resolver
 include("filing_systems/india/india.jl")                     # 🔵 India (NSE/BSE, Ind-AS) FilingSystem — I0 seam + I1 offline parse + NSE cookie session
 include("filing_systems/india/discovery.jl")                 # 🔵 India discovery: NSEFilings source over the keyless (cookie-gated) NSE financial-results API
+include("filing_systems/india/auditor.jl")                   # 🔵 _india_auditor(::Filing): India reader behind auditor() — AuditorInfo from in-capmkt AuditorsFirmName + opinion
 include("filing_systems/china/china.jl")                     # 🟡 China (CSRC/CNINFO, CAS) FilingSystem — C0 seam + C2 fetch→:pdf Filing (first PDF-native jurisdiction; facts via the PDF extractor)
 include("filing_systems/china/discovery.jl")                 # 🟡 China discovery: CNINFOFilings source over the keyless CNINFO JSON API (topSearch + hisAnnouncement) [C1]
 include("filing_systems/hkex/hkex.jl")                       # 🟣 Hong Kong (HKEX/HKEXnews, HKFRS) FilingSystem — HK0 seam (2nd PDF-native jurisdiction; English/ifrs-full, facts via the PDF extractor)
@@ -86,6 +87,7 @@ include("extractors/ifrs_pdf.jl")           # 🟢 English-PDF statement extract
 include("filing_systems/hkex/reit_portfolio.jl") # 🟣 HK REIT property-portfolio composition (extract_reit_portfolio) — the REIT analogue of extract_fund_portfolio, reusing FundPortfolio
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
+include("core/auditor.jl")                   # 🟢 auditor(): generic cross-jurisdiction accessor → AuditorInfo; routes to each system's reader (SEC: _sec_auditor)
 include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, RFSDFilings, rfsd_download, set_rfsd_local, set_rfsd_cache_dir, ras_label, rfsd_flags, CBRBankFilings, cbr_bank_directory, cbr_line, Generic, EntityId,

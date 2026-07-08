@@ -4,23 +4,8 @@
 # These are non-numeric facts, so the numeric `facts(::Filing)` pipeline skips them; this reads them
 # directly off the instance. 🔵 SEC-specific (fetches the SEC extracted instance as a fallback).
 
-"""
-    AuditorInfo
-
-The independent auditor of an annual filing, from its DEI XBRL facts: `name`, `location`, the PCAOB
-`firm_id` (`0` when absent/unparseable), and `icfr_attestation` (whether the auditor attested to
-internal control over financial reporting).
-"""
-struct AuditorInfo
-    name::String
-    location::String
-    firm_id::Int
-    icfr_attestation::Bool
-end
-
-Base.show(io::IO, a::AuditorInfo) =
-    print(io, "AuditorInfo(", repr(a.name), ", ", repr(a.location),
-          ", firm_id=", a.firm_id, ", icfr=", a.icfr_attestation, ")")
+# `AuditorInfo` now lives in core/types.jl (a shared, cross-jurisdiction return type). This file keeps
+# only the SEC reader that populates it from the DEI cover-page facts.
 
 # DEI string facts (auditor name/location) carry HTML entities that must be DECODED, not stripped — an
 # auditor is "Ernst & Young LLP", not "Ernst  Young LLP" — so this uses its own cleaner rather than
@@ -67,19 +52,17 @@ function _auditor_from(content::AbstractString)
     isempty(name) && return nothing
     firm = strip(_dei_fact(content, "dei:AuditorFirmId"))
     icfr = lowercase(strip(_dei_fact(content, "dei:IcfrAuditorAttestationFlag")))
-    return AuditorInfo(name, _dei_fact(content, "dei:AuditorLocation"),
-                       something(tryparse(Int, firm), 0), icfr == "true")
+    return AuditorInfo(name, _dei_fact(content, "dei:AuditorLocation");
+                       firm_id = tryparse(Int, firm),
+                       icfr_attestation = isempty(icfr) ? nothing : icfr == "true")
 end
 
-"""
-    auditor(f::Filing) -> Union{Nothing,AuditorInfo}
-
-Extract the auditor's [`AuditorInfo`](@ref) from a filing's DEI XBRL facts (`dei:AuditorName`,
-`dei:AuditorLocation`, `dei:AuditorFirmId`, `dei:IcfrAuditorAttestationFlag`) — a faithful port of
-edgartools' `extract_auditor_info`. Reads the primary document, falling back to the SEC's extracted
-instance for foreign / multi-part filings whose cover document carries no DEI facts. `nothing` if absent.
-"""
-function auditor(f::Filing)
+# The SEC reader behind the generic `auditor(f::Filing)` (dispatched from core/auditor.jl). Extracts the
+# auditor's `AuditorInfo` from a filing's DEI XBRL facts (`dei:AuditorName`, `dei:AuditorLocation`,
+# `dei:AuditorFirmId`, `dei:IcfrAuditorAttestationFlag`) — a faithful port of edgartools'
+# `extract_auditor_info`. Reads the primary document, falling back to the SEC's extracted instance for
+# foreign / multi-part filings whose cover document carries no DEI facts. `nothing` if absent.
+function _sec_auditor(f::Filing)
     a = _auditor_from(f.content)
     a !== nothing && return a
     (f.kind === :xbrl || !startswith(f.url, "https://www.sec.gov/Archives/")) && return nothing

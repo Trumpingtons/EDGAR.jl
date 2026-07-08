@@ -183,3 +183,44 @@ Selection(; cik="", accession="", url="", selector="", kind::Symbol=:prose, text
 Base.show(io::IO, s::Selection) =
     print(io, "Selection(", repr(s.kind), ", ", repr(s.selector), ", ",
           length(s.text), " chars, ", length(s.facts), " facts)")
+
+# ── Auditor ──────────────────────────────────────────────────────────────────
+"""
+    AuditorInfo
+
+The independent auditor of a filing, produced by [`auditor`](@ref). `name` and `location` are
+universal; the rest are populated where the regime provides them and `nothing` otherwise —
+`firm_id` (the PCAOB firm id, SEC / US-listed issuers), `icfr_attestation` (whether the auditor
+attested to internal control over financial reporting, US), and the cross-jurisdiction fields
+`senior_statutory_auditor` (the UK signing individual, distinct from the firm) and `opinion` (the
+audit opinion, e.g. India and the text-extraction regimes). Lives in `core` because it is a shared,
+per-system return type (like [`Fact`](@ref) / [`Narrative`](@ref)), not an SEC-private one.
+"""
+struct AuditorInfo
+    name::String
+    location::String
+    firm_id::Union{Int,Nothing}
+    icfr_attestation::Union{Bool,Nothing}
+    senior_statutory_auditor::Union{String,Nothing}
+    opinion::Union{String,Nothing}
+end
+
+# Keyword constructor: name is the only required field; everything else defaults to "not disclosed".
+AuditorInfo(name::AbstractString, location::AbstractString = "";
+            firm_id::Union{Integer,Nothing} = nothing,
+            icfr_attestation::Union{Bool,Nothing} = nothing,
+            senior_statutory_auditor::Union{AbstractString,Nothing} = nothing,
+            opinion::Union{AbstractString,Nothing} = nothing) =
+    AuditorInfo(String(name), String(location),
+                firm_id === nothing ? nothing : Int(firm_id), icfr_attestation,
+                senior_statutory_auditor === nothing ? nothing : String(senior_statutory_auditor),
+                opinion === nothing ? nothing : String(opinion))
+
+function Base.show(io::IO, a::AuditorInfo)
+    print(io, "AuditorInfo(", repr(a.name), ", ", repr(a.location))
+    a.firm_id === nothing || print(io, ", firm_id=", a.firm_id)
+    a.icfr_attestation === nothing || print(io, ", icfr=", a.icfr_attestation)
+    a.senior_statutory_auditor === nothing || print(io, ", senior=", repr(a.senior_statutory_auditor))
+    a.opinion === nothing || print(io, ", opinion=", repr(a.opinion))
+    print(io, ")")
+end
