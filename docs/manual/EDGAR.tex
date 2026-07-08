@@ -646,6 +646,172 @@ EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytic
 store like DuckDB prefers.
 
 
+\section{Coverage against financial databases}
+\label{sec:db-comparison}
+
+The comparison in \S\ref{sec:related-work} is against \emph{tooling} --- other libraries that
+turn EDGAR/XBRL into objects. A different and more consequential question for an analyst is how
+EDGAR.jl compares against the \emph{data products} they already license: what entities and what
+information types each one covers. The honest framing is complementarity, not competition.
+EDGAR.jl is a \emph{primary-source engine} --- it reads statutory filings directly, across roughly
+nine jurisdictions, and returns their statements and their prose. The commercial databases are
+\emph{curated aggregations}: they add market data, analyst estimates, cross-vendor identifiers and
+decades of back-history that no filings reader reproduces. Each is strongest exactly where the
+other is thin.
+
+\paragraph{The comparators.} We set EDGAR.jl beside ten references an empirical-finance user
+would recognise. \emph{Yahoo Finance} is the free retail feed --- deep on equity prices and analyst
+estimates, shallow and short on fundamentals. \emph{Compustat Global} is really two WRDS modules:
+\emph{Fundamentals} (\texttt{g\_funda}/\texttt{g\_fundq}, standardized statements) and
+\emph{Security Daily} (\texttt{g\_secd}, daily prices and returns) --- kept separate here because
+their coverage is disjoint. \emph{CRSP} is the reference for US prices, returns and the meticulous
+corporate-action record that underlies them. \emph{Datastream} is Refinitiv/LSEG's global
+time-series spine and delivers statement data by bundling \emph{Worldscope}, the global-fundamentals
+database it is usually paired with. Three \emph{specialists} round out the instrument coverage:
+\emph{TRACE/FISD} is the standard corporate-bond package --- FINRA's TRACE transaction prices over
+Mergent's FISD issue master (coupons, maturities, ratings, call and covenant terms); \emph{I/B/E/S}
+is the reference analyst-estimate database (consensus and detail EPS forecasts, recommendations, and
+the matched actuals that make a surprise); and \emph{OptionMetrics} (IvyDB) is the reference for
+historical option prices, implied volatilities and Greeks. \emph{Orbis} (Bureau van Dijk, Moody's)
+is the outlier: its reason to exist is the private-company universe, ownership trees and director
+records --- 400M+ mostly unlisted entities.
+
+\paragraph{Listed companies.} EDGAR.jl carries \emph{no} market data. There is no OHLCV for shares,
+bonds or options anywhere in it, and there never will be --- it reads filings, not exchanges, so a
+price source is a necessary companion, not a rival: CRSP, Compustat Security Daily or Datastream for
+equities, TRACE/FISD for corporate bonds, OptionMetrics for options. Where it is a full peer is the
+\emph{financial statements}, and here it does something the fundamentals feeds do not: it also keeps
+the \emph{narrative} --- MD\&A, notes, the director's report, navigable by table of contents.
+Compustat, Worldscope and Datastream discard prose and retain only numbers; that text is a distinctive
+EDGAR.jl asset. On the remaining listed dimensions it is a deliberate \emph{partial}. \emph{Analyst}
+forecasts are out of scope --- consensus estimates are I/B/E/S's domain, resold by Yahoo and
+Datastream --- but EDGAR.jl is not blank on forward guidance: several regimes require issuers to file
+their \emph{own} management forecasts (Japan's EDINET and the Tokyo exchange's TDnet are the clearest
+case), and those company-issued numbers are within reach, which is why the earnings-forecast row is a
+partial rather than a blank. Earnings announcements, corporate actions, ownership and board membership
+all \emph{do} appear --- via 8-K, 13D/13G, 13F, DEF~14A and their cross-jurisdiction equivalents ---
+but as filing-driven events, not the normalized feeds that CRSP (corporate actions) and Orbis
+(ownership, directors) curate.
+
+\paragraph{Private companies.} This is where the picture inverts. EDGAR.jl reaches private-company
+financials only where a regime \emph{mandates} public filing --- UK Companies House is the flagship,
+delivering full statutory accounts, PSC (persons-of-significant-control) ownership and officer
+records for private entities; most listed-only regimes yield nothing here. Orbis, by contrast, is
+built for precisely this universe and is the reference standard for private financials, ownership
+structures, directors and (through its Zephyr module) private-market M\&A. None of the price- or
+listed-fundamentals databases participate at all.
+
+\paragraph{Funds and REITs.} Portfolio composition is available to EDGAR.jl through holdings filings
+--- US N-PORT/N-Q and 13F --- and is therefore, again, filing-driven and jurisdiction-dependent.
+CRSP's Survivor-Bias-Free Mutual Fund Database carries periodic holdings alongside returns and NAV;
+Yahoo and Datastream expose top holdings for listed funds; the pure-fundamentals products do not.
+
+% --- coverage marks (font-independent, drawn with TikZ) ---
+\definecolor{covfull}{rgb}{0.12,0.48,0.32}
+\definecolor{covpart}{rgb}{0.74,0.47,0.10}
+\definecolor{covnone}{rgb}{0.66,0.66,0.63}
+\definecolor{covpaid}{rgb}{0.30,0.33,0.55}
+\newcommand{\cvF}{\tikz[baseline=-0.55ex]{\fill[covfull] (0,0) circle (0.78ex);}}
+\newcommand{\cvP}{\tikz[baseline=-0.55ex]{\draw[covpart,line width=0.5pt] (0,0) circle (0.78ex);%
+  \fill[covpart] (0,0.78ex) arc (90:-90:0.78ex) -- cycle;}}
+\newcommand{\cvN}{\tikz[baseline=-0.55ex]{\draw[covnone,line width=0.6pt] (0,0) circle (0.78ex);}}
+% access marks: squares, to read as distinct from the round coverage marks (filled = free)
+\newcommand{\freemark}{\tikz[baseline=-0.5ex]{\fill[covfull,rounded corners=0.2pt] (-0.68ex,-0.68ex) rectangle (0.68ex,0.68ex);}}
+\newcommand{\paidmark}{\tikz[baseline=-0.5ex]{\draw[covpaid,line width=0.6pt,rounded corners=0.2pt] (-0.68ex,-0.68ex) rectangle (0.68ex,0.68ex);}}
+
+\begin{table}[htbp]
+\centering
+\caption{Entity coverage and information type: EDGAR.jl beside ten financial databases.
+Coverage: full / partial / not covered; access marked free or paid subscription (legend below).}
+\label{tab:db-comparison}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{0.20\textwidth}*{11}{c}@{}}
+\toprule
+& \rotatebox[origin=l]{90}{\textbf{EDGAR.jl}}
+& \rotatebox[origin=l]{90}{Yahoo Finance}
+& \rotatebox[origin=l]{90}{Compustat Global Fund.}
+& \rotatebox[origin=l]{90}{Compustat Global SecD}
+& \rotatebox[origin=l]{90}{CRSP}
+& \rotatebox[origin=l]{90}{Datastream}
+& \rotatebox[origin=l]{90}{Worldscope}
+& \rotatebox[origin=l]{90}{TRACE / FISD}
+& \rotatebox[origin=l]{90}{I/B/E/S}
+& \rotatebox[origin=l]{90}{OptionMetrics}
+& \rotatebox[origin=l]{90}{Orbis} \\
+\midrule
+Access / licensing            & \freemark & \freemark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark \\
+\midrule
+\multicolumn{12}{@{}l}{\textit{Listed companies}} \\
+\quad OHLCV --- shares        & \cvN & \cvF & \cvN & \cvF & \cvF & \cvF & \cvN & \cvN & \cvN & \cvP & \cvP \\
+\quad OHLCV --- bonds         & \cvN & \cvN & \cvN & \cvN & \cvP & \cvF & \cvN & \cvF & \cvN & \cvN & \cvN \\
+\quad OHLCV --- options       & \cvN & \cvP & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvN & \cvF & \cvN \\
+\quad Balance sheet / IS / CF & \cvF & \cvP & \cvF & \cvN & \cvN & \cvF & \cvF & \cvN & \cvN & \cvN & \cvF \\
+\quad Narratives              & \cvF & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvP \\
+\quad Earnings forecasts      & \cvP & \cvF & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvF & \cvN & \cvN \\
+\quad Earnings announcements  & \cvP & \cvF & \cvP & \cvN & \cvN & \cvP & \cvP & \cvN & \cvF & \cvN & \cvN \\
+\quad M\&A / corporate actions& \cvP & \cvP & \cvN & \cvP & \cvF & \cvP & \cvN & \cvP & \cvN & \cvN & \cvF \\
+\quad Ownership structures    & \cvP & \cvP & \cvN & \cvN & \cvN & \cvP & \cvP & \cvN & \cvN & \cvN & \cvF \\
+\quad Directors \& executives & \cvP & \cvP & \cvN & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvN & \cvF \\
+\addlinespace[2pt]
+\multicolumn{12}{@{}l}{\textit{Private companies}} \\
+\quad Balance sheet / IS / CF & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
+\quad Narratives              & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvP \\
+\quad M\&A / corporate actions& \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
+\quad Ownership structures    & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
+\quad Directors \& executives & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
+\addlinespace[2pt]
+\multicolumn{12}{@{}l}{\textit{REITs \& investment funds}} \\
+\quad Portfolio composition   & \cvP & \cvP & \cvN & \cvN & \cvP & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}
+{\footnotesize\noindent\textbf{Legend:} \cvF~full / native source \quad \cvP~partial (limited,
+indirect or filing-driven) \quad \cvN~not covered \quad\textbar\quad \freemark~free / open
+\quad \paidmark~paid subscription.\par\smallskip
+\noindent Only EDGAR.jl and Yahoo Finance are free; the remaining nine are paid
+subscriptions, most reached through WRDS. (TRACE/FISD is marked paid as the research-grade package
+--- FINRA's raw TRACE prints are themselves publicly disseminated.) An interactive, colour-coded
+version of this table ships with the source at \texttt{docs/manual/coverage-matrix.html}.\par}
+\end{table}
+
+\paragraph{Reading the table.} Two patterns carry the message. Read \emph{down} the EDGAR.jl column
+and you see a source that is full on statements and narrative and empty on prices --- a fundamentals
+and disclosure reader, not a market-data vendor. Read \emph{across} any statements or private-company
+row and you see how the roles divide: prices belong to CRSP, Compustat Security Daily and Datastream;
+analyst estimates to Yahoo and I/B/E/S; the private universe, ownership and directors to Orbis; while
+EDGAR.jl's contribution --- authoritative, provenance-bearing figures \emph{and the surrounding text},
+pulled from the filing itself across jurisdictions and, at Companies House, into the private tier ---
+is one no single commercial product on this list delivers in full. The three specialist columns light
+up in essentially one row apiece --- TRACE/FISD on bonds, OptionMetrics on options, I/B/E/S on
+forecasts and announcements --- which is precisely the point of a specialist: depth in one instrument,
+silence elsewhere. Note too that the earnings-forecast row now splits cleanly: EDGAR.jl's partial is
+\emph{management} guidance pulled from filings, whereas I/B/E/S's full mark is \emph{analyst} consensus
+--- different objects a naive reading would conflate. Ratings describe each product as sold standalone,
+before cross-linking (CRSP/Compustat Merged, the Datastream--Worldscope pairing) widens any one of them.
+
+\paragraph{Beyond coverage: what else should be compared.} This table fixes one axis ---
+\emph{entity type} $\times$ \emph{information type}, the \emph{what}. It deliberately says nothing
+about the \emph{how good}, and for a real sourcing decision several orthogonal criteria matter as
+much. \emph{(i)~Geographic breadth}: Compustat Global and Orbis span the globe, EDGAR.jl spans its
+nine filing systems, CRSP is US-centric. \emph{(ii)~Historical depth} and, more subtly,
+\emph{point-in-time integrity} --- whether a value is stored \emph{as first reported} or silently
+restated, the axis that governs look-ahead and survivorship bias and on which CRSP and point-in-time
+Compustat built their reputations. \emph{(iii)~Standardization versus as-reported}: a standardized
+template is comparable across issuers but lossy, whereas EDGAR.jl's default is the issuer's own line
+items with standardization opt-in (\S\ref{sec:related-work}). \emph{(iv)~Provenance and auditability}
+--- whether a figure links back to the source document, EDGAR.jl's defining strength and something
+the aggregators discard by construction. \emph{(v)~Identifier coverage and linkability} (CUSIP, ISIN,
+PERMNO, GVKEY --- the cross-vendor keys that let these products be joined, and where a filings reader
+is weakest). \emph{(vi)~Frequency and update latency}; and \emph{(vii)~access and licensing} --- most
+comparators are paid WRDS subscriptions, whereas EDGAR.jl reads public disclosure directly. The fair
+summary is that EDGAR.jl leads on provenance, as-reported fidelity and point-in-time-by-construction
+(it \emph{is} the filing), and trails on back-history depth and cross-vendor identifiers --- the very
+things the commercial databases spend their effort on.
+
+
 % ===========================================================================
 \chapter{PDF and HTML Reports}
 \label{ch:pdf}
@@ -1044,6 +1210,114 @@ pinning appears.
 \end{subappendices}
 
 % ===========================================================================
+
+\chapter{Narratives: Text and Voice}
+\label{ch:narratives}
+
+\texttt{facts(f)} captures the numbers and \texttt{toc(f)} the structure; this chapter is the
+\emph{qualitative} layer --- what a filing, and in time the wider world, \emph{says} about an entity.
+\texttt{narratives(f)} (\S\ref{sec:api-narratives}) already lifts a filing's written disclosures ---
+MD\&A, notes, accounting policies --- into \texttt{Narrative} rows parallel to \texttt{facts(f)}. Two
+frontiers extend that spine.
+
+\emph{Text.} Beyond free-flowing prose sit disclosures that are really \emph{identified statements} worth
+extracting as structured records: the \textbf{audit report} (who signed, what opinion), going-concern
+paragraphs, key audit matters. The first of these --- the audit report --- is the shipped section below.
+
+\emph{Voice, and beyond.} An entity increasingly publishes not only text but \textbf{media}: earnings-call
+audio, investor-day video, webcasts, podcasts. And third parties publish multimedia \emph{about} the
+entity: TV news, business programmes, analyst briefings. The design intent is medium-agnostic --- whatever
+the source, transcribe or extract it onto the \emph{same} \texttt{Narrative} spine, each row carrying
+provenance back to where it came from (a text-block concept, a PDF section, or a media file plus
+timestamp). Speech-to-text turns a call into narratives; the downstream classification, search and export
+are then unchanged. That multimedia ingestion is roadmap, not yet built; what follows is the text layer's
+first concrete capability.
+
+\section{Audit Report}
+\label{sec:audit-report}
+
+The audit report answers a question every financial statement raises: \emph{who} vouched for these numbers,
+and \emph{what} did they conclude. \texttt{auditor(f)} returns an \texttt{AuditorInfo} --- the independent
+auditor's name and office, and (where the regime provides them) the regulator's firm identifier and the
+internal-control attestation.
+
+\paragraph{Two mechanisms, by jurisdiction.} Whether the auditor is a \emph{tagged fact} or must be read
+from \emph{text} depends entirely on the filing regime, and the split is clean. Where the taxonomy carries
+an auditor concept (SEC, India, and probably the UK), \texttt{auditor(f)} is a direct concept read --- the
+same mechanism as any other fact. Where it does not (ESEF's \texttt{ifrs-full}, and the PDF regimes ---
+China, Germany, Korea), the auditor lives in the \emph{audit-report section} (the
+\emph{Bestätigungsvermerk}, the \cncjk{审计报告}{}, the independent auditor's report) and must be extracted
+as text --- a named-entity read over the section \texttt{narratives(f)} already surfaces. Table~\ref{tab:auditor-split}
+records the split; the confidence column doubles as a maturity map.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Auditor extraction is two mechanisms, chosen by regime: a tagged concept read where the taxonomy
+carries it, else text extraction from the audit-report section.}
+\label{tab:auditor-split}
+\begin{tabular}{@{}p{0.12\textwidth}p{0.14\textwidth}p{0.40\textwidth}p{0.21\textwidth}@{}}
+\toprule
+\textbf{Jurisdiction} & \textbf{Mechanism} & \textbf{Auditor concept / source} & \textbf{Confidence} \\
+\midrule
+\textbf{SEC} & tagged read & \texttt{dei:AuditorName} / \texttt{AuditorLocation} / \texttt{AuditorFirmId} & \textbf{verified} (in code) \\
+\textbf{India} & tagged read & \texttt{in-capmkt:AuditorsFirmName} (joint auditors joined), \texttt{OpinionOfAuditors} / \texttt{DeclarationOfUnmodifiedOpinion\ldots} & \textbf{verified} (in code) \\
+\textbf{UK (CH)} & tagged read & FRC concepts \texttt{NameEntityAuditors}, \texttt{NameSeniorStatutoryAuditor}, \texttt{DateAuditorsReport} & likely --- not in repo, needs a real iXBRL check \\
+\textbf{EDINET (JP)} & heading / text-block & ``Independent auditor's report'' heading, KAM text blocks, audit-fee tags & report/fees verified; \emph{firm name is text}, not a discrete tag \\
+\textbf{ESEF (EU)} & text extraction & audit-report section (block-tagged \texttt{Explanatory}, or untagged) & text only (no \texttt{ifrs-full} auditor tag) \\
+\textbf{China\,/\,Germany} & text extraction & \cncjk{审计报告}{} / \emph{Bestätigungsvermerk} section (PDF) & text only \\
+\textbf{DART (KR)} & text extraction & audit-report section & text only \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent A \textbf{Japan trap} is worth naming: the \emph{kansayaku} (corporate auditors) are a governance
+board, \emph{not} the external audit firm --- target the independent auditor's report, not the kansayaku
+line. Likewise the UK distinguishes the audit \emph{firm} (\texttt{NameEntityAuditors}) from the
+\emph{senior statutory auditor} who signs (\texttt{NameSeniorStatutoryAuditor}); they are two fields, not
+one. And the PCAOB firm id is SEC-specific (also filed by US-listed foreign issuers) --- do not expect it
+elsewhere.
+
+\paragraph{The \texttt{AuditorInfo} type.} A small immutable value type (\S\ref{sec:api-types}), returned by
+\texttt{auditor(f)} or \texttt{nothing} when no auditor is disclosed.
+
+\begin{table}[h]
+\centering
+\small
+\caption{\texttt{AuditorInfo} fields. \texttt{name}/\texttt{location} are universal; every other field is
+\texttt{nothing} where the regime does not provide it --- \texttt{firm\_id}/\texttt{icfr\_attestation} are
+US-specific, while \texttt{senior\_statutory\_auditor} and \texttt{opinion} cross jurisdictions as the
+tagged and text-extraction regimes land.}
+\label{tab:auditorinfo}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.24\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning} \\
+\midrule
+\texttt{name} & \texttt{String} & The audit firm, e.g.\ ``Ernst \& Young LLP'' (universal) \\
+\texttt{location} & \texttt{String} & The signing office, e.g.\ ``New York, New York'' \\
+\texttt{firm\_id} & \texttt{Union\{Int,Nothing\}} & PCAOB firm id (\texttt{nothing} when absent) --- SEC / US-listed issuers only \\
+\texttt{icfr\_attestation} & \texttt{Union\{Bool,Nothing\}} & Whether the auditor attested to internal control over financial reporting (US) \\
+\texttt{senior\_statutory\_auditor} & \texttt{Union\{String,Nothing\}} & The signing individual, distinct from the firm (UK) \\
+\texttt{opinion} & \texttt{Union\{String,Nothing\}} & The audit opinion (India and the text-extraction regimes) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Today \texttt{auditor(f)} is populated for \textbf{SEC} and \textbf{India} filings --- SEC from the
+DEI cover-page facts, India from the SEBI Integrated-Filing (\texttt{in-capmkt}) XBRL (the statutory firm and
+the audit \emph{opinion}); the remaining rows of Table~\ref{tab:auditor-split} are the extraction roadmap. The
+record carries the cross-jurisdiction shape: \texttt{firm\_id}/\texttt{icfr\_attestation} are \texttt{nothing}
+off-SEC, the \texttt{opinion} field is populated for India (joint statutory auditors are joined; the equity
+feed, which names no firm, yields \texttt{nothing}), and a UK \emph{senior statutory auditor} lands next; the
+text-extraction regimes reuse the audit-report section \texttt{narratives(f)} already produces.
+
+\begin{lstlisting}[style=term]
+julia> a = auditor(fetch_filing(EDGAR.Filing("320193", "…", …)))   # an Apple 10-K
+AuditorInfo("Ernst & Young LLP", "San Jose, California", firm_id=42, icfr=true)
+
+julia> a.name
+"Ernst & Young LLP"
+\end{lstlisting}
 
 \chapter{Announcements, News and Alerts}
 
@@ -3889,12 +4163,108 @@ UKSEF), and per-country Officially Appointed Mechanisms (OAMs) can be added late
 \section{Germany}
 \label{sec:esef-germany}
 
-German listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL,
-discoverable like any other ESEF filer (this chapter). But Germany is also the clearest case for the PDF
-route (Chapter~\ref{ch:pdf}): the \emph{Bundesanzeiger}'s XBRL is not openly retrievable, and a large
-share of German accounts --- single-entity statutory accounts in particular --- are published only as
-PDF. The notes below record the German particularities the extractor must handle; they were verified
-against real reports during testing.
+German listed groups on EU regulated markets file their consolidated IFRS annual report as ESEF iXBRL
+--- but, uniquely among the large EU jurisdictions, that machine-readable report is \textbf{not openly
+retrievable}: it appears in no aggregator, and Germany's national store forbids automated access
+(\S\ref{sec:de-repos}). Germany is therefore the clearest case for the PDF route (Chapter~\ref{ch:pdf}):
+even the consolidated ESEF report reaches us as PDF, and a large share of German accounts ---
+single-entity statutory accounts in particular --- are published only as PDF to begin with. Because
+\emph{where the data lives} is the whole story here, this section opens with a repositories survey; the
+later notes record the German particularities the extractor must handle, verified against real reports
+during testing.
+
+\subsection{Repositories}\label{sec:de-repos}
+
+For every other large EU jurisdiction in this chapter, ESEF discovery is a solved one-liner ---
+\texttt{discover(FilingsXBRLOrg(); lei)} returns the report package. Germany is the exception: no channel
+exposes its ESEF iXBRL in a form we can fetch. Table~\ref{tab:de-repos} records what exists and why each is
+or is not a fetch target (accessibility live-verified 2026-07).
+
+\begin{table}[h]
+\centering
+\small
+\caption{German ESEF/financial-report repositories and their accessibility.}
+\label{tab:de-repos}
+\begin{tabular}{@{}p{0.19\textwidth}p{0.31\textwidth}p{0.24\textwidth}p{0.15\textwidth}@{}}
+\toprule
+\textbf{Repository} & \textbf{What it is} & \textbf{Access} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\href{https://filings.xbrl.org}{filings.xbrl.org} & XBRL International's ESEF aggregator --- the primary channel for every \emph{other} EU country here & Keyless JSON API, but a \texttt{country=DE} query returns \textbf{zero} (the German OAM is not harvested) --- verified & \textbf{unusable for DE} (empty) \\
+\emph{Unternehmens\-register} & Germany's OAM of record under the Transparency Directive; took over from the \emph{Bundesanzeiger} for FY\,$\geq$\,2022 (DiRUG) & No API; stateful session behind a terms gate, and \texttt{robots.txt} \textbf{disallows} \texttt{/search} and \texttt{/publication} & not a fetch target (bots forbidden) \\
+\emph{Bundesanzeiger} & Federal Gazette --- the publication channel, and the pre-2022 store & Image \textbf{CAPTCHA} on retrieval; serves rendered text\,/\,PDF, not the iXBRL package & \textbf{PDF} via document-AI \\
+Issuer IR sites & Company investor-relations download pages & \textbf{PDF} + Excel only; the ESEF \texttt{.zip} is not posted (checked: SAP, Deutsche Telekom) & \textbf{primary PDF source} \\
+BaFin \emph{Unternehmens\-datenbank} & The supervisor's authorisation / notification register & Not the ESEF store (licensing + voting-rights data) & not a fetch target \\
+\textbf{ESAP} (from $\sim$2027) & The EU's forthcoming single access point --- one uniform, free API for Transparency-Directive info incl.\ ESEF reports & Not yet live (collection from mid-2026; public access $\sim$2027) & future primary channel \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The conclusion is blunt: the iXBRL is \emph{produced} --- ESEF has been mandatory since FY2020 ---
+but not \emph{accessible}. It is absent from filings.xbrl.org (a \texttt{DE} country query returns zero),
+walled behind an OAM that disallows automated retrieval in its \texttt{robots.txt} and offers no API, and
+omitted from the PDF/Excel download sets issuers post on their own IR sites. Until ESAP opens, German figures
+therefore reach \texttt{EDGAR.jl} through the document-AI \textbf{PDF} route (Chapter~\ref{ch:pdf}), not
+through XBRL --- which is why the particularities below are written for a PDF, not an iXBRL, source.
+
+\paragraph{One national store, not sixteen.} The access wall matters more because there is no way around
+it. German disclosure is \emph{central}: since the DiRUG handover (1~Aug~2022) every
+\emph{Kapitalgesellschaft}'s statutory accounts are published to the one federal \emph{Unternehmensregister}
+(pre-2022, the \emph{Bundesanzeiger}) --- \textbf{not} to the state-court \emph{Handelsregister}, which since
+2006 holds only registration data (incorporation, directors, capital), never the \emph{Jahresabschluss}. So
+coverage is centralised for the whole $\sim$1.6\,M universe (\S\ref{sec:de-entities}): good for completeness,
+but it means there is \textbf{no state-level and no per-company alternative} to the gated OAM --- the sole
+exception being the $\sim$500 listed issuers, who additionally post PDFs on their own IR sites. For the
+private mass, the OAM is the only door.
+
+\paragraph{XBRL exists --- but never as a file you can fetch.} It is tempting to conclude that, since
+German accounts are filed electronically, structured data must be obtainable somewhere. It is not. German
+machine-readable financial data lives in \emph{three} separate tracks, and none yields a downloadable public
+instance:
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
+  \item \textbf{ESEF} --- listed issuers' consolidated IFRS report, as \emph{iXBRL}. Exists (mandatory since
+    FY2020) but not retrievable, per this section.
+  \item \textbf{Offenlegung} --- every \emph{Kapitalgesellschaft}'s HGB single-entity accounts to the
+    Unternehmensregister, prescribed as \emph{layout-oriented XML} (not XBRL), or PDF. The public sees only an
+    \textbf{HTML rendering}; the raw instance is not downloadable, and even the rendering sits behind the gated
+    OAM (\texttt{robots.txt}, CAPTCHA).
+  \item \textbf{E-Bilanz} --- the genuine HGB/tax XBRL every business files to the \emph{Finanzamt}. Real XBRL,
+    but \textbf{tax-secret} --- never public.
+\end{itemize}
+\noindent So even where XBRL is genuinely involved (ESEF, E-Bilanz) the instance is unreachable, and the one
+mass-scale public channel (Offenlegung) is not XBRL at all --- what it exposes is HTML. The practical German
+inputs are therefore \textbf{PDF} (listed) and, for the private mass, \textbf{HTML} (if the OAM gate is
+passed) --- both of which the document-AI extractor already ingests into the same \texttt{FactRow} table
+(Chapter~\ref{ch:pdf}, incl.\ its HTML-input path). ``HTML source'' is thus a new \emph{input}, not a new
+pipeline.
+
+\subsection{Entity universes}\label{sec:de-entities}
+
+The German filer universe is layered, and the layer sets both the \emph{format} and the \emph{reach}. Only a
+few hundred regulated-market issuers must ESEF-tag at all; below them sit hundreds of exchange-regulated
+issuers with no ESEF duty, and beneath \emph{those}, the roughly one-and-a-half million
+\emph{Kapitalgesellschaften} that merely publish HGB single-entity accounts. Table~\ref{tab:de-entities}
+records the inclusion criterion, order-of-magnitude universe and our coverage per layer.
+
+\begin{table}[h]
+\centering
+\small
+\caption{German entity universes --- the inclusion rule differs per layer, but the extraction path does not.}
+\label{tab:de-entities}
+\begin{tabular}{@{}p{0.19\textwidth}p{0.35\textwidth}p{0.15\textwidth}p{0.17\textwidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{Inclusion criterion} & \textbf{Universe (order of mag.)} & \textbf{In \texttt{EDGAR.jl}} \\
+\midrule
+\textbf{Prime / General Standard} & Equity on an \emph{EU-regulated} market (Frankfurt \emph{Regulierter Markt}) $\to$ consolidated IFRS, ESEF-tagged & $\sim$500 issuers & \textbf{primary} --- via PDF (ESEF not retrievable) \\
+\textbf{Open Market} (\emph{Freiverkehr}\,/\,Scale) & Exchange-regulated, \emph{not} EU-regulated $\to$ \textbf{no} ESEF mandate; IFRS or HGB & $\sim$100 domestic & PDF, if published \\
+\textbf{All \emph{Kapitalgesellschaften}} & Statutory disclosure duty (\emph{Offenlegungspflicht}) $\to$ single-entity HGB \emph{Jahresabschluss} to the Unternehmensregister & $\sim$1.6\,million & PDF, on demand \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The takeaway mirrors the repositories one: only the top layer is ESEF-relevant, and even there the
+tagged report is unreachable (\S\ref{sec:de-repos}), while the lower two are HGB/PDF by nature. So across all
+three the practical extraction path is identical --- the document-AI PDF route --- differing only in scale and
+in whether the vocabulary is IFRS or HGB (the split below).
 
 \subsection{Two accounting flavours: HGB and IFRS}
 

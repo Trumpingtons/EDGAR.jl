@@ -1,0 +1,370 @@
+<title>EDGAR.jl vs. Financial Databases — Coverage Matrix</title>
+<style>
+  :root {
+    --paper: #fafaf7;
+    --panel: #ffffff;
+    --ink: #12151b;
+    --ink-soft: #3d444f;
+    --ink-faint: #7a828d;
+    --line: #e3e2dc;
+    --line-strong: #cfcec6;
+    --accent: #2b5c8a;
+    --accent-wash: #eef3f8;
+    --full: #1f7a52;
+    --full-bg: #e3f1e9;
+    --partial: #b9791a;
+    --partial-bg: #f6ecd8;
+    --none: #b8b7b0;
+    --none-bg: #f1f0ea;
+    --proto: #f4f2e8;
+    --proto-line: #d8c99a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10131a;
+      --panel: #171b23;
+      --ink: #eef1f5;
+      --ink-soft: #b6bdc8;
+      --ink-faint: #7f8794;
+      --line: #262b34;
+      --line-strong: #333a45;
+      --accent: #6ba3d6;
+      --accent-wash: #1a2733;
+      --full: #4bbd84;
+      --full-bg: #16332a;
+      --partial: #d7a444;
+      --partial-bg: #352c17;
+      --none: #565d68;
+      --none-bg: #1c212a;
+      --proto: #211f16;
+      --proto-line: #4a4326;
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #fafaf7; --panel: #ffffff; --ink: #12151b; --ink-soft: #3d444f;
+    --ink-faint: #7a828d; --line: #e3e2dc; --line-strong: #cfcec6; --accent: #2b5c8a;
+    --accent-wash: #eef3f8; --full: #1f7a52; --full-bg: #e3f1e9; --partial: #b9791a;
+    --partial-bg: #f6ecd8; --none: #b8b7b0; --none-bg: #f1f0ea; --proto: #f4f2e8; --proto-line: #d8c99a;
+  }
+  :root[data-theme="dark"] {
+    --paper: #10131a; --panel: #171b23; --ink: #eef1f5; --ink-soft: #b6bdc8;
+    --ink-faint: #7f8794; --line: #262b34; --line-strong: #333a45; --accent: #6ba3d6;
+    --accent-wash: #1a2733; --full: #4bbd84; --full-bg: #16332a; --partial: #d7a444;
+    --partial-bg: #352c17; --none: #565d68; --none-bg: #1c212a; --proto: #211f16; --proto-line: #4a4326;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 20px; margin-bottom: 8px; }
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(26px, 4.2vw, 40px); line-height: 1.08; margin: 0 0 14px;
+    letter-spacing: -0.02em; text-wrap: balance; font-weight: 640;
+  }
+  .lede {
+    font-size: 16px; color: var(--ink-soft); max-width: 66ch; margin: 0;
+  }
+  .lede strong { color: var(--ink); font-weight: 620; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center;
+    margin: 26px 0 22px; padding: 14px 16px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--ink-soft);
+  }
+  .legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  .glyph {
+    width: 15px; height: 15px; border-radius: 50%; display: inline-block; flex: none;
+    position: relative;
+  }
+  .glyph.full { background: var(--full); }
+  .glyph.partial { background: linear-gradient(90deg, var(--partial) 0 50%, transparent 50% 100%); border: 1.5px solid var(--partial); }
+  .glyph.none { background: transparent; border: 1.5px solid var(--none); }
+
+  .scroller { overflow-x: auto; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 900px; }
+
+  th, td { text-align: center; padding: 0; }
+  thead th {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--panel);
+    vertical-align: bottom;
+    padding: 14px 8px 12px;
+    border-bottom: 2px solid var(--ink);
+  }
+  thead th .src {
+    font-size: 13px; font-weight: 640; letter-spacing: -0.01em; display: block; color: var(--ink);
+  }
+  thead th .desc {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px; color: var(--ink-faint); font-weight: 400;
+    display: block; margin-top: 4px; line-height: 1.25; letter-spacing: 0.01em;
+  }
+  thead th.corner {
+    text-align: left; left: 0; z-index: 6; min-width: 210px;
+    vertical-align: bottom; padding-left: 18px;
+  }
+  thead th.corner .src { font-size: 12px; color: var(--ink-faint); font-weight: 500; }
+
+  /* protagonist column */
+  thead th.proto { background: var(--proto); border-bottom-color: var(--proto-line); }
+  thead th.proto .src { color: var(--ink); }
+  td.proto { background: var(--proto); }
+  thead th.proto::after, td.proto.leftedge { }
+
+  tbody th.rowhead {
+    position: sticky; left: 0; z-index: 4;
+    text-align: left; background: var(--panel);
+    font-weight: 500; font-size: 13.5px; color: var(--ink);
+    padding: 11px 16px 11px 18px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    min-width: 210px;
+  }
+  tbody td {
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    padding: 10px 8px;
+  }
+  tbody tr:hover th.rowhead { background: var(--accent-wash); }
+  tbody tr:hover td { background: var(--accent-wash); }
+  tbody tr:hover td.proto { background: var(--proto); }
+
+  .cell { display: inline-flex; align-items: center; justify-content: center; }
+  .dot {
+    width: 17px; height: 17px; border-radius: 50%; display: inline-block; position: relative;
+  }
+  .dot.full { background: var(--full); }
+  .dot.partial {
+    background: var(--partial-bg);
+    border: 2px solid var(--partial);
+    overflow: hidden;
+  }
+  .dot.partial::before {
+    content: ""; position: absolute; inset: 0; width: 50%; background: var(--partial);
+  }
+  .dot.none { background: transparent; border: 2px solid var(--none); opacity: 0.7; }
+
+  /* access marks: squares (filled = free) to read distinct from round coverage marks */
+  .sq { width: 14px; height: 14px; border-radius: 2px; display: inline-block; flex: none; }
+  .sq.free { background: var(--full); }
+  .sq.paid { background: transparent; border: 1.6px solid var(--accent); }
+  .dot.free { width: 15px; height: 15px; border-radius: 3px; background: var(--full); }
+  .dot.paid { width: 15px; height: 15px; border-radius: 3px; background: transparent; border: 2px solid var(--accent); }
+  tr.access th.rowhead, tr.access td { border-bottom: 2px solid var(--line-strong); }
+  tr.access th.rowhead {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .fn {
+    font-family: ui-monospace, monospace; font-size: 9.5px; vertical-align: super;
+    color: var(--accent); margin-left: 2px; font-weight: 600;
+  }
+
+  /* group divider rows */
+  tr.group th {
+    position: sticky; left: 0;
+    text-align: left; background: var(--ink); color: var(--paper);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 8px 18px; z-index: 4;
+  }
+  tr.group td { background: var(--ink); border: none; }
+
+  .notes { margin-top: 30px; }
+  .notes h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-faint); font-family: ui-monospace, monospace; font-weight: 600;
+    border-bottom: 1px solid var(--line); padding-bottom: 8px; margin: 0 0 16px;
+  }
+  .notes ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .notes li {
+    display: grid; grid-template-columns: 26px 1fr; gap: 4px;
+    font-size: 13.5px; color: var(--ink-soft); max-width: 92ch;
+  }
+  .notes li .m {
+    font-family: ui-monospace, monospace; font-size: 11px; color: var(--accent); font-weight: 700;
+  }
+  .notes li strong { color: var(--ink); font-weight: 620; }
+  footer { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-faint); font-family: ui-monospace, monospace; }
+  @media (max-width: 560px) { .wrap { padding: 28px 14px 60px; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Coverage &amp; information-type comparison</p>
+    <h1>EDGAR.jl against the standard financial databases</h1>
+    <p class="lede"><strong>EDGAR.jl</strong> is a primary-source engine: it extracts structured statements and narrative text directly from regulatory filings across ~9 jurisdictions. The commercial databases are curated, market-data-rich aggregations. This grid maps where each is a full source (●), a partial one (◐), or absent (○) — read it as a complementarity map, not a scoreboard.</p>
+  </header>
+
+  <div class="legend">
+    <span class="k"><span class="glyph full"></span> Full / native source</span>
+    <span class="k"><span class="glyph partial"></span> Partial / limited or indirect</span>
+    <span class="k"><span class="glyph none"></span> Not covered</span>
+    <span class="k" style="opacity:0.5">│</span>
+    <span class="k"><span class="sq free"></span> Free / open</span>
+    <span class="k"><span class="sq paid"></span> Paid subscription</span>
+    <span class="k" style="color:var(--ink-faint)">Superscripts → notes below</span>
+  </div>
+
+  <div class="scroller">
+    <table id="matrix">
+      <thead>
+        <tr>
+          <th class="corner"><span class="src">Capability ↓ &nbsp; Source →</span></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="notes">
+    <h2>Notes</h2>
+    <ol id="notes"></ol>
+  </div>
+
+  <footer>Assessment as of 2026 · Compustat Global Fundamentals = <span style="font-family:inherit">g_funda</span>, Global Security Daily = <span style="font-family:inherit">g_secd</span> (WRDS). Ratings reflect each product as sold standalone, before cross-linking (e.g. CRSP/Compustat Merged, Datastream–Worldscope).</footer>
+</div>
+
+<script>
+  const SOURCES = [
+    { key: "edgar", name: "EDGAR.jl", desc: "primary filings · ~9 jurisdictions", proto: true },
+    { key: "yahoo", name: "Yahoo Finance", desc: "free retail feed" },
+    { key: "gfund", name: "Compustat Global Fundamentals", desc: "standardized statements" },
+    { key: "gsecd", name: "Compustat Global Security Daily", desc: "daily prices/returns" },
+    { key: "crsp",  name: "CRSP", desc: "US prices & returns" },
+    { key: "dstr",  name: "Datastream", desc: "global time series" },
+    { key: "wscope",name: "Worldscope", desc: "global fundamentals" },
+    { key: "tf",    name: "TRACE / FISD", desc: "corp-bond prices + issue master" },
+    { key: "ibes",  name: "I/B/E/S", desc: "analyst estimates" },
+    { key: "om",    name: "OptionMetrics", desc: "IvyDB · options, IV, greeks" },
+    { key: "orbis", name: "Orbis", desc: "BvD · public + private" },
+  ];
+
+  // F = full, P = partial, N = none.  Optional note id appended in [].
+  const GROUPS = [
+    { title: "Listed companies", rows: [
+      { label: "OHLCV — Shares",              cells: { edgar:"N[1]", yahoo:"F", gfund:"N", gsecd:"F", crsp:"F", dstr:"F", wscope:"N", tf:"N", ibes:"N", om:"P[20]", orbis:"P" } },
+      { label: "OHLCV — Bonds",               cells: { edgar:"N", yahoo:"N", gfund:"N", gsecd:"N", crsp:"P[2]", dstr:"F", wscope:"N", tf:"F[21]", ibes:"N", om:"N", orbis:"N" } },
+      { label: "OHLCV — Options",             cells: { edgar:"N", yahoo:"P[3]", gfund:"N", gsecd:"N", crsp:"N[3]", dstr:"P", wscope:"N", tf:"N", ibes:"N", om:"F[22]", orbis:"N" } },
+      { label: "Balance sheet / IS / CF",     cells: { edgar:"F", yahoo:"P[4]", gfund:"F", gsecd:"N", crsp:"N[5]", dstr:"F[6]", wscope:"F", tf:"N", ibes:"N", om:"N", orbis:"F" } },
+      { label: "Narratives (MD&A, notes)",    cells: { edgar:"F[7]", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"P" } },
+      { label: "Earnings forecasts",          cells: { edgar:"P[8]", yahoo:"F", gfund:"N", gsecd:"N", crsp:"N", dstr:"P[9]", wscope:"N", tf:"N", ibes:"F[23]", om:"N", orbis:"N" } },
+      { label: "Earnings announcements",      cells: { edgar:"P", yahoo:"F", gfund:"P", gsecd:"N", crsp:"N", dstr:"P", wscope:"P", tf:"N", ibes:"F[23]", om:"N", orbis:"N" } },
+      { label: "M&A / corporate actions",     cells: { edgar:"P[10]", yahoo:"P", gfund:"N", gsecd:"P", crsp:"F[11]", dstr:"P", wscope:"N", tf:"P[24]", ibes:"N", om:"N", orbis:"F[12]" } },
+      { label: "Ownership structures",        cells: { edgar:"P[13]", yahoo:"P", gfund:"N", gsecd:"N", crsp:"N", dstr:"P", wscope:"P", tf:"N", ibes:"N", om:"N", orbis:"F[14]" } },
+      { label: "Directors & executives",      cells: { edgar:"P[13]", yahoo:"P", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"P", tf:"N", ibes:"N", om:"N", orbis:"F" } },
+    ]},
+    { title: "Private companies", rows: [
+      { label: "Balance sheet / IS / CF",     cells: { edgar:"P[15]", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"F[16]" } },
+      { label: "Narratives",                  cells: { edgar:"P[15]", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"P" } },
+      { label: "M&A / corporate actions",     cells: { edgar:"N", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"F[12]" } },
+      { label: "Ownership structures",        cells: { edgar:"P[17]", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"F[14]" } },
+      { label: "Directors & executives",      cells: { edgar:"P[17]", yahoo:"N", gfund:"N", gsecd:"N", crsp:"N", dstr:"N", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"F" } },
+    ]},
+    { title: "REITs & investment funds", rows: [
+      { label: "Portfolio composition",       cells: { edgar:"P[18]", yahoo:"P", gfund:"N", gsecd:"N", crsp:"P[19]", dstr:"P", wscope:"N", tf:"N", ibes:"N", om:"N", orbis:"N" } },
+    ]},
+  ];
+
+  const NOTES = [
+    "EDGAR.jl carries no market/price data — it reads regulatory filings, not exchanges. Pair it with a price source (CRSP, Compustat Security Daily, Datastream) for OHLCV.",
+    "CRSP US Treasury Database covers government bond prices/yields; corporate-bond pricing is not CRSP's remit (see TRACE/FISD).",
+    "Yahoo exposes live option chains with little history; genuine historical options/implied-vol data is OptionMetrics (IvyDB), separate from both Yahoo and CRSP.",
+    "Yahoo gives ~4 years of annual + a few quarters, lightly standardized — usable but shallow versus a fundamentals database.",
+    "CRSP standalone has no financial statements; fundamentals arrive via CRSP/Compustat Merged.",
+    "Datastream delivers statement data by bundling Worldscope fundamentals — the depth is Worldscope's.",
+    "Narrative extraction (MD&A, notes, director's reports, table-of-contents navigation) is a distinctive EDGAR.jl strength — the commercial fundamentals feeds discard prose and keep only numbers.",
+    "EDGAR.jl reports actuals — but several regimes require issuers to file their own management forecasts (Japan EDINET, the TSE's TDnet the clearest case), so it is a partial, not a blank. This is company-issued guidance, a different object from the analyst consensus that I/B/E/S curates.",
+    "Datastream forecasts come via the linked I/B/E/S estimates database.",
+    "Surfaces from filings (US 8-K, merger/scheme disclosures) as text/events, not as a normalized deal feed.",
+    "CRSP is the reference source for splits, distributions, delisting events and returns adjustments.",
+    "Orbis integrates Zephyr, BvD's M&A/deal database — deep on both public and private transactions.",
+    "From proxy/ownership filings (US 13D/13G, 13F, DEF 14A and cross-jurisdiction equivalents); coverage is filing-driven, not a curated register.",
+    "Ownership structures — shareholders, subsidiaries, ultimate beneficial owners — plus directors/managers are Orbis's defining strength.",
+    "Private-company statements exist where the regime mandates public filing: UK Companies House is the flagship (full private accounts); most listed-only regimes do not.",
+    "Orbis's core value proposition: standardized financials for 400M+ mostly private entities worldwide.",
+    "UK Companies House PSC register + confirmation statements and officer records give private ownership/directors; jurisdiction-dependent.",
+    "US fund holdings via N-PORT / N-Q and 13F filings; portfolio composition is filing-driven per jurisdiction.",
+    "CRSP Survivor-Bias-Free Mutual Fund Database includes periodic holdings alongside returns/NAV.",
+    "OptionMetrics (IvyDB) ships the underlying security's prices, dividends and distributions as reference data for the option records — useful but a by-product, not an equity-price product.",
+    "TRACE (FINRA transaction prices) over Mergent FISD (issue master: coupons, maturities, ratings, call and covenant terms) is the standard corporate-bond package; this is exactly what it exists for.",
+    "OptionMetrics is the reference for historical option prices, implied volatilities and Greeks — the depth Yahoo's live chains and Datastream's derivatives coverage lack.",
+    "I/B/E/S is the reference analyst-estimate database: consensus and detail EPS forecasts, recommendations, plus the matched actuals and announcement dates that make an earnings surprise computable.",
+    "FISD records bond-level events — calls, redemptions, refundings, rating changes — a corporate-actions slice specific to the debt, not the equity.",
+  ];
+
+  const RANK = { F: "full", P: "partial", N: "none" };
+  const RANK_LABEL = { F: "Full", P: "Partial", N: "Not covered" };
+
+  const tbody = document.querySelector("#matrix tbody");
+  const thead = document.querySelector("#matrix thead tr");
+
+  SOURCES.forEach(s => {
+    const th = document.createElement("th");
+    if (s.proto) th.className = "proto";
+    th.innerHTML = `<span class="src">${s.name}</span><span class="desc">${s.desc}</span>`;
+    thead.appendChild(th);
+  });
+
+  function cellHTML(code) {
+    const m = code.match(/^([FPN])(?:\[(\d+)\])?$/);
+    const rank = RANK[m[1]];
+    const note = m[2] ? `<sup class="fn">${m[2]}</sup>` : "";
+    const title = RANK_LABEL[m[1]];
+    return `<span class="cell" title="${title}"><span class="dot ${rank}"></span></span>${note}`;
+  }
+
+  // access / licensing: only EDGAR.jl and Yahoo are free; the rest are paid subscriptions
+  const FREE = new Set(["edgar", "yahoo"]);
+  const accessTr = document.createElement("tr");
+  accessTr.className = "access";
+  let accessHTML = `<th class="rowhead" scope="row">Access / licensing</th>`;
+  SOURCES.forEach(s => {
+    const free = FREE.has(s.key);
+    const label = free ? "Free / open" : "Paid subscription";
+    accessHTML += `<td class="${s.proto ? "proto" : ""}"><span class="cell" title="${label}"><span class="dot ${free ? "free" : "paid"}"></span></span></td>`;
+  });
+  accessTr.innerHTML = accessHTML;
+  tbody.appendChild(accessTr);
+
+  GROUPS.forEach(g => {
+    const gtr = document.createElement("tr");
+    gtr.className = "group";
+    gtr.innerHTML = `<th>${g.title}</th>` + `<td colspan="${SOURCES.length}"></td>`;
+    tbody.appendChild(gtr);
+
+    g.rows.forEach(row => {
+      const tr = document.createElement("tr");
+      let html = `<th class="rowhead" scope="row">${row.label}</th>`;
+      SOURCES.forEach(s => {
+        const code = row.cells[s.key] || "N";
+        html += `<td class="${s.proto ? "proto" : ""}">${cellHTML(code)}</td>`;
+      });
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    });
+  });
+
+  const notesOl = document.querySelector("#notes");
+  NOTES.forEach((n, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="m">${i + 1}</span><span>${n}</span>`;
+    notesOl.appendChild(li);
+  });
+</script>
