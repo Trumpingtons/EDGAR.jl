@@ -155,24 +155,83 @@ PDF as classified [`facts`](@ref) on `hgb:` concepts (EUR). The German-GAAP anal
 the Bilanz's §266 section totals and the two-sided Bilanzsumme are recovered from the account-form subtotal
 column. See [`hgb_concept`](@ref) and `docs/dev/germany-plan.md` (G2).
 """
+# Reconstruct the GuV from POSITIONED WORDS. Some Jahresabschlüsse print the GuV across a two-page spread (or
+# a two-column page) — the line LABELS on one page, the value columns on the next, ALIGNED by y — which Docling
+# splits into a labels-only block and a values-only table. Re-join them geometrically: merge the words of the
+# GuV heading page and the following page, group by y-band into rows, and split each row into a left label and
+# right value columns. Returns hgb: GuV Facts, or empty when there is no such GuV.
+function _hgb_guv_from_words(doc)
+    gp = nothing
+    for pg in doc.pages
+        t = _ifrs_spacedtext(pg)
+        occursin(r"(?i)für die tätigkeit|konzern", t) && continue
+        occursin(r"(?i)gewinn-?\s*und\s*verlustrechnung\s+für\s+die\s+zeit", t) && (gp = Int(pg.page); break)
+    end
+    gp === nothing && return Fact[]
+    words = NamedTuple{(:x, :y, :s),Tuple{Float64,Float64,String}}[]
+    for pg in doc.pages
+        (Int(pg.page) == gp || Int(pg.page) == gp + 1) || continue
+        for w in pg.words; push!(words, (x = Float64(w.x), y = Float64(w.y), s = strip(String(w.str)))); end
+    end
+    _ismoney = s -> occursin(r"^-?[\d.]+,\d{2}$", s)
+    moneyx = [w.x for w in words if _ismoney(w.s)]
+    isempty(moneyx) && return Fact[]
+    xthr = minimum(moneyx) - 5
+    # year columns: the bare-year header tokens on the value side give each year's x-centre
+    ycols = sort!([(parse(Int, w.s), w.x) for w in words if occursin(r"^20\d{2}$", w.s) && w.x >= xthr - 40]; by = t -> t[2])
+    isempty(ycols) && return Fact[]
+    # group words into rows by y-band
+    sort!(words, by = w -> (round(w.y / 5), w.x))
+    rows = Vector{Vector{eltype(words)}}(); cur = eltype(words)[]; cy = nothing
+    for w in words
+        if cy !== nothing && abs(w.y - cy) > 5
+            push!(rows, cur); cur = eltype(words)[]
+        end
+        cy = w.y; push!(cur, w)
+    end
+    isempty(cur) || push!(rows, cur)
+    out = Fact[]
+    for r in rows
+        label = strip(join((w.s for w in r if w.x < xthr && occursin(r"[A-Za-zÄÖÜäöüß]", w.s)), " "))
+        cc = hgb_concept(label); cc === nothing && continue
+        vals = [(w.x, parse_amount(w.s; locale = :eu_dot)) for w in r if w.x >= xthr && _ismoney(w.s)]
+        for y in unique(t[1] for t in ycols)
+            # a line prints one value per year, a subtotal line a (detail, subtotal) pair — pick this year's
+            # values by nearest header column and keep the RIGHTMOST (the subtotal, when there is a pair).
+            cand = [v for v in vals if _nearest_year(v[1], ycols) == y]
+            isempty(cand) && continue
+            p = last(sort(cand; by = v -> v[1]))[2]
+            (p === nothing || p.nil) && continue
+            pe = Date(y, 12, 31)
+            push!(out, Fact(; concept = cc.concept, label = label, value = p.val, unit = "EUR",
+                period_start = Date(y, 1, 1), period_end = pe, is_instant = false, statement = "IncomeStatement",
+                context_ref = string(pe), unit_ref = "EUR", source_selector = "{\"guv_words\":true}"))
+        end
+    end
+    return out
+end
+
+# The year whose header-x is closest to a value's x.
+_nearest_year(x, ycols) = ycols[argmin([abs(c - x) for (_, c) in ycols])][1]
+
 function extract_hgb_pdf(path::AbstractString)
     doc = _pdf_words(path)
     rng = _hgb_statement_pages(doc)
     rng === nothing && throw(ArgumentError("no HGB Bilanz/GuV found in $(repr(basename(path)))"))
     sd = structured_document(path; pages = rng, jurisdiction = "DE", language = "de")
-    return _hgb_facts_from_sd(sd; accession = basename(path), url = path)
+    return _hgb_facts_from_sd(sd; accession = basename(path), url = path, extra = _hgb_guv_from_words(doc))
 end
 
 extract_hgb_pdf(sd::StructuredDocument; accession::AbstractString = "", url::AbstractString = "") =
     _hgb_facts_from_sd(sd; accession, url)
 
-function _hgb_facts_from_sd(sd; accession::AbstractString = "", url::AbstractString = "")
+function _hgb_facts_from_sd(sd; accession::AbstractString = "", url::AbstractString = "", extra::Vector{Fact} = Fact[])
     per = _hgb_period(sd)
     per === nothing && throw(ArgumentError("could not determine the fiscal period from $(repr(accession))"))
     mo, dy, yrs = per
     pends = [Date(y, mo, dy) for y in yrs]
     sectitle = Dict(s.section_id => s.title for s in sd.sections)
-    facts = Fact[]
+    facts = copy(extra)
     for tbl in sd.tables
         cls = classify_table_class(something(tbl.caption, ""))
         cls === nothing && (cls = classify_table_class(get(sectitle, something(tbl.section_id, ""), "")))
@@ -183,7 +242,8 @@ function _hgb_facts_from_sd(sd; accession::AbstractString = "", url::AbstractStr
             sec = get(sectitle, something(tbl.section_id, ""), "")
             occursin(r"(?i)\b(aktiva|passiva)\b", sec) && (stmt = "BalanceSheet")
         end
-        stmt === nothing && continue
+        # the GuV values are recovered from words (`extra`); skip Docling's split GuV table to avoid dup/garble
+        (stmt === nothing || (stmt == "IncomeStatement" && !isempty(extra))) && continue
         append!(facts, _hgb_table_facts(tbl, stmt, pends))
     end
     sel = Selection(; cik = "", accession = accession, url = url, selector = "", kind = :filing, facts = facts)
