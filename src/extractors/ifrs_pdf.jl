@@ -273,8 +273,90 @@ const _IFRS_STMT_TYPES = [
     (:eq, Regex("(?i)consolidated statement of changes in equity|entwicklung des konzern[-\\s]*eigenkapitals|" *
                 _dekonz("eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")))]
 
+# Reading-order text of a page with words SPACE-joined (unlike `_cas_pagetext`, which joins tight for CJK) —
+# needed to read a table-of-contents line "64 Konzernbilanz …" where the page number and title are separate
+# tokens, and to read the printed page number that leads a page.
+function _ifrs_spacedtext(pg)
+    ts = sort([(y = Float64(w.y), x = Float64(w.x), s = String(w.str)) for w in pg.words];
+              by = t -> (round(t.y / 3.5), t.x))
+    return join((t.s for t in ts), " ")
+end
+
+# A page's PRINTED page number — the standalone integer that leads the running header/footer (PDF page 66 of a
+# Fielmann report prints "64"). Read from the first few reading-order tokens. `nothing` if none.
+function _ifrs_printed_pageno(pg)
+    ts = sort([(y = Float64(w.y), x = Float64(w.x), s = strip(String(w.str))) for w in pg.words];
+              by = t -> (round(t.y / 3.5), t.x))
+    for t in first(ts, min(8, length(ts)))
+        occursin(r"^\d{1,4}$", t.s) && return parse(Int, t.s)
+    end
+    return nothing
+end
+
+# The printed statement page numbers listed on each type, keyed by statement type — used by `_ifrs_toc_range`.
+const _IFRS_TOC_TYPES = [(:bs, "bilanz"), (:is, "gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung"),
+                         (:cf, "kapitalflussrechnung"), (:eq, "eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")]
+
+# Locate the primary consolidated statements via the printed TABLE OF CONTENTS. A large German report reprints
+# the statements several times (a segment breakdown, a condensed set in the management report, the AUDITED
+# Konzernabschluss, the HGB parent) — the outline/heading-scan can latch onto the wrong copy. The Inhalt page
+# lists the audited set with its PRINTED page numbers ("64 Konzernbilanz …"); mapping those to PDF pages (each
+# page leads with its printed number) pins the audited cluster. Returns a PDF page range, or `nothing` when
+# there is no parseable TOC (English reports, section-relative numbering) — the caller then falls back.
+function _ifrs_toc_range(doc; margin::Int = 8)
+    npg = length(doc.pages)
+    p2pdf = Dict{Int,Int}()                                   # printed page number → PDF page (first wins)
+    for pg in doc.pages
+        n = _ifrs_printed_pageno(pg); n === nothing || get!(p2pdf, n, Int(pg.page))
+    end
+    isempty(p2pdf) && return nothing
+    # The TOC page is the one listing the most DISTINCT statement types, each as "<printed-page> <title>".
+    best_prs = Int[]; best_types = 0
+    for pg in doc.pages
+        txt = _ifrs_spacedtext(pg); prs = Int[]; tys = Set{Symbol}()
+        for (ty, stem) in _IFRS_TOC_TYPES
+            de = _dekonz(stem)
+            # A TOC lists the page number BEFORE the title ("64 Konzernbilanz", Fielmann) or AFTER it
+            # ("Bilanz 270", Volkswagen's two-column TOC). Capture both; keep only plausible page numbers
+            # (≤ page count) so a year in the title ("… 2023") is not mistaken for a page.
+            for m in eachmatch(Regex("(?i)(\\d{1,4})\\s+(?:$de)"), txt)
+                n = parse(Int, m.captures[1]); (1 <= n <= npg) && (push!(prs, n); push!(tys, ty))
+            end
+            for m in eachmatch(Regex("(?i)(?:$de)\\s+(\\d{1,4})\\b"), txt)
+                n = parse(Int, m.captures[1]); (1 <= n <= npg) && (push!(prs, n); push!(tys, ty))
+            end
+        end
+        length(tys) > best_types && (best_types = length(tys); best_prs = prs)
+    end
+    # A page listing 2+ statement types each with an adjacent page number IS a TOC (on a real statement page the
+    # header number is far from the heading, so it never matches). The mapped range is then VALIDATED by the
+    # caller against the actual headings, so a rare false TOC is caught there — 2 is a safe detection floor.
+    best_types < 2 && return nothing
+    pdfs = Int[p for p in (get(p2pdf, pr, nothing) for pr in best_prs) if p !== nothing]
+    length(pdfs) < 2 && return nothing                        # printed pages didn't map (section-relative etc.)
+    lo, hi = minimum(pdfs), maximum(pdfs)
+    (hi - lo > 30) && return nothing                          # a real primary-statement cluster is tight
+    return (lo, min(hi + margin, npg))
+end
+
 function _ifrs_statement_pages(doc; window::Int = 14)
     npg = length(doc.pages)
+    # Per-page statement types, EXCLUDING contents/index pages: a German "Inhalt" (or a filing index) lists every
+    # statement name on ONE page (3+ distinct types), whereas a real primary statement page shows one statement
+    # (a P&L + its comprehensive-income sibling still count as one type). Reused by the TOC validation + scan.
+    pgtypes = Dict{Int,Set{Symbol}}()
+    for pg in doc.pages
+        s = Set{Symbol}(); txt = _cas_pagetext(pg)
+        for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end
+        (isempty(s) || length(s) >= 3) || (pgtypes[Int(pg.page)] = s)
+    end
+    _ntypes(lo, hi) = length(reduce(union, (get(pgtypes, p, Set{Symbol}()) for p in lo:hi); init = Set{Symbol}()))
+    # Strategy 1 — the printed TOC, VALIDATED: trust its range only when the mapped pages really hold the
+    # statements (≥3 types). This is the reliable path for multi-section reports whose outline points at a
+    # reprint (Volkswagen), and it self-rejects when the TOC uses section-relative numbering (Siemens).
+    toc = _ifrs_toc_range(doc)
+    toc !== nothing && _ntypes(toc[1], toc[2]) >= 3 && return toc
+    # Strategy 2 — the PDF outline's statement bookmarks.
     if haskey(doc, :outline) && doc.outline !== nothing && !isempty(doc.outline)
         sp = Int[]
         for e in doc.outline
@@ -284,25 +366,13 @@ function _ifrs_statement_pages(doc; window::Int = 14)
         end
         isempty(sp) || return (minimum(sp), min(maximum(sp) + 3, npg))
     end
-    # Heading-scan fallback. A long report (especially a DUAL-STANDARD CAS+IFRS filing like PetroChina, whose
-    # outline is only two coarse Chinese section bookmarks) mentions statement titles many times — in the MD&A,
-    # the parent-company statements, note headings — before the real consolidated set. So take the primary
-    # CLUSTER: the `window` where the most DISTINCT consolidated statement types co-occur, not the first mention.
-    pgtypes = Dict{Int,Set{Symbol}}()
-    for pg in doc.pages
-        s = Set{Symbol}(); txt = _cas_pagetext(pg)
-        for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end
-        # A CONTENTS/index page lists every statement name together (a German "Inhalt", a filing index); it
-        # carries 3+ distinct types on ONE page, whereas a real primary statement page shows ONE statement (a
-        # P&L + its comprehensive-income sibling still count as one type). Dropping these stops the table of
-        # contents from out-scoring the actual statement cluster (which spreads its types across pages).
-        (isempty(s) || length(s) >= 3) || (pgtypes[Int(pg.page)] = s)
-    end
+    # Strategy 3 — heading-scan: the `window` where the most DISTINCT consolidated statement types co-occur (a
+    # long report mentions statement titles many times — MD&A, parent-company statements, note headings — so a
+    # cluster beats a stray first mention).
     isempty(pgtypes) && return nothing
     best_lo, best_n = minimum(keys(pgtypes)), 0
     for lo in sort!(collect(keys(pgtypes)))
-        n = length(reduce(union, (get(pgtypes, p, Set{Symbol}()) for p in lo:min(lo + window, npg));
-                          init = Set{Symbol}()))
+        n = _ntypes(lo, min(lo + window, npg))
         n > best_n && (best_n = n; best_lo = lo)      # strict >: on a tie the EARLIEST start wins
     end
     return (best_lo, min(best_lo + window, npg))
