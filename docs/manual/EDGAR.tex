@@ -3540,35 +3540,65 @@ within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the acti
 dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
 cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
 
-\paragraph{Where the data comes from.} Yahoo Finance \emph{aggregates}; it does not produce the fundamentals.
-The financial statements the oracle checks --- balance sheet, income statement, cash flow, plus valuation
-ratios, market cap and shares outstanding --- are, per Yahoo's own data-providers page,\footnote{\emph{Exchanges
-and data providers on Yahoo Finance}, \href{https://help.yahoo.com/kb/finance-for-web/exchanges-data-providers-yahoo-finance-sln2310.html}{help.yahoo.com/kb/\ldots/sln2310} (retrieved 2026): ``Financial statements,
-valuation ratios, market cap and shares outstanding data provided by \textbf{Morningstar}.''} supplied by
-\textbf{Morningstar}. (Yahoo splits its other feeds by source too: analyst estimates, recommendations and
-price targets come from \emph{S\&P Global Market Intelligence}, upgrades/downgrades from \emph{Benzinga}, US
-price history from \emph{Commodity Systems, Inc.} --- but \emph{fundamentals} are Morningstar's.) This has two
-consequences for a validation. First, Yahoo serves a vendor-\textbf{standardised} template, not the as-filed
-lines: Morningstar re-maps each reported line into its own fixed global schema, so a metric may agree on the
-umbrella total yet differ on a sub-line that Morningstar buckets differently --- the deferred-tax gross-up,
-retained-earnings reclassification and revenue standardisation traced for the German panel
-(\S\ref{sec:esef-germany-yahoo}) are Morningstar's normalisation choices, \emph{not} extraction errors. Second,
-for a jurisdiction with \emph{no} openly retrievable XBRL --- Germany above all (\S\ref{sec:esef-germany}) ---
-Morningstar reads the \emph{same} published PDF reports \texttt{EDGAR} does, so the two pipelines are genuinely
-independent readings of one source: \texttt{EDGAR} reports it verbatim, Morningstar normalises it.
+\paragraph{Where the data comes from.} Yahoo Finance \emph{aggregates}; it does not produce the fundamentals ---
+the statements this oracle checks are supplied by \textbf{Morningstar}, whose standardised template is why the
+comparison agrees on totals yet differs on some sub-lines. That source, and the mechanism of the differences,
+is the subject of \S\ref{sec:morningstar}.
 
-\paragraph{The Morningstar standardised template.} Morningstar collects every filer's statements into one
-\textbf{standardised} schema, documented in its \emph{Global Equity Data Definitions}
-(Morningstar, 2021; Ch.~\ref{ch:references}).\footnote{The public data-definitions PDF is marked
-\emph{Confidential} and states ``Contact your client manager for access to the respective templates,'' so the
-line \emph{definitions} are readable but the full field-by-field collection template is proprietary.} Two axes
-shape which template a filer lands in: a \textbf{report style} (field \texttt{ReportStyle}) --- style
-\texttt{"1"} for US/Canadian companies, style \texttt{"3"} for the \emph{rest of the universe}, so every
-European filer, Germany included, is style~3 --- and one of \textbf{six industry templates}
+\paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
+headline totals against Yahoo:
+
+\begin{lstlisting}
+using YFinance
+include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
+using .YahooOracle
+
+# 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
+f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
+select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
+
+# 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
+v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
+filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
+YahooOracle.report()                               # or the built-in multi-firm panel
+\end{lstlisting}
+
+\paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
+not its exchange symbol, so the external benchmarks take the ticker explicitly (\texttt{"AAPL"},
+\texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
+
+\subsection{Morningstar --- the source behind Yahoo's fundamentals}\label{sec:morningstar}
+
+Yahoo Finance is a display layer; the fundamentals it serves --- the balance sheet, income statement and cash
+flow this oracle cross-checks, plus valuation ratios, market cap and shares outstanding --- are, per Yahoo's
+own data-providers page, supplied by \textbf{Morningstar}.\footnote{\emph{Exchanges and data providers on Yahoo
+Finance}, \href{https://help.yahoo.com/kb/finance-for-web/exchanges-data-providers-yahoo-finance-sln2310.html}%
+{help.yahoo.com/kb/\ldots/sln2310} (retrieved 2026): ``Financial statements, valuation ratios, market cap and
+shares outstanding data provided by \textbf{Morningstar}.'' Yahoo sources its other feeds separately --- analyst
+estimates, recommendations and price targets from \emph{S\&P Global Market Intelligence}, upgrades/downgrades
+from \emph{Benzinga}, US price history from \emph{Commodity Systems, Inc.} --- but \emph{fundamentals} are
+Morningstar's.} So a ``Yahoo'' benchmark is really a \textbf{Morningstar} benchmark, and knowing that explains
+what the comparison shows: the two pipelines agree on the umbrella totals but diverge on sub-lines that
+Morningstar \emph{re-templates}. Two properties matter.
+
+\paragraph{It is an independent reading of the same source.} \texttt{EDGAR.jl} and Morningstar are two separate
+pipelines over the \emph{same} published statements --- decisively so for a jurisdiction with no open XBRL, where
+both can only read the report PDF (Germany, \S\ref{sec:esef-germany}). \texttt{EDGAR} reports the filing
+\textbf{verbatim}; Morningstar \textbf{normalises} it. That is exactly what makes the cross-check meaningful: an
+agreement is two independent reads landing on the same number, and a disagreement is a \emph{definitional}
+choice, not (usually) an extraction error.
+
+\paragraph{The standardised template.} Morningstar collects every filer's statements into one standardised
+schema, documented in its \emph{Global Equity Data Definitions} (Morningstar, 2021; Ch.~\ref{ch:references}).%
+\footnote{The public data-definitions PDF is marked \emph{Confidential} and says ``Contact your client manager
+for access to the respective templates,'' so the field \emph{definitions} are readable but the full
+field-by-field collection template is proprietary.} Two axes place a filer: a \textbf{report style} (field
+\texttt{ReportStyle}) --- \texttt{"1"} for US/Canadian companies, \texttt{"3"} for the \emph{rest of the
+universe}, so every European filer, Germany included, is style~3 --- and one of \textbf{six industry templates}
 (\texttt{IndustryTemplateCode}: Normal/Manufacturing, Bank, Insurance, Mining, Transportation, Utility), each
-collecting the line items typical of that industry. A reported line is re-mapped into a standardised field with
-its own definition, which is why a metric can agree on an umbrella total yet differ on a sub-line. The fields
-behind the German panel's deltas (\S\ref{sec:esef-germany-yahoo}), quoted from the definitions document:
+collecting the lines typical of that industry. Each reported line is re-mapped into a standardised field with
+its own definition; the fields behind the German panel's deltas (\S\ref{sec:esef-germany-yahoo}), quoted from
+the document:
 
 \begin{table}[h]
 \centering\small
@@ -3597,7 +3627,7 @@ dividends.'' \\
 \end{tabular}
 \end{table}
 
-\noindent Each German delta then maps to one of these rules:
+\noindent Each German delta (\S\ref{sec:esef-germany-yahoo}) then maps to one of these rules:
 \begin{itemize}
   \item \textbf{Assets} (Siemens $+4$, VW $+311$~Mio~€) --- \texttt{NonCurrentDeferredTaxesAssets} is a
     \emph{standalone} field (``two deferred income taxes fields''), so Morningstar carries deferred tax assets
@@ -3614,27 +3644,9 @@ dividends.'' \\
     \emph{Eigenkapital der Anteilseigner} (which carries the $15{,}155$~Mio~€ hybrid-capital tranche).
 \end{itemize}
 
-\paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
-headline totals against Yahoo:
-
-\begin{lstlisting}
-using YFinance
-include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-using .YahooOracle
-
-# 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
-f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
-select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
-
-# 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
-v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
-filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
-YahooOracle.report()                               # or the built-in multi-firm panel
-\end{lstlisting}
-
-\paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
-not its exchange symbol, so the external benchmarks take the ticker explicitly (\texttt{"AAPL"},
-\texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
+\noindent The practical rule for any Yahoo cross-check: anchor on the unambiguous totals, and read a persistent
+sub-line gap as a Morningstar \emph{definition} to look up (Table~\ref{tab:morningstar-defs}), not as a bug. A
+full field-by-field mapping of the template is future work; this section is the entry point.
 
 \subsection{AlphaVantage}
 
@@ -8084,7 +8096,7 @@ DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: Hug
 
 \textsc{Morningstar, Inc.} (2021): \emph{Global Equity Data Definitions}, data-definitions document
 (``Confidential''), rev.\ 2021-05-18. The standardised financials template (report styles~1/3, six industry
-templates) and per-field definitions behind Yahoo Finance's fundamentals (\S\ref{sec:yahoo-oracle},
+templates) and per-field definitions behind Yahoo Finance's fundamentals (\S\ref{sec:morningstar},
 Table~\ref{tab:morningstar-defs}). Public PDF:
 \href{https://advisor.morningstar.com/Enterprise/VTC/DataDefinitions_Equity\%20and\%20Executive_2021.05.18.pdf}%
 {advisor.morningstar.com/\ldots/DataDefinitions\_Equity\_and\_Executive}.
