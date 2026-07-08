@@ -46,6 +46,7 @@ include("core/taxonomy/vocab_jpgaap.jl")    # 🟢 Japanese GAAP classification 
 include("core/taxonomy/vocab_indas.jl")     # 🟢 Ind-AS (in-bse-fin) classification vocabulary (India NSE/BSE; INDAS/BANKING/NBFC formats)
 include("core/taxonomy/vocab_incapmkt.jl")  # 🟢 in-capmkt (SEBI Integrated Filing) vocabulary (India; INDAS/BANKING/NBFC + Life/General Insurance)
 include("core/taxonomy/vocab_cas.jl")       # 🟡 CAS (China 企业会计准则) label-driven vocabulary (PDF path; cas_concept)
+include("core/taxonomy/vocab_hgb.jl")       # 🟢 HGB (Germany Handelsgesetzbuch) label-driven German-GAAP vocabulary (single-entity Jahresabschluss PDF path; hgb_concept)
 include("core/taxonomy/vocab_ifrs_labels.jl") # 🟢 English-label → ifrs-full vocabulary for the PDF path (HK HKFRS + UK Companies House FRS 101/102; ifrs_label_concept)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
@@ -84,6 +85,7 @@ include("extractors/facts_derive.jl")        # 🟢 facts derivation core: local
 include("filing_systems/china/cas.jl")       # 🟡 China CAS PDF extraction (C3): consolidated statements → Facts via vocab_cas (extract_cas_pdf)
 include("filing_systems/china/portfolio.jl") # 🟡 China fund §8 portfolio (投资组合报告): holdings + summaries (extract_fund_portfolio)
 include("extractors/ifrs_pdf.jl")           # 🟢 English-PDF statement extraction: primary statements → Facts on ifrs-full via vocab_ifrs_labels (extract_ifrs_pdf) — shared by HK (HKFRS) + UK Companies House
+include("extractors/hgb_pdf.jl")            # 🟢 HGB single-entity Jahresabschluss extraction (G2): account-form Bilanz + GuV → Facts on hgb: via vocab_hgb (extract_hgb_pdf)
 include("filing_systems/hkex/reit_portfolio.jl") # 🟣 HK REIT property-portfolio composition (extract_reit_portfolio) — the REIT analogue of extract_fund_portfolio, reusing FundPortfolio
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
@@ -94,7 +96,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
        company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
-       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, born_digital, extract_fund_portfolio, extract_reit_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
+       Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, extract_hgb_pdf, hgb_concept, born_digital, extract_fund_portfolio, extract_reit_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
        toc, TocNode, TocRow,
        structured_document, StructuredDocument, persist_document, write_structured_document,
