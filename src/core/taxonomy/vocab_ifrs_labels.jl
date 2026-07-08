@@ -65,6 +65,21 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"attributable to (?:the )?(?:equity holders|owners|(?:equity )?shareholders)", t) &&
          !occursin("non-controlling", t))                     && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)  # incl. "equity shareholders"
         t == "non-controlling interests"                       && return C("ifrs-full:NoncontrollingInterests", :credit)
+        # --- German (Konzernbilanz). Totals are "Summe …" (Bilanzsumme = total assets). Test the current/
+        # non-current and owners'-equity subtotals BEFORE the umbrella totals they are substrings of.
+        occursin(r"summe (?:kurzfristige[rn]?|kurzfristiger) vermögenswerte", t) && return C("ifrs-full:CurrentAssets", :debit)
+        occursin(r"summe (?:langfristige[rn]?|langfristiger) vermögenswerte", t) && return C("ifrs-full:NoncurrentAssets", :debit)
+        (occursin("summe aktiva", t) || t == "bilanzsumme")    && return C("ifrs-full:Assets", :debit)
+        occursin(r"summe (?:kurzfristige[rn]?|kurzfristiger) verbindlichkeiten", t) && return C("ifrs-full:CurrentLiabilities", :credit)
+        occursin(r"summe (?:langfristige[rn]?|langfristiger) verbindlichkeiten", t) && return C("ifrs-full:NoncurrentLiabilities", :credit)
+        occursin("summe verbindlichkeiten", t)                 && return C("ifrs-full:Liabilities", :credit)
+        occursin("summe passiva", t)                           && return C("ifrs-full:EquityAndLiabilities", :credit)
+        # owners'-of-parent equity subtotal ("Summe Eigenkapital der Aktionäre der …") — tested before the
+        # whole-equity "Summe Eigenkapital" it contains.
+        (occursin("eigenkapital der aktionäre", t) || occursin("eigenkapital der anteilseigner", t) ||
+         occursin(r"den (?:aktionären|anteilseignern).{0,30}zustehende", t)) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
+        occursin("summe eigenkapital", t)                      && return C("ifrs-full:Equity", :credit)
+        occursin("nicht beherrschende anteile", t)             && return C("ifrs-full:NoncontrollingInterests", :credit)
 
     elseif statement == "IncomeStatement"
         (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
@@ -93,6 +108,17 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"(?:equity holders|equity shareholders|owners) of the (?:company|parent)", t) ||
          occursin(r"attributable to (?:the )?(?:ordinary |equity )?shareholders", t)) &&   # CKH "ordinary", China Mobile "equity"
             return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
+        # --- German (Konzern-Gewinn- und Verlustrechnung). Note the attribution lines ("Nicht beherrschende
+        # Anteile" / "Aktionäre der …") sit under a "Davon entfallen auf:" heading; test the NCI split first.
+        (startswith(t, "umsatzerlöse") || t == "umsatz")       && return C("ifrs-full:Revenue", :credit)
+        startswith(t, "umsatzkosten")                          && return C("ifrs-full:CostOfSales", :debit)
+        startswith(t, "bruttoergebnis")                        && return C("ifrs-full:GrossProfit", :credit)
+        occursin("nicht beherrschende anteile", t)             && return C("ifrs-full:ProfitLossAttributableToNoncontrollingInterests", :credit)
+        (occursin("aktionäre der", t) || occursin("anteilseigner der", t)) && return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
+        (occursin("vor ertragsteuern", t) || occursin("vor steuern", t))   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        (occursin("gewinn nach steuern", t) || occursin("ergebnis nach steuern", t) ||
+         occursin("jahresüberschuss", t) || occursin("konzernergebnis", t) ||
+         occursin("periodenergebnis", t))                      && return C("ifrs-full:ProfitLoss", :credit)
 
     elseif statement == "CashFlow"
         iscash = occursin("net cash", t) || occursin("cash generated", t) || occursin("cash used", t)
@@ -101,6 +127,16 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         iscash && occursin("financing activities", t)          && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
         occursin(r"net (\(?(increase|decrease)\)?)", t) && occursin("cash", t) &&
             return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # --- German (Konzern-Kapitalflussrechnung). A filer with discontinued operations reports THREE lines per
+        # activity — continuing / discontinued / combined; map only the COMBINED total ("fortgeführte und nicht
+        # fortgeführte Aktivitäten"), or the sole line when there is no discontinued split, so the concept is not
+        # triple-counted.
+        de_comb = occursin("fortgeführte und nicht fortgeführte", t)
+        de_sub  = occursin("fortgeführte", t) || occursin("nicht fortgeführt", t)
+        (startswith(t, "cashflow aus betrieblicher") && (de_comb || !de_sub)) && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)
+        (startswith(t, "cashflow aus investitions") && (de_comb || !de_sub))  && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        (startswith(t, "cashflow aus finanzierungs") && (de_comb || !de_sub)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        startswith(t, "veränderung der zahlungsmittel")        && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
     end
     return nothing
 end

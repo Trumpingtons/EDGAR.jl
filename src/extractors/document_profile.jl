@@ -27,7 +27,7 @@ const TABLE_CLASSES = TableClass[
     TableClass("balance_sheet", "statement", "Balance sheet / statement of financial position", [
         r"balance sheet"i, r"statement of financial position"i,
         r"statements? of assets (?:and|&) liabilities"i, r"statements? of net assets"i,   # registered funds (sing./plur.)
-        r"\bbilanz\b"i, r"\bbilan\b"i,
+        r"\w*bilanz\b"i, r"\bbilan\b"i,   # \w* so the German COMPOUND "Konzernbilanz"/"Einzelbilanz" matches (not "Bilanzsumme"/"Bilanzierung", which have no boundary after "bilanz")
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표",
         r"отч[её]т о финансовом положении"i, r"бухгалтерский баланс"i]),

@@ -32,7 +32,10 @@ function _ifrs_period(sd)
     # Priority: (1) a fiscal-period phrase ("Year ended 31 December", "As at 31 March"); (2) else a month-END
     # date (day 28–31 — a real year-end, never a "1 January" opening-balance line from the equity statement);
     # (3) else any date. Steps 1–2 keep a stray prose date (a pension "31 May", a "1 January" opening) out.
-    MON = "January|February|March|April|May|June|July|August|September|October|November|December"
+    # English full names + German full names and abbreviations ("30. Sep. 2023", "31. Dezember 2024") — the
+    # German editions state the year-end with an abbreviated month and a dot after the day.
+    MON = "Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|Mar(?:ch)?|Mär(?:z)?|Apr(?:il)?|May|Mai|Jun[ei]?|Jul[iy]?|" *
+          "Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?"
     text = join(vcat([s.title for s in sd.sections], [something(t.caption, "") for t in sd.tables],
                      [b.text for b in sd.text_blocks], [c.text for t in sd.tables for c in t.cells]), " ")
     # Accept BOTH orders — "31 December" (day-month, HK/UK) and "December 31" (month-day, US-style, e.g.
@@ -40,9 +43,9 @@ function _ifrs_period(sd)
     # / "January 1" opening line); then any date. `a1` tells whether the month was captured first.
     fc = "(?:year|period)?\\s*(?:ended|ending|as at|as of)\\s+"
     m = nothing
-    for rx in ["(?i)$fc(\\d{1,2})\\s+($MON)", "(?i)$fc($MON)\\s+(\\d{1,2})",
-               "(?i)(28|29|30|31)\\s+($MON)", "(?i)($MON)\\s+(28|29|30|31)\\b",
-               "(?i)(\\d{1,2})\\s+($MON)", "(?i)($MON)\\s+(\\d{1,2})\\b"]
+    for rx in ["(?i)$fc(\\d{1,2})\\.?\\s+($MON)", "(?i)$fc($MON)\\s+(\\d{1,2})",
+               "(?i)(28|29|30|31)\\.?\\s+($MON)", "(?i)($MON)\\s+(28|29|30|31)\\b",
+               "(?i)(\\d{1,2})\\.?\\s+($MON)", "(?i)($MON)\\s+(\\d{1,2})\\b"]
         m = match(Regex(rx), text); m === nothing || break
     end
     a1 = m !== nothing && occursin(r"[A-Za-z]", String(m.captures[1]))    # month captured first (month-day order)?
@@ -52,7 +55,11 @@ function _ifrs_period(sd)
 end
 
 const _IFRS_MONTHS = Dict("january"=>1,"february"=>2,"march"=>3,"april"=>4,"may"=>5,"june"=>6,"july"=>7,
-                           "august"=>8,"september"=>9,"october"=>10,"november"=>11,"december"=>12)
+                           "august"=>8,"september"=>9,"october"=>10,"november"=>11,"december"=>12,
+                           # German full + abbreviated month names
+                           "januar"=>1,"jan"=>1,"februar"=>2,"feb"=>2,"mär"=>3,"märz"=>3,"mar"=>3,"apr"=>4,
+                           "mai"=>5,"jun"=>6,"juni"=>6,"jul"=>7,"juli"=>7,"aug"=>8,"sep"=>9,"sept"=>9,
+                           "oct"=>10,"okt"=>10,"oktober"=>10,"nov"=>11,"dec"=>12,"dez"=>12,"dezember"=>12)
 monthabbr_to_num(s) = get(_IFRS_MONTHS, lowercase(String(s)), 12)
 
 # The unit TOKEN → (scale, currency) from a pool of header/label strings, or `nothing` if none carries one.
@@ -69,6 +76,13 @@ function _ifrs_unit(texts)
         gbp_k = any(occursin(r"(?i)£\s*'?\s*(thousand|000)\b", s) for s in texts)
         (gbp_m || gbp_k) && return (gbp_m ? 1e6 : 1e3, "GBP")
     end
+    # Euro next: a €/EUR-denominated set (German IFRS) never carries HK$/£. Match a genuine unit expression in
+    # EITHER order — the English edition writes "millions of €" (magnitude first, symbol after), the German one
+    # "Mio. €" / "Millionen"; thousands are "TEUR" / "T€" / "thousands of €". A stray prose "EUR"/"USD" is not a
+    # unit expression, so it can't trigger a false EUR. Prefer millions over thousands within one pool.
+    eur_m = any(occursin(r"(?i)(EUR|€)\s*'?\s*(m\b|million)|million[s]?\s+(of\s+)?(EUR|€|euro)|\bMio\.?\s*€|\bMillionen\b", s) for s in texts)
+    eur_k = any(occursin(r"(?i)\bTEUR\b|T€|(EUR|€)\s*'?\s*(thousand|000)\b|thousand[s]?\s+(of\s+)?(EUR|€|euro)|\bTsd\.?\s*€", s) for s in texts)
+    (eur_m || eur_k) && return (eur_m ? 1e6 : 1e3, "EUR")
     conv = nothing                                             # a "#"-marked supplementary/convenience unit
     for s in texts
         # magnitude is "million"/"thousand"/"000"/CJK, OR a bare "m" (HK banks abbreviate "HK$'m" = HK$ million)
@@ -93,10 +107,11 @@ function _ifrs_scale_currency(sd)
     u === nothing || return u
     # fallback: magnitude alone, currency by presence (HK$ preferred — the HK default)
     text = join(texts, " ")
-    scale = occursin(r"(?i)million", text) ? 1e6 : occursin(r"(?i)'?000\b|thousand", text) ? 1e3 : 1.0
+    scale = occursin(r"(?i)million|\bMio\.?\b|\bMillionen\b", text) ? 1e6 :
+            occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€", text) ? 1e3 : 1.0
     cur = occursin(r"(?i)US\$|\bUSD\b", text) ? "USD" :
           occursin(r"(?i)HK\$|\bHKD\b", text) ? "HKD" : occursin(r"(?i)\bRMB\b|人民[币幣]", text) ? "CNY" :
-          occursin('£', text) ? "GBP" : "HKD"
+          occursin('£', text) ? "GBP" : (occursin('€', text) || occursin(r"(?i)\bEUR\b|\bTEUR\b", text)) ? "EUR" : "HKD"
     return (scale, cur)
 end
 
@@ -109,9 +124,11 @@ function _ifrs_table_unit(tbl, def_scale::Float64, def_cur::AbstractString)
     return u === nothing ? (def_scale, def_cur) : u
 end
 
-# A monetary VALUE cell (thousands comma or a parenthesised negative), en-locale.
-_ifrs_ismoney(s) = (occursin(',', s) || occursin('(', s) || occursin(r"\d\.\d", s)) &&
-                    (p = parse_amount(strip(String(s)); locale = :en); p !== nothing && !p.nil)
+# A monetary VALUE cell (a grouped-thousands separator or a parenthesised negative). Locale-aware: the German
+# (`:eu_dot`) reports write "47.996" (dot thousands) / "8,50" (comma decimal), so the number parse must use the
+# document's locale — parsing "47.996" as en would read it as 47.996, not 47 996.
+_ifrs_ismoney(s, loc::Symbol = :en) = (occursin(',', s) || occursin('(', s) || occursin(r"\d\.\d", s)) &&
+                    (p = parse_amount(strip(String(s)); locale = loc); p !== nothing && !p.nil)
 
 # A note-REFERENCE cell (dropped from labels): only digits, parens and lower-case sub-note letters —
 # "6", "12(a)", "13(b)" — and containing a digit (so a real word label is never mistaken for a note).
@@ -132,7 +149,7 @@ _ifrs_mode(v) = (d = Dict{String,Int}(); for x in v; d[x] = get(d, x, 0) + 1; en
 # The stored value is the line item's magnitude (a parenthesised debit is positive; its −1 is the calculation
 # contribution, per the ifrs-full XBRL convention). Concepts come from `ifrs_label_concept`; other rows skipped.
 function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vector{Date},
-                            scale::Float64, currency::AbstractString)
+                            scale::Float64, currency::AbstractString, loc::Symbol = :en)
     nr, nc = tbl.n_rows, tbl.n_cols
     isempty(pends) && return Fact[]
     grid = Dict{Tuple{Int,Int},String}(); hdr = Dict{Tuple{Int,Int},String}()
@@ -143,9 +160,9 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
         end                                                     # must reach every column it covers
     end
     # value columns: ≥2 monetary body cells (a Note column of "13" / "32 (a)" is not monetary, so it is excluded)
-    valcols = [c for c in 0:nc-1 if count(r -> _ifrs_ismoney(get(grid, (r, c), "")), 0:nr-1) >= 2]
+    valcols = [c for c in 0:nc-1 if count(r -> _ifrs_ismoney(get(grid, (r, c), ""), loc), 0:nr-1) >= 2]
     isempty(valcols) && return Fact[]
-    firstbody = something(findfirst(r -> any(_ifrs_ismoney(get(grid, (r, c), "")) for c in valcols), 0:nr-1),
+    firstbody = something(findfirst(r -> any(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in valcols), 0:nr-1),
                           1) - 1                                # 0-based index of the first row carrying values
 
     # per value column: its header year, currency, and whether it is a "#" convenience or a "1 January" opening
@@ -186,7 +203,7 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
         lcells = String[]
         for c in 0:nc-1
             s = get(grid, (r, c), "")
-            (!isempty(s) && occursin(r"[A-Za-z]", s) && parse_amount(s; locale = :en) === nothing &&
+            (!isempty(s) && occursin(r"[A-Za-zÄÖÜäöüß]", s) && parse_amount(s; locale = loc) === nothing &&
              !_ifrs_isnoteref(s)) && push!(lcells, s)
         end
         label = strip(join(lcells, " "))
@@ -195,7 +212,12 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
         # comprehensive-income-attributable, not profit (China Mobile lists it under "Total comprehensive income
         # attributable to:" on a continuation page). The income statement we map ends at "profit for the year".
         (stmt == "IncomeStatement" && occursin(r"(?i)(?:other|total) comprehensive income", label)) && break
-        hasval = any(_ifrs_ismoney(get(grid, (r, c), "")) for c in keep)
+        # Stop at the earnings-per-share block: a German income statement REPEATS the "Gewinn nach Steuern" label
+        # as a per-share EPS line, which would otherwise re-map to profit with the (tiny) EPS value. Match the EPS
+        # SECTION header ("(Un)verwässertes Ergebnis je Aktie" / "…earnings per share"), NOT the unit caption
+        # "(in Mio. €, Ergebnis je Aktie in €)" which merely names the EPS unit.
+        (stmt == "IncomeStatement" && occursin(r"(?i)verwässertes ergebnis je aktie|earnings per share", label)) && break
+        hasval = any(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in keep)
         if !hasval                                             # no monetary value on this row — no fact
             # A section header has its value columns EMPTY and carries down to a later unlabeled subtotal
             # (Tencent's "Revenues" / "Equity attributable to …" totals). A row whose value columns instead
@@ -211,7 +233,12 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
         cc = isempty(elabel) ? nothing : ifrs_label_concept(elabel, stmt)
         cc === nothing && continue
         for c in keep
-            p = parse_amount(get(grid, (r, c), ""); locale = :en)
+            raw = get(grid, (r, c), "")
+            # Drop a Docling ROW-MERGE artifact: two stacked lines glued into one cell leave two number groups
+            # separated by a space ("1,507 5,767"). In a comma/dot locale (no space-grouped thousands) that is
+            # two values, not one — skip it rather than let parse_amount concatenate them into a giant number.
+            (loc in (:en, :eu_dot) && occursin(r"\d[\d.,]*\s+[\d(]", strip(raw))) && continue
+            p = parse_amount(raw; locale = loc)
             (p === nothing || p.nil) && continue
             pend = colend[c]
             pst = instant ? nothing : (pend - Year(1) + Day(1))
@@ -227,14 +254,18 @@ end
 
 # Consolidated-statements page range, TOC-first (the AR outline's statement bookmarks), heading-scan fallback.
 const _IFRS_STMT_TITLES = [r"(?i)consolidated (?:income )?statement of (?:financial position|profit or loss|comprehensive income|cash flows|changes in equity)",
-                            r"(?i)consolidated income statement", r"(?i)consolidated balance sheet"]
+                            r"(?i)consolidated income statement", r"(?i)consolidated balance sheet",
+                            # German: the "Konzern-" prefix marks the CONSOLIDATED set (vs the single-entity HGB
+                            # parent statements, which carry the bare "Bilanz"/"Gewinn- und Verlustrechnung").
+                            r"(?i)konzern[-\s]*bilanz", r"(?i)konzern[-\s]*gewinn[-\s]*und[-\s]*verlustrechnung",
+                            r"(?i)konzern[-\s]*kapitalflussrechnung", r"(?i)konzern[-\s]*gesamtergebnisrechnung"]
 # The four primary-statement TYPES, each keyed by its consolidated heading — used by the heading-scan fallback
 # to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray first mention.
 const _IFRS_STMT_TYPES = [
-    (:is, r"(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))"),
-    (:bs, r"(?i)consolidated (?:balance sheet|statement of financial position)"),
-    (:cf, r"(?i)consolidated (?:cash flow statement|statement of cash flows)"),
-    (:eq, r"(?i)consolidated statement of changes in equity")]
+    (:is, r"(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))|konzern[-\s]*(?:gewinn[-\s]*und[-\s]*verlustrechnung|gesamtergebnisrechnung)"),
+    (:bs, r"(?i)consolidated (?:balance sheet|statement of financial position)|konzern[-\s]*bilanz"),
+    (:cf, r"(?i)consolidated (?:cash flow statement|statement of cash flows)|konzern[-\s]*kapitalflussrechnung"),
+    (:eq, r"(?i)consolidated statement of changes in equity|konzern[-\s]*eigenkapitalveränderungsrechnung|entwicklung des konzern[-\s]*eigenkapitals")]
 
 function _ifrs_statement_pages(doc; window::Int = 14)
     npg = length(doc.pages)
@@ -279,11 +310,23 @@ AS REPORTED — an unlabeled section total (e.g. Tencent's Revenue total under a
 by carrying down the section header, not by computing it from other lines — so the balance-sheet cross-foot and
 the benchmark check values the extractor did not itself derive. English analogue of [`extract_cas_pdf`](@ref).
 """
+# Sniff the presentation language from the consolidated statement headings — a German report carries
+# "Konzern-Bilanz" / "Konzern-Kapitalflussrechnung"; that jurisdiction sets the number locale (DE → :eu_dot,
+# decimal-comma) in `_ifrs_facts_from_sd`. Defaults to the English/HK path.
+function _ifrs_doc_juris(doc)
+    for pg in doc.pages
+        occursin(r"(?i)konzern[-\s]*(?:bilanz|kapitalflussrechnung|gewinn[-\s]*und[-\s]*verlustrechnung)",
+                 _cas_pagetext(pg)) && return ("DE", "de")
+    end
+    return ("HK", "en")
+end
+
 function extract_ifrs_pdf(path::AbstractString)
     doc = _pdf_words(path)
     rng = _ifrs_statement_pages(doc)
     rng === nothing && throw(ArgumentError("no consolidated statements found in $(repr(basename(path)))"))
-    sd = structured_document(path; pages = rng, jurisdiction = "HK", language = "en")
+    juris, lang = _ifrs_doc_juris(doc)
+    sd = structured_document(path; pages = rng, jurisdiction = juris, language = lang)
     return _ifrs_facts_from_sd(sd; accession = basename(path), url = path)
 end
 
@@ -306,6 +349,7 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
     per === nothing && throw(ArgumentError("could not determine the fiscal period from $(repr(accession))"))
     mo, dy, yrs = per
     pends = [Date(y, mo, dy) for y in yrs]
+    loc = amount_locale(sd.document.jurisdiction)               # number-separator class (DE → :eu_dot, else :en)
     scale, currency = _ifrs_scale_currency(sd)
     sectitle = Dict(s.section_id => s.title for s in sd.sections)
     # Section headings grouped by page: a scanned UK statement is split into sibling headings on one page —
@@ -326,8 +370,14 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
     _titleof(tbl) = strip(string(something(tbl.caption, ""), " ",
                                  get(sectitle, something(tbl.section_id, ""), ""), " ",
                                  join(get(pagetitles, Int(tbl.page_start), String[]), " ")))
-    has_sep_is = any(t -> occursin(r"(?i)income statement|profit or loss", _titleof(t)) &&
-                          !occursin(r"(?i)comprehensive income", _titleof(t)), sd.tables)
+    # The table's OWN name (caption + its section), WITHOUT the shared page headings — a German report puts the
+    # P&L ("… Gewinn- und Verlustrechnung") and the comprehensive-income statement ("… Gesamtergebnisrechnung")
+    # on ONE page, so their common page-title can't tell them apart; the section title can.
+    _owntitle(tbl) = strip(string(something(tbl.caption, ""), " ", get(sectitle, something(tbl.section_id, ""), "")))
+    _is_pl(t) = occursin(r"(?i)income statement|profit or loss|gewinn-?\s*und\s*verlustrechnung", t)
+    _is_ci(t) = occursin(r"(?i)comprehensive income|gesamtergebnisrechnung", t)
+    has_sep_is = any(t -> (_is_pl(_owntitle(t)) && !_is_ci(_owntitle(t))) ||
+                          (_is_pl(_titleof(t)) && !_is_ci(_titleof(t))), sd.tables)
 
     facts = Fact[]
     for tbl in sd.tables
@@ -350,10 +400,13 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         # statement"/"profit or loss") — its "Equity holders of the Company" line is comprehensive-income-
         # attributable, which would collide with profit-attributable — but ONLY when a separate income statement
         # exists. A single-statement filer has none, so its comprehensive-income table IS the P&L and is kept.
-        (stmt == "IncomeStatement" && occursin(r"(?i)comprehensive income", title) &&
-         !occursin(r"(?i)income statement|profit or loss", title) && has_sep_is) && continue
+        # Prefer the table's OWN name for the CI-vs-P&L test (falls back to the full page title when the section
+        # carries no statement name); a same-page German P&L + comprehensive-income pair is told apart this way.
+        own = _owntitle(tbl)
+        ci_title = (_is_pl(own) || _is_ci(own)) ? own : title
+        (stmt == "IncomeStatement" && _is_ci(ci_title) && !_is_pl(ci_title) && has_sep_is) && continue
         tscale, tcur = _ifrs_table_unit(tbl, scale, currency)   # this statement's OWN unit (£m vs a note's £'000)
-        append!(facts, _ifrs_table_facts(tbl, stmt, stmt == "BalanceSheet", pends, tscale, tcur))
+        append!(facts, _ifrs_table_facts(tbl, stmt, stmt == "BalanceSheet", pends, tscale, tcur, loc))
     end
 
     sel = Selection(; cik = "", accession = accession, url = url, selector = "", kind = :filing, facts = facts)
