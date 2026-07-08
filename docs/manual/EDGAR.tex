@@ -3540,10 +3540,47 @@ within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the acti
 dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
 cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
 
-\paragraph{Where the data comes from.} Yahoo Finance \emph{aggregates}; it does not produce the fundamentals ---
-the statements this oracle checks are supplied by \textbf{Morningstar}, whose standardised template is why the
-comparison agrees on totals yet differs on some sub-lines. That source, and the mechanism of the differences,
-is the subject of \S\ref{sec:morningstar}.
+\paragraph{Where the data comes from.} Yahoo Finance \emph{aggregates}; it produces none of this itself but
+licenses each data category from a different named provider (Table~\ref{tab:yahoo-providers}, per Yahoo's own
+data-providers page).\footnote{\emph{Exchanges and data providers on Yahoo Finance},
+\href{https://help.yahoo.com/kb/finance-for-web/exchanges-data-providers-yahoo-finance-sln2310.html}%
+{help.yahoo.com/kb/\ldots/sln2310} (retrieved 2026); provider attributions quoted from that page.} The one this
+oracle relies on is \textbf{fundamentals}, supplied by \textbf{Morningstar} --- whose standardised template is
+why the cross-check agrees on totals yet differs on some sub-lines; that source and the mechanism of the
+differences are \S\ref{sec:morningstar}.
+
+\begin{table}[h]
+\centering\small
+\caption{Yahoo Finance's data providers by category (as Yahoo attributes them). This oracle uses the
+\textbf{fundamentals} row (Morningstar, \S\ref{sec:morningstar}); the rest is context for what a ``Yahoo''
+figure actually is.}
+\label{tab:yahoo-providers}
+\begin{tabular}{@{}p{0.50\textwidth}p{0.44\textwidth}@{}}
+\toprule
+\textbf{Data category} & \textbf{Provider} \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Prices \& history}} \\
+\quad Real-time / delayed exchange prices \& quotes & ICE Data Services (crypto: Coinbase, CoinMarketCap) \\
+\quad US equities \& global index history (daily) & Commodity Systems, Inc.\ (CSI) \\
+\quad International price history (daily) & Morningstar \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Fundamentals \& estimates}} \\
+\quad \textbf{Financial statements, valuation ratios, market cap, shares outstanding} & \textbf{Morningstar} \\
+\quad Company profile, EPS/revenue estimates \& actuals, recommendations, price targets & S\&P Global Market Intelligence \\
+\quad Upgrades / downgrades & Benzinga \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Events \& corporate actions}} \\
+\quad Global corporate events (earnings dates, splits, dividend calendar) & Wall Street Horizon, Inc.\ (a TMX company) \\
+\quad Economic events; non-US IPO; insider transactions & LSEG Data \& Analytics \\
+\quad US IPO data & NYSE \& NASDAQ \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Ownership \& governance}} \\
+\quad Institutional \& mutual-fund holders & Vickers (\texttt{vickers-stock.com}) \\
+\quad Corporate-governance scores & Institutional Shareholder Services (ISS) \\
+\quad Private-company data & EquityZen, Forge \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
 headline totals against Yahoo:
