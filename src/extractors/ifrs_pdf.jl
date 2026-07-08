@@ -253,19 +253,25 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
 end
 
 # Consolidated-statements page range, TOC-first (the AR outline's statement bookmarks), heading-scan fallback.
+# A German consolidated-statement heading appears in BOTH word orders across filers: a PREFIX "Konzern-<stmt>"
+# (Siemens) and a genitive SUFFIX "<stmt> des/der … Konzerns" (Volkswagen). Requiring des/der in the suffix
+# keeps out the segment breakdown "<stmt> NACH Konzernbereichen". `_dekonz(stem)` builds the two-order regex.
+_dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]{0,25}konzerns?\\b"
 const _IFRS_STMT_TITLES = [r"(?i)consolidated (?:income )?statement of (?:financial position|profit or loss|comprehensive income|cash flows|changes in equity)",
                             r"(?i)consolidated income statement", r"(?i)consolidated balance sheet",
-                            # German: the "Konzern-" prefix marks the CONSOLIDATED set (vs the single-entity HGB
-                            # parent statements, which carry the bare "Bilanz"/"Gewinn- und Verlustrechnung").
-                            r"(?i)konzern[-\s]*bilanz", r"(?i)konzern[-\s]*gewinn[-\s]*und[-\s]*verlustrechnung",
-                            r"(?i)konzern[-\s]*kapitalflussrechnung", r"(?i)konzern[-\s]*gesamtergebnisrechnung"]
+                            # German consolidated set — the "Konzern-" prefix OR the "… des Konzerns" suffix
+                            # (vs the single-entity HGB parent, whose statements carry the bare names).
+                            Regex("(?i)" * _dekonz("bilanz")), Regex("(?i)" * _dekonz("gewinn[-\\s]*und[-\\s]*verlustrechnung")),
+                            Regex("(?i)" * _dekonz("kapitalflussrechnung")), Regex("(?i)" * _dekonz("gesamtergebnisrechnung"))]
 # The four primary-statement TYPES, each keyed by its consolidated heading — used by the heading-scan fallback
 # to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray first mention.
 const _IFRS_STMT_TYPES = [
-    (:is, r"(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))|konzern[-\s]*(?:gewinn[-\s]*und[-\s]*verlustrechnung|gesamtergebnisrechnung)"),
-    (:bs, r"(?i)consolidated (?:balance sheet|statement of financial position)|konzern[-\s]*bilanz"),
-    (:cf, r"(?i)consolidated (?:cash flow statement|statement of cash flows)|konzern[-\s]*kapitalflussrechnung"),
-    (:eq, r"(?i)consolidated statement of changes in equity|konzern[-\s]*eigenkapitalveränderungsrechnung|entwicklung des konzern[-\s]*eigenkapitals")]
+    (:is, Regex("(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))|" *
+                _dekonz("gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung"))),
+    (:bs, Regex("(?i)consolidated (?:balance sheet|statement of financial position)|" * _dekonz("bilanz"))),
+    (:cf, Regex("(?i)consolidated (?:cash flow statement|statement of cash flows)|" * _dekonz("kapitalflussrechnung"))),
+    (:eq, Regex("(?i)consolidated statement of changes in equity|entwicklung des konzern[-\\s]*eigenkapitals|" *
+                _dekonz("eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")))]
 
 function _ifrs_statement_pages(doc; window::Int = 14)
     npg = length(doc.pages)
@@ -286,7 +292,11 @@ function _ifrs_statement_pages(doc; window::Int = 14)
     for pg in doc.pages
         s = Set{Symbol}(); txt = _cas_pagetext(pg)
         for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end
-        isempty(s) || (pgtypes[Int(pg.page)] = s)
+        # A CONTENTS/index page lists every statement name together (a German "Inhalt", a filing index); it
+        # carries 3+ distinct types on ONE page, whereas a real primary statement page shows ONE statement (a
+        # P&L + its comprehensive-income sibling still count as one type). Dropping these stops the table of
+        # contents from out-scoring the actual statement cluster (which spreads its types across pages).
+        (isempty(s) || length(s) >= 3) || (pgtypes[Int(pg.page)] = s)
     end
     isempty(pgtypes) && return nothing
     best_lo, best_n = minimum(keys(pgtypes)), 0
