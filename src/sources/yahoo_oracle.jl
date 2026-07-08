@@ -52,6 +52,12 @@ _instant(m::Metric) = m.statement === :bs    # balance-sheet items are point-in-
 # China note: `cas:` concepts come from the PDF label path (vocab_cas). Net income prefers the
 # parent-attributable figure (归属于母公司股东的净利润) Yahoo reports, falling back to total 净利润 (banks,
 # where minority interest is negligible). Revenue is 营业收入 (cas:Revenue), then 营业总收入 (cas:TotalRevenue).
+# Germany note: German consolidated reports go through the shared IFRS PDF path (ifrs-full concepts), so the
+# IFRS candidate lists apply. Two APPROXIMATE gaps are expected (Yahoo standardises), like India's revenue:
+# Siemens' reported Umsatzerlöse (€77.8bn) exceeds Yahoo's standardised revenue (~€74.9bn, continuing-ops);
+# Volkswagen's net income attributable to VW AG shareholders (€16.0bn, what the metric selects) differs from
+# Yahoo's standardised net income (~€16.5bn). The unambiguous totals — Assets, Equity, operating cash flow —
+# match to well within 1%.
 const METRICS = [
     Metric("Assets",     ["us-gaap:Assets"], ["ifrs-full:Assets"],
                          ["in-capmkt:Assets", "in-bse-fin:Assets"], ["cas:Assets"], ["TotalAssets"], :bs),
@@ -118,6 +124,13 @@ function _edgar_rows(system::Symbol, locator::AbstractString)
             String(fetch_filing(China(), first(hs)).content)
         end
         return EDGAR.extract_cas_pdf(path)
+    elseif system === :germany
+        # `locator` is a local German CONSOLIDATED-IFRS report PDF — Germany has no programmatic OAM retrieval
+        # (the plan's PDF route), so the user supplies the stashed report. Facts come from the shared German/
+        # IFRS PDF path on ifrs-full concepts, so the IFRS metric concepts below apply unchanged.
+        path = expanduser(String(locator))
+        isfile(path) || return nothing
+        return EDGAR.extract_ifrs_pdf(path)
     elseif system === :hkex
         # `locator` is an HKEXnews five-digit stock code (annual report auto-selected) OR a local PDF path
         # (a stashed filer). Facts come from the shared English-PDF path (Docling), on ifrs-full concepts —
@@ -172,9 +185,9 @@ const TOL = 0.01   # 1% (Yahoo rounds / standardizes)
     validate(system::Symbol, locator, ticker) -> Vector{Row}
 
 Validate EDGAR.jl's extraction against Yahoo Finance for one filer, across the three statements.
-`system` is `:sec`, `:esef`, `:dart`, `:india`, `:china` or `:hkex`; `locator` is the CIK (SEC), LEI
-(ESEF), corp/stock code (DART), NSE ticker (India), CNINFO code (China) or HKEXnews five-digit code
-(Hong Kong) — or, for the PDF systems, a local report path; and `ticker` is the Yahoo symbol (e.g.
+`system` is `:sec`, `:esef`, `:dart`, `:india`, `:china`, `:hkex` or `:germany`; `locator` is the CIK
+(SEC), LEI (ESEF), corp/stock code (DART), NSE ticker (India), CNINFO code (China) or HKEXnews five-digit
+code (Hong Kong) — or, for the PDF systems (China/HK/Germany), a local report path; and `ticker` is the Yahoo symbol (e.g.
 `"AAPL"`, `"CTY1S.HE"`, `"TCS.NS"`, `"0700.HK"`) — needed because a filing knows only its own
 identifier, not the exchange symbol. Returns
 one [`Row`](@ref) per metric (tagged `:bs`/`:is`/`:cf`): EDGAR's value, Yahoo's, the `rel_diff`, and
@@ -213,6 +226,14 @@ const FIRMS = [
     ("Tata Consultancy", :india, "TCS",      "TCS.NS",      "IN"),
     ("Maruti Suzuki",    :india, "MARUTI",   "MARUTI.NS",   "IN"),
     ("Reliance Inds.",   :india, "RELIANCE", "RELIANCE.NS", "IN"),
+]
+
+# German DAX panel (G4). Germany is PDF-native with no OAM retrieval, so the locator is a stashed
+# consolidated-IFRS report PDF; the Yahoo symbol is the Xetra `.DE` listing. Run `report(DE_FIRMS)`.
+const DE_FIRMS = [
+    ("Siemens AG",    :germany, "~/EDGAR-Reports/DE-SiemensFR2023.pdf",         "SIE.DE",  "DE"),
+    ("Volkswagen AG", :germany, "~/EDGAR-Reports/DE-VolkswagenKonzern2023.pdf", "VOW3.DE", "DE"),
+    ("BASF SE",       :germany, "~/EDGAR-Reports/DE-BASFBericht2023.pdf",       "BAS.DE",  "DE"),
 ]
 
 const _STMT_LABEL = Dict(:bs => "BalanceSheet", :is => "IncomeStatement", :cf => "CashFlow")
