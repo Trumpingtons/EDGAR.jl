@@ -4363,7 +4363,9 @@ mass-scale public channel (Offenlegung) is not XBRL at all --- what it exposes i
 inputs are therefore \textbf{PDF} (listed) and, for the private mass, \textbf{HTML} (if the OAM gate is
 passed) --- both of which the document-AI extractor already ingests into the same \texttt{FactRow} table
 (Chapter~\ref{ch:pdf}, incl.\ its HTML-input path). ``HTML source'' is thus a new \emph{input}, not a new
-pipeline.
+pipeline. Turning such a report PDF into facts --- a consolidated IFRS \emph{Konzernabschluss} on
+\texttt{ifrs-full} concepts, or a single-entity HGB \emph{Jahresabschluss} on \texttt{hgb:} concepts --- is
+the worked example of \S\ref{sec:de-workflow}.
 
 \subsection{Entity universes}\label{sec:de-entities}
 
@@ -4394,7 +4396,7 @@ tagged report is unreachable (\S\ref{sec:de-repos}), while the lower two are HGB
 three the practical extraction path is identical --- the document-AI PDF route --- differing only in scale and
 in whether the vocabulary is IFRS or HGB (the split below).
 
-\subsection{Two accounting flavours: HGB and IFRS}
+\subsection{Two accounting flavours: HGB and IFRS}\label{sec:de-accounting-flavours}
 
 \begin{itemize}
   \item \textbf{HGB} (\emph{Handelsgesetzbuch}, the German commercial code) --- German GAAP, used for the
@@ -4478,6 +4480,46 @@ this chapter applies: the account-form is the \textbf{HGB national-GAAP} statuto
 \emph{Konzernbilanz} is \textbf{report-form}. The ``two-sided and multi-page'' note above is exactly the
 extraction consequence --- \emph{Aktiva} and \emph{Passiva} on separate pages, stitched into one statement,
 with the \emph{Bilanzsumme} equal on both sides as a built-in cross-foot.
+
+\subsection{Worked example: from report PDF to facts}\label{sec:de-workflow}
+
+Germany is PDF-native and has no fetchable store (\S\ref{sec:de-repos}), so a German workflow starts from a
+report you already hold --- a listed group's \emph{Gesch\"aftsbericht} or a \emph{Bundesanzeiger}
+\emph{Jahresabschluss}. Which extractor to call follows the accounting flavour, not the file: a consolidated
+\textbf{IFRS} \emph{Konzernabschluss} goes through \texttt{extract\_ifrs\_pdf} (the shared \texttt{ifrs-full}
+path, \S\ref{sec:hk-workflow}); a single-entity \textbf{HGB} \emph{Jahresabschluss} goes through
+\texttt{extract\_hgb\_pdf} onto German-GAAP \texttt{hgb:} concepts.
+
+\begin{lstlisting}
+using EDGAR
+
+# (1) Consolidated IFRS group report -> ifrs-full facts. One call: it locates the Konzernabschluss in the
+#     report (German "Konzern-..." / "... des ... Konzerns" / "...-Gruppe" headings, or the English edition),
+#     reads decimal-comma amounts in EUR, and stitches an account-form Aktiva/Passiva Bilanz if present.
+rows = extract_ifrs_pdf("DE-SiemensFR2023.pdf")                  # a stashed Geschaeftsbericht (PDF)
+select_statement(rows, "BalanceSheet")                           # ifrs-full:Assets, Equity, Liabilities, ...
+select_statement(rows, "IncomeStatement")                        # ifrs-full:Revenue (Umsatzerloese), ProfitLoss
+
+# (2) Single-entity HGB Jahresabschluss -> hgb: concepts (the account-form Bilanz + the GuV, EUR).
+hgb = extract_hgb_pdf("DE-StadtwerkeEschwege-HGB-Jahresabschluss2019.pdf")
+select_statement(hgb, "BalanceSheet")     # hgb:Anlagevermoegen, Eigenkapital, Rueckstellungen, Bilanzsumme
+# the two sides reconcile: hgb:Bilanzsumme appears from both Aktiva and Passiva, equal by construction.
+
+# (3) same source-agnostic downstream as everywhere else: land a statement in DuckDB and export it
+using DuckDB, DBInterface
+to_duckdb(select_statement(rows, "BalanceSheet"), "siemens.duckdb"; table = "balance_sheet")
+\end{lstlisting}
+
+\noindent Both extractors take a \emph{path} (shown) or an already-parsed \texttt{StructuredDocument} --- pass
+the \texttt{StructuredDocument} to send the PDF to Docling exactly once and get facts \emph{and}
+\texttt{narratives(f)} from the one parse (\S\ref{sec:hk-workflow}). The consolidated path auto-locates the
+statement pages, so no page range is needed; the HGB path finds the primary \emph{Bilanz zum \ldots} and
+\emph{Gewinn- und Verlustrechnung}, skipping the \S6b-EnWG activity accounts. From there the rows are ordinary
+\texttt{facts}: \texttt{select\_statement}, \texttt{to\_duckdb}, CSV/Excel export --- identical to every other
+jurisdiction (\S\ref{sec:hk-workflow}). The one German nuance to remember is the \textbf{two concept spaces}:
+a consolidated report yields \texttt{ifrs-full} concepts (comparable with ESEF/HK), a single-entity HGB report
+yields \texttt{hgb:} concepts (German-GAAP totals: \emph{Anlagevermögen}, \emph{Sonderposten}, \emph{Bilanzsumme}
+\ldots) --- the split of \S\ref{sec:de-accounting-flavours}, made concrete.
 
 \subsection{Validation against Yahoo Finance}\label{sec:esef-germany-yahoo}
 
