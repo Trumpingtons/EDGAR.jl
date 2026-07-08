@@ -3478,13 +3478,87 @@ only a subtotal and relegates the pieces to an un-parsed note, EDGAR is containe
 cannot recover a line the page never shows. The principle is the same as for XBRL (report what the source
 defines, synthesize nothing), but a PDF binds us to the filing's \emph{layout}, not just to the taxonomy.
 
-\subsection{Yahoo Finance}
+\subsection{Yahoo Finance}\label{sec:yahoo-oracle}
 
 An external \emph{benchmark} with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
 SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
 within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
 dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
 cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
+
+\paragraph{Where the data comes from.} Yahoo Finance \emph{aggregates}; it does not produce the fundamentals.
+The financial statements the oracle checks --- balance sheet, income statement, cash flow, plus valuation
+ratios, market cap and shares outstanding --- are, per Yahoo's own data-providers page,\footnote{\emph{Exchanges
+and data providers on Yahoo Finance}, \href{https://help.yahoo.com/kb/finance-for-web/exchanges-data-providers-yahoo-finance-sln2310.html}{help.yahoo.com/kb/\ldots/sln2310} (retrieved 2026): ``Financial statements,
+valuation ratios, market cap and shares outstanding data provided by \textbf{Morningstar}.''} supplied by
+\textbf{Morningstar}. (Yahoo splits its other feeds by source too: analyst estimates, recommendations and
+price targets come from \emph{S\&P Global Market Intelligence}, upgrades/downgrades from \emph{Benzinga}, US
+price history from \emph{Commodity Systems, Inc.} --- but \emph{fundamentals} are Morningstar's.) This has two
+consequences for a validation. First, Yahoo serves a vendor-\textbf{standardised} template, not the as-filed
+lines: Morningstar re-maps each reported line into its own fixed global schema, so a metric may agree on the
+umbrella total yet differ on a sub-line that Morningstar buckets differently --- the deferred-tax gross-up,
+retained-earnings reclassification and revenue standardisation traced for the German panel
+(\S\ref{sec:esef-germany-yahoo}) are Morningstar's normalisation choices, \emph{not} extraction errors. Second,
+for a jurisdiction with \emph{no} openly retrievable XBRL --- Germany above all (\S\ref{sec:esef-germany}) ---
+Morningstar reads the \emph{same} published PDF reports \texttt{EDGAR} does, so the two pipelines are genuinely
+independent readings of one source: \texttt{EDGAR} reports it verbatim, Morningstar normalises it.
+
+\paragraph{The Morningstar standardised template.} Morningstar collects every filer's statements into one
+\textbf{standardised} schema, documented in its \emph{Global Equity Data Definitions}
+(Morningstar, 2021; Ch.~\ref{ch:references}).\footnote{The public data-definitions PDF is marked
+\emph{Confidential} and states ``Contact your client manager for access to the respective templates,'' so the
+line \emph{definitions} are readable but the full field-by-field collection template is proprietary.} Two axes
+shape which template a filer lands in: a \textbf{report style} (field \texttt{ReportStyle}) --- style
+\texttt{"1"} for US/Canadian companies, style \texttt{"3"} for the \emph{rest of the universe}, so every
+European filer, Germany included, is style~3 --- and one of \textbf{six industry templates}
+(\texttt{IndustryTemplateCode}: Normal/Manufacturing, Bank, Insurance, Mining, Transportation, Utility), each
+collecting the line items typical of that industry. A reported line is re-mapped into a standardised field with
+its own definition, which is why a metric can agree on an umbrella total yet differ on a sub-line. The fields
+behind the German panel's deltas (\S\ref{sec:esef-germany-yahoo}), quoted from the definitions document:
+
+\begin{table}[h]
+\centering\small
+\caption{Morningstar standardised fields behind the Yahoo\,--\,EDGAR deltas (definitions verbatim, field codes
+in parentheses).}
+\label{tab:morningstar-defs}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Field (code)} & \textbf{Morningstar definition (verbatim)} \\
+\midrule
+\texttt{TotalRevenue} (20100) & ``All sales, business revenues and income \ldots \emph{net of excise taxes}. \ldots
+For Normal, Mining, Transportation and Utility templates \ldots the sum of Operating Revenues, Excise Taxes and
+Fees.'' \\
+\texttt{RetainedEarnings} (23204) & ``The cumulative net income \ldots less the cumulative distributions to
+shareholders either directly (dividends) or indirectly (treasury stock).'' \\
+\texttt{NonCurrentDeferredTaxesAssets} (23066) & ``\ldots timing differences \ldots the field may be either
+current \ldots or non-current \ldots A company will typically have \emph{two} deferred income taxes fields.'' \\
+\texttt{StockholdersEquity} (23215) & ``The residual interest in the assets of the enterprise that remains after
+deducting its liabilities.'' \\
+\texttt{MinorityInterest} (23132) & ``Carrying amount of the equity interests owned by non-controlling
+shareholders \ldots'' \\
+\texttt{NetIncome} (20091) & ``Includes all the operations (continuing and discontinued) and all the other income
+or charges \ldots'' --- vs \texttt{NetIncomeCommonStockholders} (20093), ``Net income minus the preferred
+dividends.'' \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Each German delta then maps to one of these rules:
+\begin{itemize}
+  \item \textbf{Assets} (Siemens $+4$, VW $+311$~Mio~€) --- \texttt{NonCurrentDeferredTaxesAssets} is a
+    \emph{standalone} field (``two deferred income taxes fields''), so Morningstar carries deferred tax assets
+    \emph{gross} where the filer nets them against deferred tax liabilities.
+  \item \textbf{Equity} (Siemens $-9$~Mio~€) --- \texttt{RetainedEarnings} is \emph{recomputed} (cumulative net
+    income less distributions), so a reserve Siemens reports inside \emph{Gewinnr\"ucklagen} is bucketed
+    elsewhere in the standardised equity.
+  \item \textbf{Revenue} (Siemens $-3.9\,\%$) --- \texttt{TotalRevenue} is defined ``net of excise taxes'' and
+    composed per industry template, so the standardised figure ($74{,}882$) departs from the as-filed
+    \emph{Umsatzerl\"ose} ($77{,}769$); the identical mechanism to India's excise gross-up (\S\ref{sec:india-yahoo}).
+  \item \textbf{Net income} (VW $+3.1\,\%$) --- the metric selects owners-of-parent ($16{,}013$), whereas Yahoo's
+    \texttt{NetIncome} (20091) is the all-in figure that folds in VW's hybrid-capital share ($16{,}532$).
+  \item \textbf{Equity} (VW $+0.42\,\%$) --- \texttt{StockholdersEquity} standardisation vs VW's
+    \emph{Eigenkapital der Anteilseigner} (which carries the $15{,}155$~Mio~€ hybrid-capital tranche).
+\end{itemize}
 
 \paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
 headline totals against Yahoo:
@@ -4350,6 +4424,130 @@ this chapter applies: the account-form is the \textbf{HGB national-GAAP} statuto
 \emph{Konzernbilanz} is \textbf{report-form}. The ``two-sided and multi-page'' note above is exactly the
 extraction consequence --- \emph{Aktiva} and \emph{Passiva} on separate pages, stitched into one statement,
 with the \emph{Bilanzsumme} equal on both sides as a built-in cross-foot.
+
+\subsection{Validation against Yahoo Finance}\label{sec:esef-germany-yahoo}
+
+Germany has no Arelle / \href{https://filings.xbrl.org}{filings.xbrl.org} oracle (the \emph{Bundesanzeiger}'s
+XBRL is not openly retrievable, \S\ref{sec:esef-germany}), so the cheap independent cross-check on a
+consolidated filer's headline numbers is \textbf{Yahoo Finance} (Xetra tickers \texttt{.DE}). The
+\texttt{:germany} branch of the oracle (\S\ref{sec:yahoo-oracle}) runs the stashed report through the shared
+IFRS PDF path --- so the \texttt{ifrs-full} concepts and Yahoo fields are exactly those of the ESEF/HK panel.
+The result on three DAX names (FY2023) is in Table~\ref{tab:de-yahoo}: \textbf{every unambiguous total ---
+assets, equity, net income, operating cash flow --- matches to within 0.02\,\%} (several to the euro). As in
+India (\S\ref{sec:india-yahoo}), the only divergences are lines Yahoo \emph{standardises}, not lines
+mis-extracted. There are three such classes, each traced below to the exact sub-item.
+
+\begin{table}[h]
+\centering\small
+\caption{German consolidated-IFRS filers vs Yahoo Finance, FY2023 (Mio~€). EDGAR values are the reported
+\emph{Konzern} figures verbatim. All fifteen metrics extract; the only non-zero deltas are the two
+Yahoo-standardisation lines (Siemens revenue, Volkswagen net income) discussed below.}
+\label{tab:de-yahoo}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+& \textbf{Assets} & \textbf{Equity} & \textbf{Revenue} & \textbf{Net income} & \textbf{Oper.\ CF} \\
+\midrule
+Siemens (SIE.DE) EDGAR    & 145{,}067 & 47{,}791 & 77{,}769 & 7{,}949  & 12{,}239 \\
+\quad Yahoo               & 145{,}071 & 47{,}782 & 74{,}882 & 7{,}949  & 12{,}239 \\
+\quad $\Delta$            & +0.003\%  & $-$0.019\% & $-$3.9\% & 0.000\% & 0.000\% \\[2pt]
+Volkswagen (VOW3.DE) EDGAR & 600{,}338 & 175{,}694 & 322{,}284 & 16{,}013 & 19{,}356 \\
+\quad Yahoo               & 600{,}649 & 174{,}968 & 322{,}284 & 16{,}532 & 19{,}356 \\
+\quad $\Delta$            & +0.052\%  & +0.42\% & 0.000\% & +3.1\% & 0.000\% \\[2pt]
+BASF (BAS.DE) EDGAR       & 77{,}395 & 35{,}277 & 68{,}902 & 225 & 8{,}111 \\
+\quad Yahoo               & 77{,}395 & 35{,}277 & 68{,}902 & 225 & 8{,}111 \\
+\quad $\Delta$            & 0.000\% & 0.000\% & 0.000\% & 0.000\% & 0.000\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Class 1 --- balance-sheet standardisation (sub-\% on assets and equity)}
+Yahoo reorganises the balance sheet into its own fixed schema, which reclassifies or re-rounds individual
+sub-lines while the extraction reports the \emph{Konzernbilanz} lines verbatim.
+
+\begin{itemize}
+  \item \textbf{Siemens assets, $+4$~Mio~€ ($0.003\,\%$)} --- current assets agree to the euro
+    ($60{,}639$); the whole gap is in \textbf{deferred tax assets}: Siemens' \emph{Aktive latente Steuern}
+    $2{,}231$ vs Yahoo's \texttt{NonCurrentDeferredTaxesAssets} $2{,}235$. Yahoo shows the \emph{gross}
+    figure where Siemens nets deferred tax assets against liabilities.
+  \item \textbf{Siemens equity, $-9$~Mio~€ ($0.019\,\%$)} --- every equity line matches exactly
+    (\emph{Gezeichnetes Kapital} $2{,}400$, \emph{Kapitalr\"ucklage} $7{,}411$, treasury stock $-1{,}177$)
+    \textbf{except retained earnings}: \emph{Gewinnr\"ucklagen} $36{,}874$ vs Yahoo's
+    \texttt{RetainedEarnings} $36{,}866$ ($-8$), the last $\sim$1~Mio~€ being rounding across the component
+    sum. Yahoo buckets $\sim$8~Mio~€ of a reserve outside retained earnings.
+  \item \textbf{Volkswagen assets, $+311$~Mio~€ ($0.052\,\%$)} --- the same deferred-tax gross-up, larger in
+    absolute terms because VW's financial-services/leasing book carries large deferred taxes
+    (\texttt{NonCurrentDeferredTaxesAssets} $14{,}251$); VW nets them, Yahoo does not.
+\end{itemize}
+
+\subsubsection*{Class 2 --- revenue standardisation (Siemens, $-3.9\,\%$)}
+The extraction reports \emph{Umsatzerl\"ose} $77{,}769$ --- Siemens' headline revenue as filed. Yahoo's
+\texttt{TotalRevenue} (\,$=$\texttt{OperatingRevenue}\,) is a \emph{standardised} $74{,}882$, $\sim$2{,}887~Mio~€
+lower: the vendor reclassifies certain income out of the revenue line. This is a definitional difference of the
+\emph{same kind} as India's excise-duty gross-up (\S\ref{sec:india-yahoo}); anchor a Siemens validation on net
+income and operating cash flow, which match to the euro.
+
+\subsubsection*{Class 3 --- net-income attribution and hybrid capital (Volkswagen, $+3.1\,\%$)}
+The extraction selects \texttt{ProfitLossAttributableToOwnersOfParent} --- VW's \emph{Aktion\"are der
+Volkswagen AG} $16{,}013$, the share attributable to ordinary and preferred shareholders. Yahoo's
+\texttt{NetIncome} is $16{,}532$; the $+519$~Mio~€ difference is the \textbf{hybrid-capital investors' share}
+of the result (VW's perpetual/hybrid bonds), which sits between the shareholders' figure and total profit
+after tax ($17{,}928$, \texttt{ifrs-full:ProfitLoss}). Yahoo's \texttt{NetIncome} folds the hybrid share into
+net income; the owners-of-parent concept correctly excludes it. (Yahoo also carries
+\texttt{NetIncomeCommonStockholders} $15{,}947$, a third cut.) For Siemens, with no hybrid capital, the same
+owners-of-parent concept matches Yahoo to the euro ($7{,}949$).
+
+\subsubsection*{BASF --- two presentation quirks the vocabulary now covers}
+BASF's balance sheet at first extracted \emph{no} totals --- not because they were wrong but because of two
+label/layout quirks particular to its presentation, each since handled so the values in
+Table~\ref{tab:de-yahoo} now match Yahoo \textbf{to the euro} (assets and equity both $\Delta 0.000\,\%$):
+\begin{itemize}
+  \item \textbf{Assets:} BASF labels its total \emph{``Gesamtverm\"ogen''} ($77{,}395$), not \emph{Summe
+    Aktiva} / \emph{Bilanzsumme}, and its section subtotals the bare \emph{Langfristige} / \emph{Kurzfristige
+    Verm\"ogenswerte} (no \emph{Summe}). Because the total \emph{is} labelled it also escaped the
+    ``unlabelled account-form total'' rule (\S\ref{sec:esef-germany-tshape}). The fix adds
+    \emph{Gesamtverm\"ogen}\,/\,\emph{Gesamtkapital} as total synonyms and anchors the \emph{Verm\"ogenswerte}
+    subtotals with an optional \emph{Summe}.
+  \item \textbf{Equity:} BASF prints \emph{Aktiva} and \emph{Passiva} on separate pages (account-form), and
+    the \emph{Passiva} page's heading is only the running header \emph{``BASF-Gruppe''} --- carrying no
+    \emph{Bilanz}/\emph{Passiva} title the classifier recognised --- so that table was not tagged a balance
+    sheet at all. The fix classifies an account-form side from the table's leading \emph{Aktiva}/\emph{Passiva}
+    cell, after which the equity lines (\emph{Eigenkapital der Aktion\"are der BASF SE} $35{,}277$) are read,
+    and the two sides cross-foot (\emph{Gesamtkapital} $=$ \emph{Gesamtverm\"ogen} $=77{,}395$).
+\end{itemize}
+Both were coverage gaps (a missing synonym, an untitled continuation page), not extraction errors; adding a
+new German synonym or side-cue like this is the routine way the label vocabulary grows filer by filer.
+
+\subsubsection*{Volkswagen equity --- a second-row \emph{Passiva} marker}
+Volkswagen's equity was blank at first for the same class of layout reason as BASF's: its \emph{Passiva} side
+is a separate page whose heading is only \emph{``\ldots des Volkswagen Konzerns''} (no \emph{Bilanz}), so the
+generic classifier does not tag it, and the account-form side-cue must supply the tag. But VW prints the
+\emph{Passiva} marker on the row \emph{below} the unit/year header (\emph{Mio.\ €\,/\,Anhang\,/\,years}), so
+the side-cue now scans the \textbf{first two rows}, not just the first. With that, the Passiva table is read
+and equity resolves to \emph{Eigenkapital der Anteilseigner der Volkswagen AG} $175{,}694$ (and the two sides
+cross-foot, \emph{Bilanzsumme} $600{,}338$). The residual \textbf{$+0.42\,\%$} vs Yahoo ($174{,}968$) is a
+balance-sheet standardisation difference of the same Class-1 kind: VW's shareholder equity carries a
+$15{,}155$~Mio~€ \textbf{hybrid-capital} component that vendors normalise inconsistently (the same hybrid
+nuance as its net income, Class~3).
+
+\subsubsection*{Closing the last two cells}
+Two cells were blank at first for reasons worth recording, since both recur:
+\begin{itemize}
+  \item \textbf{Volkswagen operating cash flow} --- a vocabulary gap. VW titles the line \emph{``Cashflow
+    laufendes Gesch\"aft''} (cash from the ongoing business), not \emph{``Cashflow aus betrieblicher
+    T\"atigkeit''}; adding that synonym reads it ($19{,}356$, matching Yahoo to the euro).
+  \item \textbf{BASF net income} --- a \emph{value-format} gap, not a label one. Both net-income labels map
+    (\emph{Ergebnis nach Steuern} $\to$ \texttt{ProfitLoss}, \emph{davon auf Aktion\"are der BASF SE entfallend}
+    $\to$ owners), but BASF's 2023 result is small --- €$379$ Mio total, €$225$ Mio to shareholders --- and a
+    figure under a thousand carries \emph{no} thousands separator (``$379$''). The value detector requires a
+    separator (comma, parenthesis, or \emph{digit.digit}) to tell an amount from a note reference or a year, so
+    those rows were skipped while every figure $\ge 1{,}000$ (with its German dot, ``$1.420$'') was read. The
+    fix: inside a column \emph{already confirmed} to be a value column (two or more separator-bearing amounts),
+    a bare number is a value --- note references live in their own column, so there is nothing to confuse it
+    with. This also recovers other genuine sub-thousand lines across the panel (Siemens' minority-interest
+    profit $579$ and net change in cash $-388$; Deutsche Telekom's interest income $870$).
+\end{itemize}
+Both were routine to close, and the table now has \textbf{no blank cells}: every headline metric extracts for
+every filer, and the two non-zero deltas are the documented Yahoo-standardisation lines (Classes~2 and~3).
 
 \section{France}
 \label{sec:esef-france}
@@ -7786,6 +7984,14 @@ CC\,BY\,4.0 --- the citation below is that attribution.
 Database: A Firm-Level Collection of the Universe of Financial Statements,'' \emph{Scientific Data}, 12.
 DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: HuggingFace
 \texttt{irlspbru/RFSD}; Zenodo DOI~\texttt{10.5281/zenodo.14622208}; CC\,BY\,4.0.
+\par
+
+\textsc{Morningstar, Inc.} (2021): \emph{Global Equity Data Definitions}, data-definitions document
+(``Confidential''), rev.\ 2021-05-18. The standardised financials template (report styles~1/3, six industry
+templates) and per-field definitions behind Yahoo Finance's fundamentals (\S\ref{sec:yahoo-oracle},
+Table~\ref{tab:morningstar-defs}). Public PDF:
+\href{https://advisor.morningstar.com/Enterprise/VTC/DataDefinitions_Equity\%20and\%20Executive_2021.05.18.pdf}%
+{advisor.morningstar.com/\ldots/DataDefinitions\_Equity\_and\_Executive}.
 \par
 
 \endgroup
