@@ -130,6 +130,13 @@ end
 _ifrs_ismoney(s, loc::Symbol = :en) = (occursin(',', s) || occursin('(', s) || occursin(r"\d\.\d", s)) &&
                     (p = parse_amount(strip(String(s)); locale = loc); p !== nothing && !p.nil)
 
+# A VALUE cell in an ALREADY-CONFIRMED value column: a plain number is enough, no thousands separator needed —
+# BASF's small 2023 net income ("379", "225") carries none. Looser than `_ifrs_ismoney` (which gates column
+# DETECTION, where a separator guards against mistaking a note column for a value column); a bare year is
+# excluded so a header row is not read as data.
+_ifrs_isval(s, loc::Symbol = :en) = (t = strip(String(s)); !occursin(_YEAR_ONLY, t) &&
+                    (p = parse_amount(t; locale = loc); p !== nothing && !p.nil))
+
 # A note-REFERENCE cell (dropped from labels): only digits, parens and lower-case sub-note letters —
 # "6", "12(a)", "13(b)" — and containing a digit (so a real word label is never mistaken for a note).
 _ifrs_isnoteref(s) = (t = strip(String(s)); occursin(r"\d", t) &&
@@ -225,7 +232,7 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
         # SECTION header ("(Un)verwässertes Ergebnis je Aktie" / "…earnings per share"), NOT the unit caption
         # "(in Mio. €, Ergebnis je Aktie in €)" which merely names the EPS unit.
         (stmt == "IncomeStatement" && occursin(r"(?i)verwässertes ergebnis je aktie|earnings per share", label)) && break
-        hasval = any(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in keep)
+        hasval = any(_ifrs_isval(get(grid, (r, c), ""), loc) for c in keep)   # keep cols are value cols: a bare number counts
         if !hasval                                             # no monetary value on this row — no fact
             # A section header has its value columns EMPTY and carries down to a later unlabeled subtotal
             # (Tencent's "Revenues" / "Equity attributable to …" totals). A row whose value columns instead
@@ -261,21 +268,16 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
     # Account-form (Kontoform) grand total. A two-sided German balance sheet prints the total (Bilanzsumme) on
     # an UNLABELED foot row — no "Summe Aktiva"/"Summe Passiva" line — so the label pass above misses it. When
     # the table is a single side ("Aktiva" alone, or "Passiva" alone; a combined table already carries labelled
-    # totals) and that side's total was not otherwise found, take the LAST unlabeled row whose every kept column
-    # holds a value: on the assets side it is Assets, on the equity+liabilities side EquityAndLiabilities.
+    # totals) and that side's total was not otherwise found, take the LAST row whose every kept column holds a
+    # value — the balance total, whether printed on an UNLABELED foot row (Fielmann) or a LABELED "Bilanzsumme"
+    # one (Volkswagen): on the assets side it is Assets, on the equity+liabilities side EquityAndLiabilities.
     if stmt == "BalanceSheet"
         top = join([get(grid, (r, c), "") for r in 0:min(2, nr - 1) for c in 0:nc-1], " ")
         has_ak = occursin(r"(?i)\baktiva\b", top); has_pa = occursin(r"(?i)\bpassiva\b", top)
         side = (has_ak && !has_pa) ? "ifrs-full:Assets" : (has_pa && !has_ak) ? "ifrs-full:EquityAndLiabilities" : nothing
         if side !== nothing && !any(f -> f.concept == side, out)
             for r in (nr-1):-1:0
-                lc = String[]
-                for c in 0:nc-1
-                    s = get(grid, (r, c), "")
-                    (!isempty(s) && occursin(r"[A-Za-zÄÖÜäöüß]", s) && parse_amount(s; locale = loc) === nothing &&
-                     !_ifrs_isnoteref(s)) && push!(lc, s)
-                end
-                isempty(lc) && all(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in keep) || continue
+                all(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in keep) || continue
                 for c in keep
                     p = parse_amount(get(grid, (r, c), ""); locale = loc); (p === nothing || p.nil) && continue
                     push!(out, Fact(; concept = side, label = "Bilanzsumme", value = p.val * scale, unit = primary,
@@ -516,6 +518,12 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         cls = classify_table_class(cap)
         cls === nothing && (cls = classify_table_class(sectit))
         cls === nothing && (cls = classify_table_class(pgtit))
+        # An account-form Bilanz side often carries no statement title — only a leading "Aktiva"/"Passiva"
+        # cell (BASF's Passiva page heading is just the running header "BASF-Gruppe"; Volkswagen prints
+        # "Passiva" on the row BELOW the unit/year header) — so classify it from that marker when nothing else
+        # matched. Scan the first two rows, and require the marker to START a cell (not appear mid-prose).
+        cls === nothing && any(occursin(r"(?i)^\s*(aktiva|passiva)\b", strip(c.text)) for c in tbl.cells if c.row <= 1) &&
+            (cls = "balance_sheet")
         title = strip(string(cap, " ", sectit, " ", pgtit))
         stmt = cls == "balance_sheet" ? "BalanceSheet" : cls == "income_statement" ? "IncomeStatement" :
                cls == "cash_flow" ? "CashFlow" : nothing
