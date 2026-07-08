@@ -13,6 +13,10 @@
 function _ifrs_norm(s::AbstractString)
     t = lowercase(strip(String(s)))
     t = replace(t, r"[*†‡]" => "")
+    # Drop a leading enumerator — German statements number their lines ("1. Konzernumsatz", "A. Langfristige
+    # Vermögenswerte", "II. Firmenwerte"). Strip a leading arabic/roman/letter item marker + separator so the
+    # label matches on its text.
+    t = replace(t, r"^\s*(?:\d{1,2}|[ivxlcivxlc]{1,4}|[a-z])[.)]\s+" => "")
     t = replace(t, r"\s+" => " ")
     return strip(t)
 end
@@ -77,6 +81,7 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         # owners'-of-parent equity subtotal ("Summe Eigenkapital der Aktionäre der …") — tested before the
         # whole-equity "Summe Eigenkapital" it contains.
         (occursin("eigenkapital der aktionäre", t) || occursin("eigenkapital der anteilseigner", t) ||
+         occursin("eigentümer des mutterunternehmens", t) ||   # Fielmann "Eigenkapital der Eigentümer des Mutterunternehmens"
          occursin(r"den (?:aktionären|anteilseignern).{0,30}zustehende", t)) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
         occursin("summe eigenkapital", t)                      && return C("ifrs-full:Equity", :credit)
         occursin("nicht beherrschende anteile", t)             && return C("ifrs-full:NoncontrollingInterests", :credit)
@@ -110,11 +115,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
             return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
         # --- German (Konzern-Gewinn- und Verlustrechnung). Note the attribution lines ("Nicht beherrschende
         # Anteile" / "Aktionäre der …") sit under a "Davon entfallen auf:" heading; test the NCI split first.
-        (startswith(t, "umsatzerlöse") || t == "umsatz")       && return C("ifrs-full:Revenue", :credit)
+        (startswith(t, "umsatzerlöse") || startswith(t, "konzernumsatz") || t == "umsatz")  && return C("ifrs-full:Revenue", :credit)
         startswith(t, "umsatzkosten")                          && return C("ifrs-full:CostOfSales", :debit)
         startswith(t, "bruttoergebnis")                        && return C("ifrs-full:GrossProfit", :credit)
         occursin("nicht beherrschende anteile", t)             && return C("ifrs-full:ProfitLossAttributableToNoncontrollingInterests", :credit)
-        (occursin("aktionäre der", t) || occursin("anteilseigner der", t)) && return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
+        (occursin("aktionäre der", t) || occursin("anteilseigner der", t) ||
+         occursin("eigentümer des mutterunternehmens", t)) && return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
         (occursin("vor ertragsteuern", t) || occursin("vor steuern", t))   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         (occursin("gewinn nach steuern", t) || occursin("ergebnis nach steuern", t) ||
          occursin("jahresüberschuss", t) || occursin("konzernergebnis", t) ||

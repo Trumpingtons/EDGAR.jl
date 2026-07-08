@@ -159,8 +159,16 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
             hdr[(c.row, cc)] = strip(c.text)                     # header ("Six months ended" over both year cols)
         end                                                     # must reach every column it covers
     end
-    # value columns: ≥2 monetary body cells (a Note column of "13" / "32 (a)" is not monetary, so it is excluded)
-    valcols = [c for c in 0:nc-1 if count(r -> _ifrs_ismoney(get(grid, (r, c), ""), loc), 0:nr-1) >= 2]
+    # value columns: ≥2 monetary body cells (a bare-number Note column of "13" / "32 (a)" is not monetary, so it
+    # is excluded). Two German-layout traps are dropped explicitly:
+    #   • a PERCENTAGE column — a "Veränderung zum Vorjahr" %-change column (Fielmann "11,9%") parses as numbers;
+    #   • a NOTE-reference column whose refs are PARENTHESISED ("(30)", Fielmann) and so read as negative amounts
+    #     — excluded by its header ("Textziffer im Anhang" / "Ziffer" / "Anhang"), since the values can't tell it
+    #     apart from a real column.
+    _ispctcol(c) = count(r -> occursin('%', get(grid, (r, c), "")), 0:nr-1) >= 2
+    _isnotecol(c) = occursin(r"(?i)textziffer|\bziffer\b|\banhang\b|anmerkung|\bnote", join([get(grid, (r, c), "") for r in 0:min(2, nr-1)], " "))
+    valcols = [c for c in 0:nc-1 if !_ispctcol(c) && !_isnotecol(c) &&
+                                    count(r -> _ifrs_ismoney(get(grid, (r, c), ""), loc), 0:nr-1) >= 2]
     isempty(valcols) && return Fact[]
     firstbody = something(findfirst(r -> any(_ifrs_ismoney(get(grid, (r, c), ""), loc) for c in valcols), 0:nr-1),
                           1) - 1                                # 0-based index of the first row carrying values
@@ -253,10 +261,16 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
 end
 
 # Consolidated-statements page range, TOC-first (the AR outline's statement bookmarks), heading-scan fallback.
-# A German consolidated-statement heading appears in BOTH word orders across filers: a PREFIX "Konzern-<stmt>"
-# (Siemens) and a genitive SUFFIX "<stmt> des/der … Konzerns" (Volkswagen). Requiring des/der in the suffix
-# keeps out the segment breakdown "<stmt> NACH Konzernbereichen". `_dekonz(stem)` builds the two-order regex.
-_dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]{0,25}konzerns?\\b"
+# A German consolidated-statement heading marks the group in one of three shapes across filers, all built by
+# `_dekonz(stem)`:
+#   • PREFIX  "Konzern-<stmt>"                         — Siemens
+#   • SUFFIX  "<stmt> des/der … Konzerns"              — Volkswagen ("… des Volkswagen Konzerns")
+#   • GRUPPE  "<stmt> <Company>-Gruppe"                — BASF ("… BASF-Gruppe")
+# The des/der in the Konzern suffix excludes the segment breakdown "<stmt> NACH Konzernbereichen"; the Gruppe
+# form is kept TIGHT (one company word then "-Gruppe", no gap) so a prose "… in der Kapitalflussrechnung …"
+# near a stray "Gruppe" cannot match.
+_dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]{0,25}konzerns?\\b|" *
+                "\\b(?:$stem)\\s+[\\wäöüÄÖÜ]{1,20}-?gruppe\\b"
 const _IFRS_STMT_TITLES = [r"(?i)consolidated (?:income )?statement of (?:financial position|profit or loss|comprehensive income|cash flows|changes in equity)",
                             r"(?i)consolidated income statement", r"(?i)consolidated balance sheet",
                             # German consolidated set — the "Konzern-" prefix OR the "… des Konzerns" suffix
@@ -346,8 +360,8 @@ function _ifrs_statement_pages(doc; window::Int = 14)
     # (a P&L + its comprehensive-income sibling still count as one type). Reused by the TOC validation + scan.
     pgtypes = Dict{Int,Set{Symbol}}()
     for pg in doc.pages
-        s = Set{Symbol}(); txt = _cas_pagetext(pg)
-        for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end
+        s = Set{Symbol}(); txt = _ifrs_spacedtext(pg)          # SPACED (not tight): the suffix/Gruppe forms
+        for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end   # need whitespace to match
         (isempty(s) || length(s) >= 3) || (pgtypes[Int(pg.page)] = s)
     end
     _ntypes(lo, hi) = length(reduce(union, (get(pgtypes, p, Set{Symbol}()) for p in lo:hi); init = Set{Symbol}()))
@@ -396,7 +410,7 @@ the benchmark check values the extractor did not itself derive. English analogue
 function _ifrs_doc_juris(doc)
     for pg in doc.pages
         occursin(r"(?i)konzern[-\s]*(?:bilanz|kapitalflussrechnung|gewinn[-\s]*und[-\s]*verlustrechnung)",
-                 _cas_pagetext(pg)) && return ("DE", "de")
+                 _ifrs_spacedtext(pg)) && return ("DE", "de")
     end
     return ("HK", "en")
 end
