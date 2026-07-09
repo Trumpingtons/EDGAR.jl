@@ -30,10 +30,12 @@ end
     discover(::FilingsXBRLOrg; lei=nothing, country=nothing, year=nothing, size=100) -> Vector{FilingHandle}
 
 Find ESEF filings on [filings.xbrl.org](https://filings.xbrl.org). Filter by `lei` (the filer's Legal
-Entity Identifier) and/or `country` (ISO-3166 alpha-2, e.g. `"FI"`) — both applied server-side — and
-optionally `year` (matched client-side against each filing's `period_end`). `size` caps how many
-filings are requested. Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each carrying
-the report-package URL; fetch one with [`fetch_filing`](@ref).
+Entity Identifier) and/or `country` (ISO-3166 alpha-2, e.g. `"FI"`), and optionally `year` — **all applied
+server-side**. `year` matches `period_end == <year>-12-31`, i.e. a calendar (31 December) year-end, which is
+the near-universal case for these annual reports; a non-December fiscal year-end is *not* matched by `year`
+(query without it and filter the returned handles by `period_end`). `size` caps how many filings are
+requested. Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each carrying the report-package
+URL; fetch one with [`fetch_filing`](@ref).
 
 An entity often has several packages for one period (language variants, amendments); they are all
 returned, so pick the one you want (e.g. the English `…-en.zip`).
@@ -51,6 +53,10 @@ function discover(::FilingsXBRLOrg; lei::Union{AbstractString,Nothing}=nothing,
     pairs = Pair{String,String}[]
     lei === nothing || push!(pairs, "entity.identifier" => String(lei))
     country === nothing || push!(pairs, "country" => String(country))
+    # `year` server-side: filings.xbrl.org accepts only `eq` on period_end (no gte/lte), so match the calendar
+    # year-end. This is the fix for the pagination trap — a client-side year filter over one page of `size`
+    # returns nothing when that page happens to hold no filings from `year` (the API is not ordered by period).
+    year === nothing || push!(pairs, "period_end" => "$(year)-12-31")
     url = "$_FXBRL_BASE/api/filings?include=entity&page%5Bsize%5D=$size" * _fxbrl_filter(pairs)
     doc = _get_json(url)
 
