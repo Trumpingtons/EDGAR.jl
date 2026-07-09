@@ -1376,10 +1376,106 @@ is captured here so the chapter maps the whole layer, not only its first capabil
 
 \chapter{Events: Announcements, News and Alerts}
 
-\section{Company Announcements}
+A company's \emph{events} are the dated, discrete developments that move its value \emph{between} the
+scheduled financial statements --- a dividend, an acquisition, a profit warning, a change of control or of
+board. This chapter treats them as first-class objects along three axes: what the company itself
+\textbf{announces} (\S\ref{sec:events-announcements}), what third parties \textbf{report} about it (News),
+and how a watcher is \textbf{alerted} to either (Alerts) --- closing with the \textbf{Event-Study
+Methodology} that turns a dated event into an estimate of its effect on the share price. The first three are
+event \emph{sources}; the last is the \emph{method} that reads them.
+
+\section{Company Announcements}\label{sec:events-announcements}
+
+A \textbf{company announcement} is a \emph{first-party}, event-driven disclosure: the issuer itself telling
+the market that something material has happened, at a precise moment and on the record. It is the most
+authoritative event source --- the company is at once the \emph{actor} and the \emph{reporter}, so there is
+no intermediary to mis-date or mis-frame it --- and it is categorically distinct from the \emph{scheduled}
+periodic reports that fill the jurisdiction chapters of this book. A periodic report arrives on the calendar
+(annually, half-yearly, quarterly) and recounts a \emph{period}; an announcement is \emph{ad hoc}, triggered
+by the event, and filed \emph{whenever} the event occurs.
+
+Every regulator in this book runs such a channel --- a different name, the same purpose, and the same
+cross-jurisdiction unification \texttt{EDGAR.jl} already applies to periodic filings:
+\begin{itemize}
+  \item \textbf{United States} --- \textbf{Form 8-K} (\emph{Current Reports}), with \textbf{Form 6-K} for
+    foreign private issuers: material events filed at any time (acquisitions, results, leadership changes,
+    Regulation-FD disclosures).
+  \item \textbf{Hong Kong} --- \textbf{Announcements and Notices}: \emph{results} announcements (condensed
+    face statements, weeks ahead of the full report), dividends, board-meeting dates and poll results.
+  \item \textbf{Japan} --- the extraordinary report (\emph{rinji h\=okokusho}), filed on material events.
+  \item \textbf{South Korea} --- the major-matters report, on material events and board / shareholder
+    resolutions.
+  \item \textbf{China} --- major-event announcements (board and shareholder resolutions); reachable by
+    discovery today.
+\end{itemize}
+
+What makes announcements the natural anchor for the rest of the chapter is that each carries exactly the two
+things an \textbf{event study} requires: a \emph{precise date} --- the announcement timestamp, the $t=0$ of
+an event window --- and a \emph{first-party account} of what happened, unmediated by a reporter's framing.
+The announcement \emph{is} the event; the \textbf{News} section adds the third-party echo (and the lag and
+spin that come with it), \textbf{Alerts} the delivery, and \textbf{Event-Study Methodology} the measurement
+of what the announcement did to the price.
+
+At present \texttt{EDGAR.jl} reaches announcements two ways: by \textbf{discovery} ---
+\texttt{filings\_by\_cik(cik; forms = "8-K")} and each system's equivalent --- and, for the human-readable
+body, through the press-release and exhibit accessors (\texttt{press\_releases}, \texttt{exhibits}) that
+lift the announcement text out of an 8-K or 6-K. Coverage is uneven by design: some channels are fully
+text-extracted, others are discovery-and-metadata only for now. The sections that follow build on this
+first-party layer.
+
 \section{News}
 \section{Alerts}
-\section{Event-Study Methodology}
+\section{Event-Study Methodology}\label{sec:event-study}
+
+The three preceding sections deliver \emph{events} --- dated, first-party announcements and the news and
+alerts around them. An \textbf{event study} is the method that turns such a date into a number: it measures
+whether, and by how much, a discrete corporate event moved a security's price, by isolating the
+\emph{abnormal} return --- the part of the return attributable to the event, over and above what the market
+would have delivered anyway. The technique is a workhorse of empirical finance (Fama, Fisher, Jensen and
+Roll, 1969; MacKinlay, 1997) and the analytical \emph{north-star} of \texttt{EDGAR.jl}: with disclosures
+unified across a dozen jurisdictions and prices from the same provider surface (\S\ref{sec:oracle-api} --- the
+\texttt{:yahoo} backend also serves quotes), one event study can span markets no single national dataset
+reaches.
+
+\paragraph{The anatomy.} An event study fixes the event date at $t = 0$ and works over two disjoint windows
+around it. The \textbf{estimation window} (say $[-250,-30]$ trading days) is a clean pre-event stretch used to
+\emph{fit} a model of the security's \emph{normal} return --- how it behaves in the event's absence. The
+\textbf{event window} (often as tight as $[-1,+1]$: narrow enough to attribute the move to the event, wide
+enough to admit pre-announcement leakage and next-day drift) is where that model is \emph{applied} and the
+surprise is read off.
+
+\paragraph{Abnormal return.} The core quantity is the gap between security $i$'s realised and expected
+(normal) return on day $t$:
+\[
+  AR_{i,t} \;=\; R_{i,t} \;-\; \mathrm{E}\!\left[R_{i,t} \mid \mathcal{X}_t\right],
+\]
+where the conditioning $\mathcal{X}_t$ \emph{is} the choice of normal-return model. Three are standard, in
+rising sophistication: the \textbf{constant-mean} model ($\mathrm{E}[R_{i,t}] = \bar{R}_i$); the
+\textbf{market model}, which regresses the security on a market index over the estimation window,
+\[
+  R_{i,t} \;=\; \alpha_i + \beta_i R_{m,t} + \varepsilon_{i,t}, \qquad
+  \mathrm{E}\!\left[R_{i,t}\mid R_{m,t}\right] \;=\; \hat{\alpha}_i + \hat{\beta}_i R_{m,t};
+\]
+and multi-factor models (Fama--French and successors) that also net out size, value and momentum. The market
+model is the usual default --- enough to strip market-wide co-movement without over-fitting.
+
+\paragraph{Aggregation and inference.} A single day rarely tells the story, so abnormal returns are summed
+across the event window into the \textbf{cumulative abnormal return},
+\[
+  CAR_i(t_1,t_2) \;=\; \sum_{t=t_1}^{t_2} AR_{i,t},
+\]
+and, across a sample of $N$ comparable events (say every dividend cut in a sector), averaged into the
+\textbf{cumulative average abnormal return}, $\overline{CAR}(t_1,t_2) = \tfrac{1}{N}\sum_{i=1}^{N}
+CAR_i(t_1,t_2)$. A $t$- or rank-test then asks whether that average is distinguishable from zero --- whether
+the market, on average, judged the event to matter.
+
+\paragraph{Status.} This section frames the method; the machinery is dedicated design work and is
+\textbf{not yet built}: a \texttt{prices}/returns surface over the provider backend, an
+\texttt{event\_study()} entry point pairing a jurisdiction's announcements (\S\ref{sec:events-announcements})
+with the subsequent price reaction, and the estimation and inference above. What follows will develop each
+normal-return model, the window and calendar-alignment choices (aligning trading days across exchanges and
+holiday schedules is itself a cross-jurisdiction subtlety), and the significance tests --- then work a
+cross-market example end to end.
 
 \chapter{Common API}
 \label{sec:api}
@@ -3748,6 +3844,20 @@ report(; scheme = :morningstar)                     # documented standardisation
 not its exchange symbol, so the external benchmarks take the ticker explicitly (\texttt{"AAPL"},
 \texttt{"CTY1S.HE"}). The same applies to AlphaVantage below.
 
+\paragraph{Pitfall --- the ticker must be the \emph{same entity} as the locator.} Because the caller pairs
+the \texttt{ticker} with the \texttt{locator} by hand, a \textbf{same-name entity mismatch} silently
+benchmarks two \emph{different} companies. Sweden's two Volvos are the cautionary case: a GLEIF search for
+``Volvo AB'' resolves to \textbf{Volvo Car AB} (\texttt{VOLCAR-B.ST}, the Geely-owned car maker, LEI
+\texttt{5299000EAMGGBEYP7J33}), a distinct listed company from \textbf{AB Volvo} (\texttt{VOLV-B.ST}, the
+trucks group). Pairing Volvo Car's package with \texttt{VOLV-B.ST} yields large, \emph{non-uniform} deltas
+(Assets $45.7\,\%$, Revenue $24.0\,\%$, Net income $69.4\,\%$) --- the tell-tale signature of a wrong entity,
+never a standardisation gap (those are small and per-line). With the correct \texttt{VOLCAR-B.ST} all five
+metrics agree to $0.000\,\%$. The lesson, exactly as the \textbf{USD trap} demands a currency check
+(\S\ref{sec:india-yahoo}): confirm the \texttt{ticker} resolves to the \emph{same entity} as the
+\texttt{locator} --- \textbf{both by legal name} (the LEI's registered name matches the listing) \textbf{and
+by a headline-magnitude sanity check} (revenue/assets in the right ballpark) --- before trusting, or
+faulting, any delta.
+
 \subsection{Morningstar --- the source behind Yahoo's fundamentals}\label{sec:morningstar}
 
 Yahoo Finance is a display layer; the fundamentals it serves --- the balance sheet, income statement and cash
@@ -4018,6 +4128,111 @@ the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
 \noindent Internal and external validation are complementary: the accounting rules catch a filing that is
 self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while the data sources
 (\S\ref{sec:validation-sources}) catch a value that is internally consistent but wrong against the world.
+
+\chapter{Accounting-Adjustment Schemes}
+\label{sec:schemes}
+
+A company's reported figures are not the last word. ``Revenue'' is gross for one filer and net of excise for
+another; ``equity'' may or may not fold in hybrid capital; ``net income'' may be attributable-to-parent or
+all-in. A \textbf{scheme} is a named methodology for reconciling such figures to a common basis, so that
+filers, data providers and periods compare like with like --- and for \emph{adjusting} accounting numbers
+onto an \emph{economic} basis. It is a first-class, pluggable axis in \texttt{EDGAR.jl}: the \texttt{scheme}
+keyword threads through the validation oracle (\S\ref{sec:oracle-api}), and the sections below give each
+scheme its own treatment, with room for more over time.
+
+\section{Overview}
+\label{sec:schemes-overview}
+
+Two figures can disagree without either being wrong. When \texttt{EDGAR.jl} reports gross
+\texttt{ifrs-full:Revenue} and Yahoo reports the same company's revenue \emph{net} of excise duty, the gap is
+not an extraction error --- it is a \emph{standardisation}: Yahoo's provider (Morningstar) applies a
+documented rule that re-templates the as-filed number. A scheme is the object that \emph{names} such a rule
+set, so a divergence can be attributed to a methodology rather than mistaken for a defect.
+
+\paragraph{The axis.} In code a scheme is a \texttt{Symbol} passed to \texttt{validate}/\texttt{report}:
+\begin{itemize}
+  \item \texttt{:none} (the strict default) --- no scheme; figures are compared exactly, and \emph{every}
+    divergence counts. Use it to hunt for genuine extraction regressions.
+  \item \texttt{:morningstar} --- the standardisation behind Yahoo's and AlphaVantage's fundamentals
+    (\S\ref{sec:schemes-morningstar}); documented gaps are annotated, not faulted.
+  \item \texttt{:sternstewart} --- the Stern~Stewart EVA adjustments onto an economic basis
+    (\S\ref{sec:schemes-sternstewart}).
+  \item \texttt{:auto} --- resolve to the provider's \texttt{default\_scheme} (\texttt{:morningstar} for both
+    current providers).
+\end{itemize}
+
+\paragraph{Documenting and adjusting.} A scheme has two faces, and \texttt{SCHEME\_REGISTRY} --- a
+\texttt{Dict} keyed by scheme --- carries both. It \emph{documents}: for each \texttt{(issuer, metric)} pair
+it records the reason the scheme's figure legitimately departs from the as-filed one, so \texttt{report},
+run under a scheme, flags a registered pair \texttt{◑~documented} (printed with its reason) and does \emph{not}
+count it, while an unregistered divergence still shows \texttt{✗~MISMATCH}. And it \emph{adjusts}: the same
+entry carries the transformation that produces that figure, so a scheme applied to an as-filed number yields
+the standardised or economic one --- net-of-excise revenue under Morningstar, economic NOPAT under
+Stern~Stewart. The two faces are one object seen twice: the reason an adjusted figure differs, and the
+adjustment that makes it differ. This is why the panel stays green on understood differences while still
+catching anything new --- each entry both \emph{explains} the gap and \emph{is} the rule that opens it.
+
+\section{Morningstar}
+\label{sec:schemes-morningstar}
+
+Morningstar is the \textbf{default} scheme (\texttt{default\_scheme} is \texttt{:morningstar} for both the
+Yahoo and AlphaVantage providers), because both serve \emph{Morningstar-standardised} fundamentals: every
+filer's statements are re-cast into one template (the \emph{Global Equity Data Definitions}), which is what
+lets a cross-jurisdiction cross-check agree on the unambiguous totals yet diverge on specific sub-lines. The
+mechanics of that template --- the field definitions, and the class of deltas it produces (net-of-excise
+revenue, recomputed retained earnings, deferred-tax gross-ups, hybrid-capital treatment) --- are treated in
+depth where the oracle needs them: \S\ref{sec:morningstar} and the field appendix
+(Appendix~\ref{ch:morningstar-fields}).
+
+As a \emph{scheme}, Morningstar is the set of \texttt{(issuer, metric)} entries under
+\texttt{SCHEME\_REGISTRY[:morningstar]} --- the documented divergences the standardisation produces, each with
+its reason: Heineken's excise-netted revenue, Citycon's hybrid-capital equity, Maruti's and Reliance's excise
+gross-up, Siemens' continuing-operations revenue, Volkswagen's all-in net income. Running
+\texttt{report(; scheme = :morningstar)} is the ``expected-world'' view: green unless a \emph{new},
+undocumented delta appears.
+
+\section{Stern Stewart}
+\label{sec:schemes-sternstewart}
+
+Where Morningstar \emph{standardises} accounting figures, Stern~Stewart \emph{re-derives} them onto an
+economic basis. Its \textbf{Economic Value Added (EVA)} framework applies a long list of adjustments --- of
+the order of a hundred in the full methodology, a handful in practice --- that convert reported profit and
+capital into \emph{economic} NOPAT and \emph{invested capital}: capitalising R\&D and (historically)
+operating leases, adding back goodwill amortisation and non-recurring charges, unwinding excess provisions
+and LIFO reserves, and treating such items as investments rather than expenses. The goal is not
+comparability across filers but a truer measure of \emph{value creation} --- earnings above the charge for
+the capital employed --- which is why the scheme belongs as much to valuation as to validation.
+
+Selecting \texttt{scheme = :sternstewart} applies these EVA adjustments in place of Morningstar's
+standardisation, so a figure is read on the economic basis rather than the accounting one. It is the second
+occupant of the axis, and the one that shows its full breadth: a scheme is not only a way to \emph{reconcile}
+to a provider's template but a way to \emph{re-derive} the numbers themselves --- standardisation and economic
+adjustment under one mechanism (\S\ref{sec:schemes-overview}).
+
+\section{Custom Schemes}
+\label{sec:schemes-custom}
+
+The registry is open: a user can define a scheme without touching the package. A scheme is a \texttt{Symbol}
+key mapping \texttt{(issuer, metric)} pairs to reasons, so registering one is a single assignment ---
+
+\begin{lstlisting}
+# Define a house standardisation: the divergences you have reviewed and accept.
+EDGAR.SCHEME_REGISTRY[:house] = Dict(
+    ("XYZ.PA", "Revenue") => "XYZ books agency revenue gross; our template nets it — reviewed 2026-06.",
+)
+
+report(; provider = :yahoo, scheme = :house)   # your reviewed gaps -> "documented"; anything else -> MISMATCH
+\end{lstlisting}
+
+\noindent This is useful in its own right: a desk can encode \emph{its own} ledger of accepted differences
+--- the ones it has checked and signed off --- and run the panel against that, so ``green'' means ``only the
+divergences we already understand.'' A house scheme can also \emph{extend} a provider's: seed it from
+\texttt{SCHEME\_REGISTRY[:morningstar]} and add your own entries on top.
+
+A custom scheme also supplies its own \emph{adjustment functions} --- the transformations that re-cast a
+figure onto the house basis --- so a desk methodology becomes a computation, not merely a list of accepted
+gaps. The design point holds throughout: a scheme is data and functions registered under a name, never an
+edit to \texttt{validate}/\texttt{report} themselves.
 
 \part{Jurisdictions and Filing Systems}
 
