@@ -2052,6 +2052,89 @@ julia> open_filing(path)          # reload from disk and view in the browser
 \end{lstlisting}
 
 
+\subsection{\texttt{discover}}
+\label{sec:api-discover}
+
+\paragraph{Signature}
+\begin{center}
+\textbf{\sig{discover(source::FilingSource; kwargs...) -> Vector\{FilingHandle\}}}
+\end{center}
+
+\noindent \texttt{discover} is the \emph{discovery} half of the cross-system lifecycle
+\texttt{company\_search}~$\rightarrow$~\texttt{discover}~$\rightarrow$~\texttt{fetch\_filing}
+(\S\ref{sys:extraction}): it turns a filer identifier plus optional criteria into a list of
+\texttt{FilingHandle}s (\S\ref{sec:api-types}), each a portable pointer to one report --- system tag,
+entity, reference, period-end and the fetchable URL --- that \texttt{fetch\_filing} then downloads and
+parses. It is dispatched on a \texttt{FilingSource}, the pluggable seam that knows \emph{how} a
+jurisdiction's repository is queried; the SEC path needs no \texttt{discover} (it addresses filings
+directly by CIK/accession and uses \texttt{full\_text\_search}/\texttt{filings\_by\_cik} instead,
+\S\ref{sec:api-search}), and a \texttt{Generic} filing is opened from a path or URL with no discovery
+step at all (\S\ref{ch:generic}).
+
+Because each repository publishes its own identifiers and filters, the keyword arguments are
+\emph{source-specific}. The generic signature above is the shared contract --- named filters in, a
+newest-first \texttt{Vector\{FilingHandle\}} out; Table~\ref{tab:discover-sources} lists the filter
+keywords accepted by each built-in \texttt{FilingSource}. Handles are returned newest-first; results are
+paginated transparently where the underlying API pages (e.g.\ \texttt{FilingsXBRLOrg}), so a \texttt{limit}
+(or \texttt{size}/\texttt{rowrange}) caps how many you get rather than exposing raw pages.
+
+\begin{longtable}{@{}p{0.24\textwidth}p{0.16\textwidth}p{0.52\textwidth}@{}}
+\caption{Filter keyword arguments accepted by \texttt{discover} for each built-in \texttt{FilingSource}. Required arguments are \textbf{bold}; the rest are optional with sensible defaults.}\label{tab:discover-sources}\\
+\toprule
+\textbf{FilingSource} & \textbf{Jurisdiction} & \textbf{Filter keyword arguments} \\
+\midrule
+\endfirsthead
+\multicolumn{3}{@{}l}{\emph{\dots\ Table~\ref{tab:discover-sources} continued}}\\
+\toprule
+\textbf{FilingSource} & \textbf{Jurisdiction} & \textbf{Filter keyword arguments} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{3}{r@{}}{\emph{continued on next page \dots}}\\
+\endfoot
+\bottomrule
+\endlastfoot
+\texttt{FilingsXBRLOrg}    & ESEF (EU)   & \texttt{lei}, \texttt{country}, \texttt{year}, \texttt{limit} \\
+\texttt{NSM}               & UK (UKSEF)  & \textbf{\texttt{lei}}, \texttt{category}, \texttt{year}, \texttt{from}, \texttt{to}, \texttt{size} \\
+\texttt{CompaniesHouseApi} & UK          & \textbf{\texttt{company\_number}}, \texttt{category}, \texttt{type}, \texttt{year}, \texttt{from}, \texttt{to}, \texttt{size} \\
+\texttt{CompaniesHouseBulk}& UK          & \textbf{\texttt{date}}, \texttt{company\_number}, \texttt{limit} \\
+\texttt{EDINETApi}         & Japan       & \textbf{\texttt{date}}, \texttt{edinet\_code}, \texttt{doc\_type} \\
+\texttt{OpenDARTApi}       & Korea       & \texttt{corp\_code}, \texttt{stock\_code}, \textbf{\texttt{bgn\_de}}, \texttt{end\_de}, \texttt{pblntf\_ty}, \texttt{reprt\_code}, \texttt{annual\_only} \\
+\texttt{CNINFOFilings}     & China       & \texttt{code}, \texttt{name}, \texttt{board}, \texttt{from}, \texttt{to}, \texttt{years}, \texttt{pagesize} \\
+\texttt{HKEXFilings}       & Hong Kong   & \texttt{code}, \texttt{name}, \texttt{market}, \texttt{from}, \texttt{to}, \texttt{years}, \texttt{rowrange}, \texttt{report} \\
+\texttt{NSEFilings}        & India       & \textbf{\texttt{symbol}}, \texttt{period}, \texttt{index}, \texttt{consolidated}, \texttt{audited} \\
+\texttt{IntegratedFilings} & India       & \textbf{\texttt{symbol}}, \texttt{consolidated}, \texttt{audited}, \texttt{prefer\_ixbrl} \\
+\texttt{RFSDFilings}       & Russia      & \texttt{inn}, \texttt{name}, \texttt{ticker}, \texttt{year}, \texttt{limit}, \texttt{filed}, \texttt{eligible}, \texttt{outlier} \\
+\texttt{CBRBankFilings}    & Russia      & \texttt{regnum}, \texttt{name}, \texttt{ogrn}, \texttt{form}, \texttt{dt} \\
+\end{longtable}
+
+\noindent For \texttt{code}/\texttt{name}/\texttt{symbol}-style sources one identifier is required (the row
+gives the alternatives); for the ESEF aggregator all filters are optional (an empty query walks the whole
+index). See each jurisdiction's chapter for the semantics of its keywords, and \S\ref{sys:esef} for the
+\texttt{FilingsXBRLOrg} keyword reference in full.
+
+\paragraph{Return Value.}
+A \texttt{Vector\{FilingHandle\}} (\S\ref{sec:api-types}), newest first. Each \texttt{FilingHandle} carries
+\begin{itemize}[nosep]
+  \item \texttt{system} --- the \texttt{FilingSystem} tag that will parse it (e.g.\ \texttt{ESEF()})
+  \item \texttt{entity} --- an \texttt{EntityId} (LEI, CIK, stock code, \dots)
+  \item \texttt{ref} --- the source's own filing reference
+  \item \texttt{url} --- the fetchable report / report-package URL
+  \item \texttt{period\_end} --- the reporting date (used for the newest-first sort)
+  \item \texttt{country} --- ISO country, where the source supplies it
+\end{itemize}
+
+\paragraph{Julia Example:} Discover a European filer's ESEF packages by LEI and year, prefer the English
+report package, then fetch and extract.
+
+\begin{lstlisting}
+julia> hs = discover(FilingsXBRLOrg(); lei = "549300P8N0P6KDGTJ206", year = 2023)  # Citycon Oyj
+julia> h  = first(filter(h -> endswith(h.url, "-en.zip"), hs))   # prefer the English package
+julia> f  = fetch_filing(h)
+julia> facts(f; classify = true, labels = true)
+\end{lstlisting}
+
+
 \subsection{\texttt{extract\_section}}
 
 \begin{center}
