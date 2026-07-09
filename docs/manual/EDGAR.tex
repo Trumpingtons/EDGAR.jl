@@ -1477,6 +1477,79 @@ normal-return model, the window and calendar-alignment choices (aligning trading
 holiday schedules is itself a cross-jurisdiction subtlety), and the significance tests --- then work a
 cross-market example end to end.
 
+\chapter{Beyond the Filing: Non-Regulatory Sources}
+\label{sec:beyond-filing}
+
+Everything to this point has read \emph{filings} --- documents a company is \emph{required} to publish, in a
+form a regulator prescribes and (mostly) an auditor signs. But the extraction substrate --- the
+\texttt{StructuredDocument} of sections, tables, text blocks and figures behind every PDF and HTML path ---
+does not care whether the document is a 10-K or a product brochure. \textbf{Regulatory-ness is a property of
+the \emph{source}, not of the machinery.} The regulator-specific part is a thin layer on top: the label
+vocabularies, the statement classification, the filing-system discovery. Beneath it sits a general
+document-intelligence engine. This chapter follows that thread out of the regulated perimeter --- to
+marketing and product material, investor communications, and the company's own voluntary output --- and asks
+the one question that changes everything once the line is crossed: \emph{what stands behind the page when no
+regulator, and no oracle, does?}
+
+\section{The Source Taxonomy}
+\label{sec:source-taxonomy}
+
+A source is not merely a file; it carries a \emph{provenance} that fixes how far it may be trusted unaided.
+Four classes recur across this book, and they order themselves along a single trade-off --- \textbf{authority}
+against \textbf{immediacy} (Table~\ref{tab:source-taxonomy}).
+
+\begin{table}[h]
+\centering\small
+\caption{The source taxonomy. Down the table, external validatability falls away and immediacy rises.}
+\label{tab:source-taxonomy}
+\begin{tabular}{@{}p{0.24\textwidth}p{0.13\textwidth}p{0.12\textwidth}p{0.26\textwidth}p{0.13\textwidth}@{}}
+\toprule
+\textbf{Source class} & \textbf{Mandate} & \textbf{Author} & \textbf{Independently validatable?} & \textbf{Trades for} \\
+\midrule
+Regulatory filing (the jurisdiction chapters) & required & first-party & \textbf{yes} --- XBRL / parser oracles, accounting cross-foot (\S\ref{sec:validation-sources}) & authority \\
+Timely disclosure / announcement (\S\ref{sec:events-announcements}) & semi-required & first-party & partly --- reconciles to the next filing & promptness \\
+Third-party (news, analysts) & none & third-party & corroboration only & an outside view \\
+Voluntary / promotional (marketing, product, investor decks) & none & first-party & \textbf{no} & richness \& intent \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The top row is where every capability in this manual has lived: mandated, standardised, audited, and ---
+decisively --- \textbf{externally validatable}. The facts pipeline earns its trust from oracles
+(\S\ref{sec:validation-sources}): the regulator's own parse, an independent XBRL processor, a data provider's
+standardised template. Move down and those anchors fall away one by one --- a news article can only be
+\emph{corroborated}, a marketing PDF has \emph{no} counterpart to check against at all.
+
+What is gained going down is real: timeliness (a product page or a results deck precedes the annual report by
+months), forward-looking and qualitative content a filing never carries, and a direct view of the company's
+own framing and intent. What is lost is the safety net. So the governing rule of this chapter is a posture,
+not a technique: \textbf{when a source is not oracle-backed, that must be said plainly.} The credibility this
+tool earns on regulated data must not leak silently into claims drawn from unverifiable pages. The extraction
+is identical; the \emph{confidence label} on the result is not.
+
+\section{Regulated and Non-Regulated Narratives}
+\label{sec:narrative-provenance}
+
+The distinction bites hardest in \emph{narrative} text (the \textbf{Narratives} chapter). A filing's prose ---
+the MD\&A, the risk factors, the auditor's report --- is \textbf{regulated disclosure}: mandated,
+liability-bearing, and (for the audit opinion) independently attested. A CEO's letter in a brochure, a product
+description, an ESG campaign page is \textbf{non-regulated}: voluntary and promotional, governed by advertising
+and fair-competition rules rather than securities-disclosure law, and attested by no one. Both are prose the
+same text pipeline reads identically; they are not prose to be \emph{weighed} identically.
+
+The clean way to carry this is as an axis on the narrative itself --- a \emph{provenance / authority} tag on
+each \texttt{Narrative} (\texttt{regulated} vs \texttt{promotional}) --- so a downstream consumer (a summary,
+a retrieval index, an LLM judge) can weight by trust rather than treat every sentence as equally authoritative.
+The mechanism lives with the narratives layer; this chapter supplies the non-regulated end of its range. The
+line is not always crisp: a promotional claim about emissions or product safety may still be legally
+constrained --- but by a \emph{different} body of rules, with a different remedy, than a financial misstatement.
+
+\section{Marketing and Product Documents}
+\label{sec:marketing-sources}
+
+\section{Investor Communications}
+\label{sec:investor-comms}
+
 \chapter{Common API}
 \label{sec:api}
 
@@ -8616,6 +8689,28 @@ of these stays framed here and deep in its own package.
 \chapter{Fiscal and Legal Context}
 
 \chapter{Valuation Methods}
+
+\section{Economic Profits Approach}
+Economic Profit Model or the Value-Based Management (VBM) approach to valuation.
+\begin{equation*}
+  \text{Enterprise Value}=\text{Value of Assets in Place}+ \text{Present Value of Future Economic Profits}
+\end{equation*}
+This model is a powerful alternative to the standard Discounted Cash Flow (DCF) model because it slices a company's total value into two distinct components:
+\begin{enumerate}
+  \item Value of Assets in Place. This represents the tangible capital that has already been invested in the business (e.g., factories, machinery, software, inventory). If the company were to never grow again and simply earn exactly its cost of capital on what it already owns, its value would just be the book value of these assets.
+\item Discounted Economic Profits (Value of Growth/Franchise).
+This is where the magic happens. A company doesn't create premium value just by growing; it creates value by earning a return on capital that is higher than its cost of capital.
+\begin{itemize}
+  \item The Math: If a company invests USD 100 million into a project but only generates a 5\% return when investors expect 10\%, it is destroying value.
+  \item This part of the equation calculates the present value of all future economic profits (returns above the cost of capital). It represents the market premium—why a company like Apple or Microsoft is worth vastly more than just the physical cost of their buildings and inventory.
+\end{itemize}
+\end{enumerate}
+In a standard DCF model, a massive chunk of a company's calculated value comes from a "Terminal Value" guess far out in the future, which can be highly unreliable.
+
+By using the Economic Profit framework, you anchor the valuation in concrete reality (Assets in Place) and isolate the speculative part to how much Economic Profit the company can generate from future opportunities. It makes it incredibly clear whether a stock is trading on current operational strength or future hype.
+
+
+\subsection{Economic and Accounting Profits}
 
 
 % ===========================================================================
