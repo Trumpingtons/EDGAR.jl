@@ -2297,8 +2297,7 @@ julia> hits = find_paragraphs(f, "supply chain")
 julia> EDGAR._paragraphs(f.content)[hits[1].index]      # jump back to the matched paragraph
 
 # 10. Validate the headline figures against Yahoo Finance (pulls the latest 10-K).
-julia> import EDGAR.YahooOracle                          # part of the package; YFinance is a dependency
-julia> YahooOracle.validate(:sec, row.cik, "WMT")       # Assets/Equity/Revenue/NetIncome/OperCashFlow
+julia> validate(:sec, row.cik, "WMT")                   # provider = :yahoo (default); Assets/Equity/Revenue/NetIncome/OperCashFlow
 \end{lstlisting}
 
 \noindent Every step succeeds against the live filing; Table~\ref{tab:lifecycle}
@@ -2322,7 +2321,7 @@ records what each produces (the public API only, no internals).
 8. Load Balance Sheet $\to$ browser & \texttt{read} + open           & renders the table \\
 \midrule
 9. Search prose          & \texttt{find\_paragraphs(f, "supply chain")} & matching paragraphs, each with its \texttt{index} \\
-10. Validate vs Yahoo    & \texttt{YahooOracle.validate(:sec, cik, "WMT")} & headline totals agree (BS / IS / CF) \\
+10. Validate vs Yahoo    & \texttt{validate(:sec, cik, "WMT")} & headline totals agree (BS / IS / CF) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -3539,8 +3538,8 @@ fact (or headline metric) with the \texttt{EDGAR} value, the reference value, th
 \toprule
 \textbf{Reference} & \textbf{Kind} & \textbf{Coverage} & \textbf{Extra deps} \\
 \midrule
-\textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 1\% & global (100+ countries) & \texttt{YFinance} \\
-\textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 1\% & US-strong (SEC filers) & none \\
+\textbf{Yahoo Finance} (via \texttt{YFinance.jl}) & \emph{data} check --- independent pipeline; headline totals within 0.1\% & global (100+ countries) & \texttt{YFinance} \\
+\textbf{AlphaVantage} (official REST API) & \emph{data} check --- independent pipeline; headline totals within 0.1\% & US-strong (SEC filers) & none \\
 filings.xbrl.org \textbf{xBRL-JSON}, produced by \textbf{Arelle} (the reference XBRL processor) & \emph{parser} check --- same document, independent parser; fact-level parity & ESEF + UKSEF (EU, UK) & none \\
 \textbf{Arelle run locally} (the reference XBRL processor, as a subprocess) & \emph{parser} check --- same document, fact-level \textbf{incl.\ dimensions} (covers the SCE) & \textbf{any} XBRL package (incl.\ KR, JP) & Arelle CLI \\
 \bottomrule
@@ -3558,7 +3557,9 @@ against an entirely separate data pipeline. Two ship --- \textbf{Yahoo Finance} 
 mis-mapped, and we frequently conclude \texttt{EDGAR.jl} made the better call --- the aim is to \emph{track}
 (and sometimes beat) the benchmark, not to defer to it. It is nonetheless the \emph{only} kind that can catch
 a filer \emph{mis-tagging} a value (a reference parser reads the same wrong tag), but only
-\emph{approximately}, since providers round and normalize --- hence the 1\% tolerance.
+\emph{approximately}, since providers round and normalize --- hence the \textbf{0.1\%} tolerance (genuine
+matches in fact agree to \(0.000\%\); the tolerance leaves headroom for provider rounding, while documented
+standardisation gaps are handled by the \texttt{scheme} registry, \S\ref{sec:oracle-api}).
 
 \subsection{Facts, not computed aggregates}\label{sec:benchmark-facts}
 
@@ -3613,11 +3614,68 @@ only a subtotal and relegates the pieces to an un-parsed note, EDGAR is containe
 cannot recover a line the page never shows. The principle is the same as for XBRL (report what the source
 defines, synthesize nothing), but a PDF binds us to the filing's \emph{layout}, not just to the taxonomy.
 
+\subsection{The \texttt{validate} / \texttt{report} API}\label{sec:oracle-api}
+
+The independent-data cross-check is a single pair of verbs, \texttt{validate} and \texttt{report}, over a
+\textbf{\texttt{provider}} axis --- Yahoo Finance and AlphaVantage, each with its own subsection below. It
+compares the five headline totals EDGAR extracts against a provider's \emph{standardized} fundamentals,
+concept-mapped per taxonomy. Both verbs live directly in \texttt{EDGAR} (no submodule, no \texttt{include});
+\texttt{using EDGAR} makes them available.
+
+\begin{lstlisting}
+validate(system, locator, ticker; provider = :yahoo, scheme = :none) -> Vector{OracleRow}
+report(firms = default_firms(provider); provider = :yahoo, scheme = :none) -> Bool
+\end{lstlisting}
+
+\noindent \texttt{validate} returns one \texttt{OracleRow} per metric --- \texttt{(statement, metric,
+period\_end, edgar, reference, rel\_diff, match)} --- where \texttt{reference} is the provider's value
+(\texttt{nothing} if the provider does not cover it) and \texttt{match} is agreement within
+\textbf{0.1\%}. \texttt{report} runs a panel, prints each comparison grouped by statement, and returns
+\texttt{true} when there are no \emph{unexpected} mismatches. \texttt{system} is the filing system
+(\texttt{:sec}, \texttt{:esef}, \texttt{:dart}, \texttt{:india}, \texttt{:china}, \texttt{:hkex},
+\texttt{:germany}); \texttt{locator} the CIK/LEI/code (or a local report path for the PDF systems); and
+\texttt{ticker} the provider's exchange symbol (a \texttt{Filing} knows its \texttt{EntityId}, not its
+symbol --- see \emph{Why a \texttt{ticker}?} below).
+
+\begin{table}[h]
+\centering\small
+\caption{The \texttt{provider} axis --- the independent fundamentals backend \texttt{validate}/\texttt{report}
+compare against.}
+\label{tab:oracle-providers}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{\texttt{provider}} & \textbf{Backend} & \textbf{Coverage} & \textbf{Requires} \\
+\midrule
+\texttt{:yahoo} (default) & \texttt{YFinance.jl} (a package dep) & global, 100+ countries & nothing --- ready on \texttt{using EDGAR} \\
+\texttt{:alphavantage} & EDGAR's cached REST fetcher (no dep) & US-strong (SEC filers) & \texttt{ALPHA\_VANTAGE\_API\_KEY} (degrades gracefully if unset) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering\small
+\caption{The \texttt{scheme} axis --- how a provider's documented standardisation gaps are treated. Both
+providers serve Morningstar-standardised fundamentals (\S\ref{sec:morningstar}), so their \texttt{default\_scheme}
+is \texttt{:morningstar}. Registry entries are \texttt{(ticker, metric)} pairs carrying the reason a figure
+legitimately diverges.}
+\label{tab:oracle-schemes}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{\texttt{scheme}} & \textbf{Effect} \\
+\midrule
+\texttt{:none} (default) & Strict/exact: every mismatch counts (a documented gap shows \texttt{✗ MISMATCH}). \\
+\texttt{:morningstar} & Apply the standardisation registry: documented gaps print \texttt{◑ documented} with their reason and are \emph{not} counted. \\
+\texttt{:sternstewart} & The Stern Stewart EVA standardisation scheme (reserved; registry currently empty). \\
+\texttt{:auto} & Resolve to the provider's \texttt{default\_scheme} (\texttt{:morningstar} for both). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Yahoo Finance}\label{sec:yahoo-oracle}
 
 An external \emph{benchmark} with the broadest reach: Yahoo Finance covers 100+ countries, so it cross-checks
-SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals
-within a 1\% tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
+SEC and ESEF filers alike. It compares the headline totals against Yahoo's standardized fundamentals within a
+\textbf{0.1\%} tolerance (Yahoo rounds). It needs \texttt{YFinance.jl} in the active environment --- a
 dependency that is \emph{earned}, because Yahoo has no official API: its endpoints are undocumented and
 cookie/crumb-gated, and \texttt{YFinance.jl} encapsulates that fragile access.
 
@@ -3667,16 +3725,17 @@ figure actually is.}
 headline totals against Yahoo:
 
 \begin{lstlisting}
-import EDGAR.YahooOracle    # part of the package; YFinance is a dependency
+using EDGAR    # validate/report live in EDGAR; YFinance is a package dependency
 
 # 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
 f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
 select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR's numbers
 
 # 2. Cross-check the five headline totals against Yahoo (an independent pipeline).
-v = YahooOracle.validate(:sec, "320193", "AAPL")   # CIK or LEI + the Yahoo ticker
-filter(r -> !r.match && r.yahoo !== nothing, v)    # empty => all agree within 1%
-YahooOracle.report()                               # or the built-in multi-firm panel
+v = validate(:sec, "320193", "AAPL")                # CIK or LEI + the Yahoo ticker; provider = :yahoo
+filter(r -> !r.match && r.reference !== nothing, v) # empty => all agree within 0.1%
+report()                                            # the built-in multi-firm panel (strict; scheme = :none)
+report(; scheme = :morningstar)                     # documented standardisation gaps -> "◑ documented"
 \end{lstlisting}
 
 \paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
@@ -3760,47 +3819,58 @@ dividends.'' \\
     \emph{Eigenkapital der Anteilseigner} (which carries the $15{,}155$~Mio~€ hybrid-capital tranche).
 \end{itemize}
 
+\paragraph{Hybrid capital in equity --- Citycon, the clean case.}\label{par:citycon-equity} The same
+equity/hybrid-capital rule appears in its \emph{purest} form outside Germany, in the Finnish REIT
+\textbf{Citycon Oyj} (\texttt{CTY1S.HE}, LEI \texttt{549300P8N0P6KDGTJ206}), carried in the default oracle
+panel. Its \emph{total} \texttt{ifrs-full:Equity} $=1{,}858.5$~Mio~€ matches Yahoo's
+\texttt{StockholdersEquity} to the euro. The metric, however, selects the \emph{first} candidate,
+\texttt{ifrs-full:EquityAttributableToOwnersOfParent} $=1{,}265.7$~Mio~€ --- and because Citycon's
+\texttt{ifrs-full:NoncontrollingInterests} is \emph{nil}, the entire $592.8$~Mio~€ residual
+($\Delta\approx31.9\,\%$) is \textbf{hybrid perpetual capital}: equity that IFRS presents \emph{outside}
+``attributable to owners of parent'' but that Morningstar folds into \texttt{StockholdersEquity}. This is
+\emph{not} an extraction defect --- \texttt{EDGAR.jl} reads both the total and the owners-of-parent line
+correctly; it is the identical standardisation as Volkswagen's equity delta (above), stripped of the NCI
+noise that muddies VW's case. It is registered as a documented \texttt{:morningstar} scheme entry
+(\S\ref{sec:oracle-api}), so \texttt{report(; scheme = :morningstar)} flags it \texttt{◑ documented} with
+its reason rather than counting it a mismatch; under the strict default (\texttt{scheme = :none}) it shows
+as a mismatch, as every standardisation gap does.
+
 \noindent The practical rule for any Yahoo cross-check: anchor on the unambiguous totals, and read a persistent
 sub-line gap as a Morningstar \emph{definition} to look up (Table~\ref{tab:morningstar-defs}), not as a bug. The
 \emph{complete} standardised field set --- all 700-odd fields across the six industry templates, by statement,
 with codes --- is catalogued in Appendix~\ref{ch:morningstar-fields}.
 
-\subsection{AlphaVantage}
+\subsection{AlphaVantage}\label{sec:alphavantage-oracle}
 
-A second external \emph{benchmark}, strongest for US (SEC) filers. Unlike Yahoo it needs \textbf{no extra
-dependency}: AlphaVantage is an official, documented REST API (one keyed GET returns clean JSON), so
-it uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key
-allows only \(\sim\)25 calls/day, so the on-disk response cache makes re-runs free, and a fresh run is
-paced under the \(\sim\)5/minute limit (a burst of four network calls per minute; cached calls never
-block). Set the free key once (it falls back to the \texttt{ALPHA\_VANTAGE\_API\_KEY} environment
-variable):
+A second external \emph{benchmark} (\texttt{provider = :alphavantage}), strongest for US (SEC) filers. Unlike
+Yahoo it needs \textbf{no extra dependency}: AlphaVantage is an official, documented REST API (one keyed GET
+returns clean JSON), so it uses \texttt{EDGAR}'s own cached fetcher directly. That caching matters --- the free key allows only \(\sim\)25 calls/day, so the on-disk
+response cache makes re-runs free, and a fresh run is paced under the \(\sim\)5/minute limit (a burst of
+four network calls per minute; cached calls never block). Set the free key once (read from the
+\texttt{ALPHA\_VANTAGE\_API\_KEY} environment variable); with \emph{no} key the provider degrades
+gracefully --- \texttt{report} warns once and prints every metric as \texttt{(none)} rather than aborting.
 
 \begin{lstlisting}[style=term]
 # https://www.alphavantage.co/support/#api-key
 % export ALPHA_VANTAGE_API_KEY="your-key"
-% julia --project=. src/sources/alphavantage_oracle.jl   # the built-in US panel
 \end{lstlisting}
 
-\paragraph{Validating the extraction.} Extract a US filer with \texttt{EDGAR}, then cross-check against
-AlphaVantage's fundamentals:
-
 \begin{lstlisting}
-include(joinpath(pkgdir(EDGAR), "src", "sources", "alphavantage_oracle.jl"))
-using .AlphaVantageOracle
+using EDGAR
 
 # 1. EDGAR side -- Microsoft's latest 10-K, classified.
 f = fetch_filing("789019", first(filings_by_cik("789019"; forms = "10-K")).accession)
 select_statement(facts(f; classify = true), "IncomeStatement")
 
 # 2. Cross-check against AlphaVantage (cached; a fresh run is paced under the free tier).
-v = AlphaVantageOracle.validate(:sec, "789019", "MSFT")   # CIK + the AlphaVantage symbol
-filter(r -> !r.match && r.alphavantage !== nothing, v)    # real disagreements only
-AlphaVantageOracle.report()                               # or the built-in US panel
+v = validate(:sec, "789019", "MSFT"; provider = :alphavantage)   # CIK + the AlphaVantage symbol
+filter(r -> !r.match && r.reference !== nothing, v)              # real disagreements only
+report(; provider = :alphavantage)                               # the built-in US panel
 \end{lstlisting}
 
 \noindent On the default panel the balance-sheet totals match the extraction to \texttt{0.000\%}.
-A metric AlphaVantage did not return (e.g. a throttled call) has \texttt{alphavantage === nothing} and
-is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter above.
+A metric AlphaVantage did not return (e.g. a throttled call, or no API key) has \texttt{reference ===
+nothing} and is \emph{not} counted as a mismatch --- hence the \texttt{!== nothing} filter above.
 Throttle responses (which AlphaVantage returns with HTTP~200) are purged from the cache so they cannot
 poison a later run.
 
@@ -5199,9 +5269,10 @@ are the IAS~1 vertical layout throughout.
 \label{sec:esef-nl-yahoo}
 
 Beyond the same-document Arelle parity above, each filer is cross-checked against the \emph{independent}
-Yahoo/Morningstar pipeline (\S\ref{sec:yahoo-oracle}, \S\ref{sec:morningstar}; \(\sim\)1\% tolerance). Heineken
+Yahoo/Morningstar pipeline (\S\ref{sec:yahoo-oracle}, \S\ref{sec:morningstar}; \(0.1\%\) tolerance). Heineken
 (FY2024, \texttt{HEIA.AS}) matches on four of the five headline metrics to the euro, but \textbf{Revenue differs
-by $20.57\%$} --- \texttt{EDGAR} €35{,}955\,m against Yahoo's €29{,}821\,m (Table~\ref{tab:heineken-yahoo}).
+by $20.57\%$} --- \texttt{EDGAR} €35{,}955\,m against Yahoo's €29{,}821\,m (Table~\ref{tab:heineken-yahoo})
+--- a gap registered as a documented \texttt{:morningstar} scheme entry (\S\ref{sec:oracle-api}).
 A fifth of the top line is a large gap, and it is worth showing exactly where it comes from, because the whole
 of it --- to a €0 residual --- is a single reconciling item: \textbf{excise duty}.
 
@@ -5392,9 +5463,8 @@ julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"
 julia> using .ArelleEsefOracle
 julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
 
-#     External benchmark -- Yahoo Finance totals (YahooOracle is part of the package):
-julia> import EDGAR.YahooOracle
-julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
+#     External benchmark -- Yahoo Finance totals (validate/report are part of the package):
+julia> validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")    # provider = :yahoo (default)
 \end{lstlisting}
 
 \noindent Every step succeeds against the live filing; Table~\ref{tab:esef-lifecycle} records what each
@@ -5414,7 +5484,7 @@ produces. Steps 1--3 are the extraction pipeline, step 4 is text search, and ste
 3. Facts + classify        & \texttt{facts(f; classify=true)} $\to$ \texttt{select\_statement} & IFRS facts across BS / IS / CF \\
 4. Search prose            & \texttt{find\_paragraphs(f, "sustainability")} & matching paragraphs, each with its \texttt{index} \\
 5a. Validate (Arelle)      & \texttt{ArelleEsefOracle.statements(lei)}           & BS 76/76, IS 42/42, CF 70/70 (100\%) \\
-5b. Validate (Yahoo)       & \texttt{YahooOracle.validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
+5b. Validate (Yahoo)       & \texttt{validate(:esef, lei, "LIGHT.AS")} & Assets / Equity / Revenue / Net income / Oper.\ cash flow all match \\
 \bottomrule
 \end{tabular}
 \end{table}

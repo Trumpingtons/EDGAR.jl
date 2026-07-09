@@ -4,8 +4,10 @@ using HTTP
 using JSON3
 using Base64
 using Dates
+using Printf
 using Sockets
 import EzXML   # qualified-only; used by forty_f.jl / subsidiaries.jl / sections.jl HTML text extraction
+import YFinance   # qualified-only; backend for the :yahoo fundamentals oracle provider (fundamentals_yahoo.jl)
 
 # Light module shell: shared dependencies, the include list, and the public exports.
 # Files are split by the FilingSystem seam (see docs/dev/filing-systems.md):
@@ -91,7 +93,9 @@ include("core/export.jl")                   # 🟢 save_selection + DuckDB exten
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 include("core/auditor.jl")                   # 🟢 auditor(): generic cross-jurisdiction accessor → AuditorInfo; routes to each system's reader (SEC: _sec_auditor)
 include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
-include("sources/yahoo_oracle.jl")           # 🟢 module YahooOracle — independent-data validation (validate/report) over YFinance; provider=:yahoo backend
+include("sources/fundamentals_oracle.jl")    # 🟢 independent-data validation (validate/report) — shared machinery + provider axis
+include("sources/fundamentals_yahoo.jl")     # 🟢   ├─ :yahoo provider (YFinance backend; global, default)
+include("sources/fundamentals_alphavantage.jl") # 🟢   └─ :alphavantage provider (cached REST; US-strong, key-gated, graceful)
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, RFSDFilings, rfsd_download, set_rfsd_local, set_rfsd_cache_dir, ras_label, rfsd_flags, CBRBankFilings, cbr_bank_directory, cbr_line, Generic, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
@@ -114,6 +118,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        press_releases, PressRelease, press_release_html, press_release_text, exhibits, sixk_cover,
        extract_items_from_sections,
        TwentyF, tf_items, tf_section,
-       TenK, tk_items, tk_section
+       TenK, tk_items, tk_section,
+       validate, report, OracleRow
 
 end # module

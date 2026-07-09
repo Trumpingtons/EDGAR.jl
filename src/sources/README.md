@@ -4,20 +4,22 @@ Helpers to **reassure yourself that EDGAR.jl's extraction is correct** by compar
 independent references. Most are deliberately **not part of the EDGAR module** (not `include`d by
 `src/EDGAR.jl`), so they add **no dependencies** and you load them on demand.
 
-**Exception — `yahoo_oracle.jl` is now folded into the package** as the submodule `EDGAR.YahooOracle`
-(YFinance is a hard dependency, since it also becomes EDGAR's prices/quotes source). `using EDGAR`
-makes `EDGAR.YahooOracle.validate` / `.report` available with no separate `include`. The remaining
-oracles below stay on-demand. Stray `.jl` files here are ignored by the package loader.
+**Exception — the fundamentals oracle is now folded into the package.** `fundamentals_oracle.jl` (plus
+one file per provider) is `include`d by `src/EDGAR.jl`, so `using EDGAR` makes `validate` / `report`
+available with no separate `include`. It is an **independent-data** check across a `provider` axis:
+`validate(system, locator, ticker; provider = :yahoo | :alphavantage)`. `:yahoo` (YFinance, a hard
+dependency since it also becomes EDGAR's prices/quotes source) is the global default; `:alphavantage`
+(official REST API, key-gated, US-strong) adds no dependency and degrades gracefully with no key. The
+remaining oracles below stay on-demand. Stray `.jl` files here are ignored by the package loader.
 
 | File | Oracle | Kind | Coverage | Extra deps |
 |---|---|---|---|---|
 | `arelle_esef_oracle.jl` | filings.xbrl.org **xBRL-JSON** (produced by **Arelle**, the reference XBRL processor) | *parser* check — same document, independent parser; fact-level parity | ESEF + UKSEF (EU, UK) | none (uses EDGAR's own HTTP+JSON) |
 | `arelle_local_oracle.jl` | **Arelle run locally** (the reference XBRL processor, as a subprocess) | *parser* check — same document, fact-level **including dimensions** (covers the statement of changes in equity) | **any** XBRL filing — SEC (US), ESEF/UKSEF (EU/UK), KR/DART, JP/EDINET | **Arelle CLI** (external tool) |
-| `yahoo_oracle.jl` | **Yahoo Finance** (via `YFinance.jl`) — folded in as `EDGAR.YahooOracle` | *data* check — independent pipeline; headline totals within 1% | global (100+ countries) | `YFinance` (**package dep**) |
-| `alphavantage_oracle.jl` | **AlphaVantage** (official REST API) | *data* check — independent pipeline; headline totals within 1% | US-strong (SEC filers) | none (uses EDGAR's own HTTP+JSON) |
+| `fundamentals_oracle.jl` + `fundamentals_yahoo.jl` / `fundamentals_alphavantage.jl` | **fundamentals oracle** — `validate`/`report` over a `provider` axis (`:yahoo` = **Yahoo Finance** via `YFinance.jl`; `:alphavantage` = **AlphaVantage** REST API) | *data* check — independent pipeline; headline totals within 1% | Yahoo global (100+ countries); AlphaVantage US-strong | `YFinance` (**package dep**, for `:yahoo`); `:alphavantage` uses EDGAR's own HTTP+JSON |
 
-The Arelle oracle confirms we *read the filing right*; the Yahoo and AlphaVantage oracles confirm the
-*numbers match the outside world*. The Arelle approach mirrors
+The Arelle oracle confirms we *read the filing right*; the fundamentals oracle (Yahoo/AlphaVantage)
+confirms the *numbers match the outside world*. The Arelle approach mirrors
 [`ESEF.jl`](https://github.com/trr266/ESEF.jl)'s `pluck_xbrl_json` (MIT, TRR 266) — credit there.
 
 **`arelle_esef_oracle.jl` vs `arelle_local_oracle.jl`.** Both pit EDGAR.jl against **Arelle**, the reference
@@ -76,31 +78,23 @@ f, rows = ArelleLocalOracle.validate_dart("005930"; year = 2023)  # any other XB
 filter(r -> !r.match, rows)                                        # any discrepancies
 ```
 
-**Yahoo** (folded into the package — YFinance is a hard dependency, no `include` needed):
+**Fundamentals oracle** (folded into the package — `validate`/`report` live in `EDGAR`, no `include`
+needed). The `provider` kwarg selects the backend:
 
 ```julia
 using EDGAR
-import EDGAR.YahooOracle
-YahooOracle.validate(:sec, "320193", "AAPL")          # CIK + Yahoo ticker
-YahooOracle.report()                                  # the built-in panel
+validate(:sec, "320193", "AAPL")                        # provider = :yahoo (default), global
+report()                                                # the built-in Yahoo panel
+
+validate(:sec, "320193", "AAPL"; provider = :alphavantage)   # AlphaVantage (US-strong)
+report(; provider = :alphavantage)                      # the built-in AlphaVantage panel
 ```
 
-**AlphaVantage** (needs only EDGAR — runs in the package's own environment; set your free key first):
-
-```bash
-export ALPHA_VANTAGE_API_KEY="your-key"               # https://www.alphavantage.co/support/#api-key
-julia --project=. src/sources/alphavantage_oracle.jl  # runs the built-in US panel
-```
-
-```julia
-include(joinpath(pkgdir(EDGAR), "src", "sources", "alphavantage_oracle.jl"))
-using .AlphaVantageOracle
-AlphaVantageOracle.validate(:sec, "320193", "AAPL")   # CIK + AlphaVantage symbol
-AlphaVantageOracle.report()                           # the built-in panel
-```
+`:yahoo` needs no configuration (YFinance is a hard dependency). `:alphavantage` reads a free key from
+`ALPHA_VANTAGE_API_KEY` (`export ALPHA_VANTAGE_API_KEY="your-key"`, https://www.alphavantage.co/support/#api-key);
+with no key it warns once and reports every metric as `(none)` rather than aborting. On the free key a
+fresh AlphaVantage run is paced under the ~5/minute limit (a minute or two) and then served from cache.
 
 Both default panels return/print near-exact agreement (Arelle 100% fact parity; Yahoo 0 mismatches on
-the headline totals it covers). The AlphaVantage panel matches the headline totals it returns (balance
-sheet verified to 0.000%); on the free key a fresh run is paced under the ~5/minute limit (a minute or
-two) and then served from cache. Set a contact `User-Agent` first if you haven't:
-`export EDGAR_UA="you@example.com"` (or call `set_user_agent`).
+the headline totals it covers; AlphaVantage balance sheet verified to 0.000%). Set a contact
+`User-Agent` first if you haven't: `export EDGAR_UA="you@example.com"` (or call `set_user_agent`).

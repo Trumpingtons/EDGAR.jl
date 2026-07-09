@@ -2161,10 +2161,9 @@ end
 
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
-# do-it-yourself oracles — Arelle is still an on-demand include (needs only EDGAR); the Yahoo oracle
-# is now part of the package (EDGAR.YahooOracle, YFinance a hard dep), aliased here for the live tests.
+# do-it-yourself oracles — Arelle is still an on-demand include (needs only EDGAR); the fundamentals
+# oracle is now part of the package (EDGAR.validate/report, provider=:yahoo default, YFinance a hard dep).
 include(joinpath(@__DIR__, "..", "src", "sources", "arelle_esef_oracle.jl"))   # -> ArelleEsefOracle (needs only EDGAR)
-const YahooOracle = EDGAR.YahooOracle
 @testset "network (live)" begin
 @testset "Russia: RFSD discovery + fetch (R2, live)" begin
     # discover (MOEX ISS ticker→INN) → fetch (DuckDB partition query over httpfs) → facts, end-to-end.
@@ -2386,8 +2385,8 @@ end
     # ── Oracle validation: BS / IS / CF for fresh filers, via validate() (see src/sources/) ──
     @testset "oracle validation: US 10-K Coca-Cola (Yahoo)" begin
         try
-            y = YahooOracle.validate(:sec, "21344", "KO")
-            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            y = EDGAR.validate(:sec, "21344", "KO")
+            present = [r for r in y if r.edgar !== nothing && r.reference !== nothing]
             @test !isempty(present)
             @test all(r -> r.match, present)                                  # every covered total agrees
             @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))  # BS/IS/CF covered
@@ -2401,8 +2400,8 @@ end
             a = ArelleEsefOracle.statements("5493003DJ1G01IMQ7S28")
             @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
             @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
-            y = YahooOracle.validate(:esef, "5493003DJ1G01IMQ7S28", "JUP.L")
-            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            y = EDGAR.validate(:esef, "5493003DJ1G01IMQ7S28", "JUP.L")
+            present = [r for r in y if r.edgar !== nothing && r.reference !== nothing]
             @test !isempty(present)
             @test all(r -> r.match, present)
             @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))
@@ -2416,8 +2415,8 @@ end
             a = ArelleEsefOracle.statements("549300072P3J1X8NZO35")
             @test Set(r.statement for r in a) == Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
             @test all(r -> r.total > 0 && r.matched == r.total, a)            # 100% fact parity vs Arelle
-            y = YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
-            present = [r for r in y if r.edgar !== nothing && r.yahoo !== nothing]
+            y = EDGAR.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
+            present = [r for r in y if r.edgar !== nothing && r.reference !== nothing]
             @test !isempty(present)
             @test all(r -> r.match, present)
             @test all(st -> any(r -> r.statement == st && r.match, present), (:bs, :is, :cf))
