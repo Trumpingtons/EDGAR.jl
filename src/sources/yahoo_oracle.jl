@@ -236,14 +236,35 @@ const DE_FIRMS = [
     ("BASF SE",       :germany, "~/EDGAR-Reports/DE-BASFBericht2023.pdf",       "BAS.DE",  "DE"),
 ]
 
+# ESEF (retrievable) panel — France/Italy/Spain/Netherlands large-caps discovered on filings.xbrl.org by
+# LEI and parsed through the standard `ifrs-full` path. Non-bank, EUR-reporting (no USD/ADR trap), so the
+# five headline metrics map cleanly to Yahoo/Morningstar. All match to <=0.01% EXCEPT Heineken Revenue: a
+# documented Morningstar standardisation (net-of-excise) — EDGAR reports gross `ifrs-full:Revenue`, Yahoo
+# serves `heia:RevenueLessExciseTaxExpense`, the €6.1bn excise pass-through (manual §Netherlands validation).
+const EU_FIRMS = [
+    ("L'Oréal SA",       :esef, "529900JI1GG6F7RKVI53", "OR.PA",   "FR"),
+    ("Moncler S.p.A.",   :esef, "815600EBD7FB00525B20", "MONC.MI", "IT"),
+    ("Inditex SA",       :esef, "549300TTCXZOGZM2EY83", "ITX.MC",  "ES"),
+    ("Heineken N.V.",    :esef, "724500K5PTPSST86UQ23", "HEIA.AS", "NL"),
+]
+
 const _STMT_LABEL = Dict(:bs => "BalanceSheet", :is => "IncomeStatement", :cf => "CashFlow")
+
+# (ticker, metric) pairs where EDGAR and Yahoo legitimately disagree because Morningstar applies a
+# documented standardisation — NOT extraction defects. Allow-listed so `report` stays green unless a
+# *new* metric breaks; each entry cites the manual section that reconciles it. A pair that unexpectedly
+# starts matching is harmless (prints ✓); one that keeps diverging is expected and not counted.
+#   • Heineken Revenue: EDGAR reports gross `ifrs-full:Revenue`; Yahoo serves `heia:RevenueLessExcise‑
+#     TaxExpense` (net of the €6.1bn alcohol-excise pass-through). Manual §Netherlands validation.
+const EXPECTED_MISMATCHES = Set([("HEIA.AS", "Revenue")])
 
 """
     report(firms = FIRMS) -> Bool
 
 Run [`validate`](@ref) over a panel of filers, print each metric's EDGAR-vs-Yahoo comparison grouped
-by statement, and return whether there were no mismatches (metrics Yahoo doesn't cover are reported
-but not counted against the result).
+by statement, and return whether there were no *unexpected* mismatches. Metrics Yahoo doesn't cover are
+reported but not counted; documented Morningstar standardisations in [`EXPECTED_MISMATCHES`](@ref) are
+flagged (`◑ documented`) but likewise not counted against the result.
 """
 function report(firms = FIRMS)
     nfail = 0
@@ -258,13 +279,15 @@ function report(firms = FIRMS)
             elseif r.yahoo === nothing
                 @printf("   [%-15s] %-12s EDGAR %+.6g  @%s   Yahoo: (none)\n", tag, r.metric, r.edgar, r.period_end)
             else
-                r.match || (nfail += 1)
+                expected = !r.match && (ticker, r.metric) in EXPECTED_MISMATCHES
+                r.match || expected || (nfail += 1)
+                mark = r.match ? "✓" : expected ? "◑ documented" : "✗ MISMATCH"
                 @printf("   [%-15s] %-12s EDGAR %+.6g   Yahoo %+.6g   Δ%.3f%%  %s\n",
-                        tag, r.metric, r.edgar, r.yahoo, 100r.rel_diff, r.match ? "✓" : "✗ MISMATCH")
+                        tag, r.metric, r.edgar, r.yahoo, 100r.rel_diff, mark)
             end
         end
     end
-    @printf("\nYahoo cross-check: %d mismatch(es)\n", nfail)
+    @printf("\nYahoo cross-check: %d unexpected mismatch(es)\n", nfail)
     return nfail == 0
 end
 

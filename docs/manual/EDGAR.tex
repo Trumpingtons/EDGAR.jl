@@ -4864,6 +4864,16 @@ The same split as everywhere in this chapter applies: the account-form \emph{bil
 (PCG)} statutory format for the \emph{comptes sociaux} (usually PDF at the \emph{greffe}); a listed group's
 consolidated \textbf{IFRS} \emph{bilan consolidé}, inside the URD, is \textbf{report-form}.
 
+\paragraph{Validation.} \textbf{L'Or\'eal} (\texttt{OR.PA}, LEI \texttt{529900JI1GG6F7RKVI53}, FY2024) is the
+worked French ESEF case, and its report package is instructive twice over. First, it is a plain
+\texttt{ifrs-full} parse --- \texttt{discover(FilingsXBRLOrg(); lei)} \(\to\) \texttt{fetch\_filing} \(\to\)
+\texttt{facts} --- whose balance sheet cross-foots and matches Yahoo/Morningstar on all five headline metrics
+to \(\Delta\le 0.01\%\) (Assets, Equity, Revenue, Net income, Operating cash flow). Second, its serializer
+(``PomdocPro'') \emph{single-quotes} every inline-XBRL attribute; a double-quote-only attribute reader drops
+every fact and yields an \emph{empty} filing, so L'Or\'eal is the regression witness for the both-quote-styles
+fix in the shared iXBRL parser (\S\ref{sec:api-discover} pipeline). It is carried in the \texttt{EU\_FIRMS}
+oracle panel.
+
 \section{Italy}
 \label{sec:esef-italy}
 
@@ -4958,6 +4968,12 @@ deposited at the \emph{Registro delle Imprese}), not in the ESEF listed filings 
 IFRS-consolidated vs national-GAAP-individual split drawn throughout this chapter. On the PDF route, the
 account-form\,/\,panel-aware two-sided-balance-sheet handling (\S\ref{sec:pdf-classification}) recognises
 both facing halves as \emph{one} statement.
+
+\paragraph{Validation.} \textbf{Moncler} (\texttt{MONC.MI}, LEI \texttt{815600EBD7FB00525B20}, FY2024) is the
+worked Italian ESEF case: a listed IFRS-consolidated report-package parse whose balance sheet cross-foots and
+matches Yahoo/Morningstar on all five headline metrics to \(\Delta\le 0.01\%\). A consumer name with no excise,
+financial-income or insurance-float wrinkle, so gross \texttt{ifrs-full:Revenue} \emph{is} the Morningstar
+revenue. It is carried in the \texttt{EU\_FIRMS} oracle panel.
 
 \section{Spain}
 \label{sec:esef-spain}
@@ -5060,6 +5076,12 @@ stacked} tables --- vertical, not one two-sided table. The genuine account-form 
 trait mandated by law in \textbf{Italy}, \textbf{Germany} and \textbf{France}
 (\S\ref{sec:esef-italy-tshape}, \S\ref{sec:esef-germany-tshape}, \S\ref{sec:esef-france-tshape}) --- but
 \emph{not} in modern Spanish GAAP.
+
+\paragraph{Validation.} \textbf{Inditex} (\texttt{ITX.MC}, LEI \texttt{549300TTCXZOGZM2EY83}, FY2024/25, year
+ended 31~January) is the worked Spanish ESEF case --- and a good non-December year-end check for
+\texttt{discover}'s any-month-end \texttt{year} matching (\S\ref{sec:api-discover}). Its English report package
+parses on the standard \texttt{ifrs-full} path, cross-foots, and matches Yahoo/Morningstar on all five headline
+metrics to \(\Delta\le 0.01\%\). It is carried in the \texttt{EU\_FIRMS} oracle panel.
 
 \section{Netherlands}
 \label{sec:esef-nl}
