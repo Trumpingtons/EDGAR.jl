@@ -59,8 +59,11 @@ end
 # Parse a start-tag's attribute string into a Dict (attribute names are case-sensitive as written).
 function _attrs(s::AbstractString)
     d = Dict{String,String}()
-    for m in eachmatch(r"([A-Za-z_][\w:.-]*)\s*=\s*\"([^\"]*)\"", s)
-        d[m.captures[1]] = m.captures[2]
+    # Accept both `="…"` and `='…'` — XML permits either, and some iXBRL serializers (e.g. L'Oréal's
+    # PomdocPro) single-quote every inline-fact attribute. A double-quote-only match drops those facts
+    # silently (empty name/contextRef ⇒ the whole filing yields zero facts).
+    for m in eachmatch(r"([A-Za-z_][\w:.-]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", s)
+        d[m.captures[1]] = m.captures[2] === nothing ? m.captures[3] : m.captures[2]
     end
     return d
 end
