@@ -33,17 +33,55 @@ function _year_end_dates(y::Integer)
     return [string(y, "-", lpad(m, 2, '0'), "-", lpad(dpm[m], 2, '0')) for m in 1:12]
 end
 
+# Internal page size for the JSON:API pagination; the caller sees `limit` (how many filings), never pages.
+const _FXBRL_PAGE = 200
+
+# Parse one JSON:API page (`doc`) into [`FilingHandle`](@ref)s, appending to `handles` and skipping filings
+# with no fetchable package. `lei`/`year` are the query's filters — the LEI fallback identifier and a
+# defensive year guard (a no-op given the server-side period_end filter, but it also drops an unparseable
+# period_end when a year was asked for).
+function _fxbrl_page!(handles::Vector{FilingHandle}, doc, lei, year)
+    idof = Dict{String,String}()                       # LEI per included entity, by JSON:API resource id
+    for e in get(doc, :included, ())
+        get(e, :type, "") == "entity" || continue
+        idof[String(e.id)] = String(get(e.attributes, :identifier, ""))
+    end
+    for f in get(doc, :data, ())
+        a = f.attributes
+        pkg = get(a, :package_url, nothing)
+        (pkg === nothing || isempty(String(pkg))) && continue
+        pe = tryparse(Date, String(get(a, :period_end, "")))
+        year === nothing || (pe !== nothing && Dates.year(pe) == year) || continue
+        eid = String(get(f.relationships.entity.data, :id, ""))
+        identifier = get(idof, eid, lei === nothing ? "" : String(lei))
+        push!(handles, FilingHandle(; system = ESEF(), entity = EntityId(:lei, identifier),
+              ref = String(get(a, :fxo_id, String(f.id))), url = _FXBRL_BASE * String(pkg),
+              period_end = pe, country = String(get(a, :country, ""))))
+    end
+    return handles
+end
+
+# The next-page URL from a JSON:API document, or `nothing` on the last page (`links.next` absent or null).
+function _fxbrl_next(doc)
+    haskey(doc, :links) || return nothing
+    nxt = get(doc.links, :next, nothing)
+    (nxt === nothing || (nxt isa AbstractString && isempty(strip(String(nxt))))) ? nothing : String(nxt)
+end
+
 """
-    discover(::FilingsXBRLOrg; lei=nothing, country=nothing, year=nothing, size=100) -> Vector{FilingHandle}
+    discover(::FilingsXBRLOrg; lei=nothing, country=nothing, year=nothing, limit=nothing) -> Vector{FilingHandle}
 
 Find ESEF filings on [filings.xbrl.org](https://filings.xbrl.org). Filter by `lei` (the filer's Legal
 Entity Identifier) and/or `country` (ISO-3166 alpha-2, e.g. `"FI"`), and optionally `year` — **all applied
 server-side**. `year` matches a filing whose `period_end` is *any* month-end of that year (a single
 `period_end in […]` query over the twelve month-ends), so a June/March/January fiscal year-end is caught, not
-only 31 December. `size` caps how many filings are requested (for a bulk `country` query with `year`, a rare
-minority year-end can still fall outside the first `size`; raise `size` or query that `period_end` directly).
-Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each carrying the report-package URL; fetch
-one with [`fetch_filing`](@ref).
+only 31 December.
+
+The API's pagination is handled **transparently** — the whole matching set is returned, following the
+JSON:API `next` links across pages. `limit` caps how many handles you get (default: all matches); pass e.g.
+`limit = 5` for a quick sample of a large `country`. A `lei` query is a handful of packages (one page); a bulk
+`country` query may span many pages. Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each
+carrying the report-package URL; fetch one with [`fetch_filing`](@ref).
 
 An entity often has several packages for one period (language variants, amendments); they are all
 returned, so pick the one you want (e.g. the English `…-en.zip`).
@@ -57,38 +95,24 @@ facts(f; classify = true, labels = true)
 """
 function discover(::FilingsXBRLOrg; lei::Union{AbstractString,Nothing}=nothing,
                   country::Union{AbstractString,Nothing}=nothing,
-                  year::Union{Integer,Nothing}=nothing, size::Integer=100)
+                  year::Union{Integer,Nothing}=nothing, limit::Union{Integer,Nothing}=nothing)
     objs = Any[]
     lei === nothing || push!(objs, (name = "entity.identifier", op = "eq", val = String(lei)))
     country === nothing || push!(objs, (name = "country", op = "eq", val = String(country)))
     # `year` server-side. filings.xbrl.org accepts only `eq`/`in` on period_end (no gte/lte), so match `year`
-    # as `period_end in [<every month-end of the year>]`. This fixes the pagination trap — a client-side year
-    # filter over one page of `size` returns nothing when that page happens to hold no filings from `year` (the
-    # API is not ordered by period) — AND catches non-December fiscal year-ends, all in one request.
+    # as `period_end in [<every month-end of the year>]` — one query that also catches non-December year-ends.
     year === nothing || push!(objs, (name = "period_end", op = "in", val = _year_end_dates(year)))
-    url = "$_FXBRL_BASE/api/filings?include=entity&page%5Bsize%5D=$size" * _fxbrl_filter(objs)
-    doc = _get_json(url)
-
-    # identifier (LEI) per included entity, keyed by its JSON:API resource id.
-    idof = Dict{String,String}()
-    for e in get(doc, :included, ())
-        get(e, :type, "") == "entity" || continue
-        idof[String(e.id)] = String(get(e.attributes, :identifier, ""))
-    end
+    url = "$_FXBRL_BASE/api/filings?include=entity&page%5Bsize%5D=$_FXBRL_PAGE" * _fxbrl_filter(objs)
 
     handles = FilingHandle[]
-    for f in get(doc, :data, ())
-        a = f.attributes
-        pkg = get(a, :package_url, nothing)
-        (pkg === nothing || isempty(String(pkg))) && continue          # no fetchable package
-        pe = tryparse(Date, String(get(a, :period_end, "")))
-        year === nothing || (pe !== nothing && Dates.year(pe) == year) || continue
-        eid = String(get(f.relationships.entity.data, :id, ""))
-        identifier = get(idof, eid, lei === nothing ? "" : String(lei))
-        push!(handles, FilingHandle(; system = ESEF(), entity = EntityId(:lei, identifier),
-              ref = String(get(a, :fxo_id, String(f.id))), url = _FXBRL_BASE * String(pkg),
-              period_end = pe, country = String(get(a, :country, ""))))
+    pages = 0
+    while url !== nothing && pages < 1000               # page backstop (~200k filings) against a runaway `next`
+        doc = _get_json(url); pages += 1
+        _fxbrl_page!(handles, doc, lei, year)
+        (limit !== nothing && length(handles) >= limit) && break
+        url = _fxbrl_next(doc)
     end
+    limit !== nothing && length(handles) > limit && (handles = handles[1:limit])
     sort!(handles; by = h -> something(h.period_end, Date(0)), rev = true)
     return handles
 end
