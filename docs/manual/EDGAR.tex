@@ -5088,7 +5088,98 @@ listed groups present the vertical Model~A, and the ESEF/IFRS consolidated state
 are the IAS~1 vertical layout throughout.
 
 \section{Sweden}
+\label{sec:esef-sweden}
 
+Swedish listed groups (Nasdaq Stockholm and the regulated markets) file their consolidated IFRS annual report
+as ESEF iXBRL; the competent authority is \textbf{Finansinspektionen} (FI), and the reports are carried by
+filings.xbrl.org (unlike Germany). Sweden is in fact the \textbf{largest} ESEF corpus of the jurisdictions in
+this chapter --- on the order of \(1{,}400\) packages, ahead of France, Italy, Spain and the Netherlands --- so
+it is the best-covered, and the natural anchor for a validation pass. As elsewhere a national-GAAP layer sits
+underneath (the \textbf{K3}\,/\,\textbf{RFR~2} single-entity \emph{\aa rsredovisning}, filed at
+\textbf{Bolagsverket}, typically PDF). The one distinctive that shapes a Swedish validation: Sweden is
+\textbf{outside the eurozone}, so the reports are in \textbf{SEK}, not EUR --- and Yahoo's \texttt{.ST} symbols
+serve SEK to match (\S\ref{sec:yahoo-oracle}). Worked figures follow with the ESEF validation (candidate
+filers: H\&M, Atlas~Copco, Volvo).
+
+\subsection{Two accounting flavours: K3\,/\,RFR~2 and IFRS}
+
+\begin{itemize}
+  \item \textbf{Swedish GAAP} --- the \emph{single-entity} statutory accounts (\emph{\aa rsredovisning}), under
+    the \emph{\AA rsredovisningslagen} (ÅRL, 1995:1554) and the \emph{Bokf\"oringsn\"amnden} ``K'' framework:
+    \textbf{K3} (BFNAR~2012:1, \emph{\AA rsredovisning och koncernredovisning}) is the main framework, \textbf{K2}
+    (BFNAR~2016:10) the simplified regime for small companies, and \textbf{RFR~2} (\emph{Redovisning f\"or
+    juridiska personer}) the IFRS-with-carve-outs rules for the \emph{legal-entity} (parent) accounts of a
+    listed group. The statements: \emph{Balansr\"akning}, \emph{Resultatr\"akning}, \emph{Kassafl\"odesanalys},
+    \emph{F\"orvaltningsber\"attelse} (directors' report) and \emph{Noter}. Filed at \emph{Bolagsverket};
+    typically PDF. (On the balance-sheet form, see \S\ref{sec:esef-sweden-tshape}.)
+  \item \textbf{IFRS} --- the \emph{consolidated} group accounts (\emph{koncernredovisning}; RFR~1 supplies the
+    Swedish supplementary rules). This is the ESEF-tagged report, on \texttt{ifrs-full} concepts: \emph{Rapport
+    \"over finansiell st\"allning} (or \emph{Balansr\"akning}), \emph{Rapport \"over resultat} (or
+    \emph{Resultatr\"akning}), \emph{Rapport \"over totalresultat}, \emph{Rapport \"over kassafl\"oden} (or
+    \emph{Kassafl\"odesanalys}) and \emph{Rapport \"over f\"or\"andringar i eget kapital}.
+\end{itemize}
+
+\subsection{Statement vocabulary}
+
+\begin{table}[h]
+\centering
+\caption{Swedish statement vocabulary (IFRS-consolidated and ÅRL/K3 terms).}
+\label{tab:se-vocab}
+\small
+\begin{tabular}{@{}p{0.52\textwidth}p{0.42\textwidth}@{}}
+\toprule
+\textbf{Swedish} & \textbf{Meaning} \\
+\midrule
+\emph{Balansr\"akning} / \emph{Rapport \"over finansiell st\"allning} & Balance sheet \\
+\emph{Tillg\aa ngar} / \emph{Eget kapital och skulder} & Assets / equity-and-liabilities \\
+\emph{Anl\"aggningstillg\aa ngar} / \emph{Oms\"attningstillg\aa ngar} & Non-current (fixed) / current assets \\
+\emph{Resultatr\"akning} / \emph{Rapport \"over resultat} & Income statement \\
+\emph{Nettooms\"attning} & Revenue (net sales) \\
+\emph{R\"orelseresultat} & Operating profit \\
+\emph{\AA rets resultat} & Profit for the year \\
+\emph{Rapport \"over totalresultat} & Statement of comprehensive income \\
+\emph{Kassafl\"odesanalys} / \emph{Rapport \"over kassafl\"oden} & Cash-flow statement \\
+\emph{Rapport \"over f\"or\"andringar i eget kapital} & Statement of changes in equity \\
+\emph{Balansomslutning} & Balance-sheet total \\
+\emph{Noter} & Notes to the accounts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Format particularities (for extraction)}
+
+\begin{itemize}
+  \item \textbf{Currency is SEK, not EUR.} Sweden is outside the eurozone, so amounts are in kronor ---
+    \emph{tkr} (\emph{tusen kronor}, thousands) or \emph{mkr} (\emph{miljoner kronor}, millions). A validation
+    runs in SEK, and Yahoo's \texttt{.ST} tickers serve SEK, so the units match; do not expect the EUR of the
+    continental chapters.
+  \item \textbf{Number locale: space thousands, comma decimal.} \texttt{1\,234\,567,89} = 1{,}234{,}567.89 ---
+    a (non-breaking) \emph{space} thousands separator like \textbf{France}, unlike Germany's / Spain's dot (the
+    \texttt{:eu\_space} class). This matters only for a \emph{PDF}-route single-entity account; the ESEF iXBRL
+    itself is locale-free (values are machine-numeric).
+  \item \textbf{Filing language varies.} Packages are filed Swedish (\texttt{-sv}) or English (\texttt{-en});
+    issuer \emph{extension} concepts carry the filer's language (Swedish), so do not assume an English concept
+    local-name --- the \texttt{standard\_concept} bridge normalises them (as for Spain / Germany).
+  \item \textbf{\emph{Balansr\"akning} vs \emph{Rapport \"over finansiell st\"allning}.} Like the French
+    \emph{Bilan} and Spanish \emph{Balance}, Swedish IFRS filers often keep the short \emph{Balansr\"akning}
+    rather than the literal IFRS \emph{Rapport \"over finansiell st\"allning} --- match both, loosely.
+\end{itemize}
+
+\subsection{Balance-sheet presentation: report-form (ÅRL \emph{Bilaga}~1)}
+\label{sec:esef-sweden-tshape}
+
+Unlike the continental account-form ``\emph{T}'', Sweden's statutory balance sheet is \textbf{report-form}
+(vertical). The \emph{\AA rsredovisningslagen} (ÅRL, 1995:1554) prescribes a \textbf{single} balance-sheet
+schema, its \emph{Bilaga}~1: \emph{TILLG\AA NGAR} first (\emph{A}~\emph{Anl\"aggningstillg\aa ngar} ---
+\emph{I} immateriella, \emph{II} materiella, \emph{III} finansiella --- then \emph{B}
+\emph{Oms\"attningstillg\aa ngar}), and \emph{EGET KAPITAL OCH SKULDER} listed \emph{below} it, both summing to
+the \emph{Balansomslutning} --- vertical, not one two-sided table. The income statement, by contrast, offers
+\textbf{two} ÅRL forms --- \emph{kostnadsslagsindelad} (by nature, \emph{Bilaga}~2) and \emph{funktionsindelad}
+(by function, \emph{Bilaga}~3) --- the nature-vs-function choice, as in Germany's
+\emph{Gesamt}-\,/\,\emph{Umsatzkostenverfahren}. So Sweden sits with \textbf{Spain} (\S\ref{sec:esef-spain-tshape})
+on the report-form side; the genuine account-form ``T'' is the continental trait mandated in \textbf{Germany},
+\textbf{Italy} and \textbf{France} (\S\ref{sec:esef-germany-tshape}, \S\ref{sec:esef-italy-tshape},
+\S\ref{sec:esef-france-tshape}), \emph{not} in Sweden.
 
 \section{Workflow Use Case Examples}
 \label{sec:esef-example}
