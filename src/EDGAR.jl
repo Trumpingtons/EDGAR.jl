@@ -91,6 +91,7 @@ include("core/export.jl")                   # 🟢 save_selection + DuckDB exten
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
 include("core/auditor.jl")                   # 🟢 auditor(): generic cross-jurisdiction accessor → AuditorInfo; routes to each system's reader (SEC: _sec_auditor)
 include("core/toc.jl")                       # 🟢 toc(): structure layer — document outline from PDF bookmarks / HTML headings / XBRL statement roles
+include("sources/yahoo_oracle.jl")           # 🟢 module YahooOracle — independent-data validation (validate/report) over YFinance; provider=:yahoo backend
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, RFSDFilings, rfsd_download, set_rfsd_local, set_rfsd_cache_dir, ras_label, rfsd_flags, CBRBankFilings, cbr_bank_directory, cbr_line, Generic, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,

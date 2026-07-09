@@ -2297,9 +2297,7 @@ julia> hits = find_paragraphs(f, "supply chain")
 julia> EDGAR._paragraphs(f.content)[hits[1].index]      # jump back to the matched paragraph
 
 # 10. Validate the headline figures against Yahoo Finance (pulls the latest 10-K).
-julia> using YFinance
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-julia> using .YahooOracle
+julia> import EDGAR.YahooOracle                          # part of the package; YFinance is a dependency
 julia> YahooOracle.validate(:sec, row.cik, "WMT")       # Assets/Equity/Revenue/NetIncome/OperCashFlow
 \end{lstlisting}
 
@@ -3669,9 +3667,7 @@ figure actually is.}
 headline totals against Yahoo:
 
 \begin{lstlisting}
-using YFinance
-include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-using .YahooOracle
+import EDGAR.YahooOracle    # part of the package; YFinance is a dependency
 
 # 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
 f = fetch_filing("320193", first(filings_by_cik("320193"; forms = "10-K")).accession)
@@ -5396,10 +5392,8 @@ julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_esef_oracle.jl"
 julia> using .ArelleEsefOracle
 julia> ArelleEsefOracle.statements("549300072P3J1X8NZO35")    # BS / IS / CF fact parity
 
-#     External benchmark -- Yahoo Finance totals (needs YFinance in the environment):
-julia> using YFinance
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-julia> using .YahooOracle
+#     External benchmark -- Yahoo Finance totals (YahooOracle is part of the package):
+julia> import EDGAR.YahooOracle
 julia> YahooOracle.validate(:esef, "549300072P3J1X8NZO35", "LIGHT.AS")
 \end{lstlisting}
 

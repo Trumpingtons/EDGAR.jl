@@ -10,7 +10,9 @@ EzXML = "8f5d6c58-4d21-5cfd-889c-e3ad7ee6a615"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+YFinance = "e4b3b0a2-f9a3-42f3-aabb-32142cceaf77"
 ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
 
 [weakdeps]
@@ -28,15 +30,14 @@ HTTP = "1.10"
 JSON3 = "1"
 OrderedCollections = "1"
 PythonCall = "0.9"
+YFinance = "0.1"
 ZipArchives = "2.6.0"
 julia = "1.12"
 
 [extras]
 DuckDB = "d2f5444f-75bc-4fdf-ac35-56f514c445e1"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-YFinance = "e4b3b0a2-f9a3-42f3-aabb-32142cceaf77"
 
 [targets]
-test = ["Test", "DuckDB", "YFinance", "Printf"]
+test = ["Test", "DuckDB"]

@@ -1,9 +1,8 @@
-# Yahoo Finance oracle — a do-it-yourself validation source.
+# Yahoo Finance oracle — the independent-data validation source.
 #
-# NOTE: this file is NOT part of the EDGAR module (it is not `include`d by src/EDGAR.jl). It is a
-# self-contained helper you load on demand. It needs `YFinance` (https://github.com/eohne/YFinance.jl),
-# which you add to your own environment — keeping it out of the module means EDGAR.jl gains no
-# dependency on YFinance.
+# This is a submodule of the package, `EDGAR.YahooOracle`, included by src/EDGAR.jl. Its backend is
+# `YFinance` (https://github.com/eohne/YFinance.jl), a hard dependency of EDGAR (YFinance also becomes
+# the prices/quotes source), so `using EDGAR` makes the oracle available with no separate `include`.
 #
 # What it checks: do the headline numbers EDGAR.jl extracts for the three core statements agree with
 # the same figures reported by **Yahoo Finance**? Balance sheet (Assets, Equity), income statement
@@ -13,21 +12,22 @@
 # INDEPENDENT-DATA check across jurisdictions (Yahoo covers 100+ countries).
 #
 # Usage:
-#   using YFinance                                   # add it to your environment first
-#   include(joinpath(pkgdir(EDGAR), "src", "sources", "yahoo_oracle.jl"))
-#   using .YahooOracle
-#   rows = YahooOracle.validate(:sec, "320193", "AAPL")   # Vector of comparison rows
-#   YahooOracle.report()                                  # run the built-in firm panel
+#   using EDGAR
+#   rows = EDGAR.YahooOracle.validate(:sec, "320193", "AAPL")   # Vector of comparison rows
+#   EDGAR.YahooOracle.report()                                  # run the built-in firm panel
 
 module YahooOracle
 
-using EDGAR, YFinance, Dates, Printf
+using ..EDGAR                 # parent package: binds `EDGAR` (qualified) + its exported API (bare)
+using YFinance, Dates, Printf
 
 const Row = @NamedTuple{statement::Symbol, metric::String, period_end::Union{Date,Nothing},
                         edgar::Union{Float64,Nothing}, yahoo::Union{Float64,Nothing},
                         rel_diff::Float64, match::Bool}
 
-isempty(strip(try EDGAR.get_user_agent() catch; "" end)) &&
+# A default User-Agent is required for the EDGAR-side fetches. Set it lazily at first use (NOT at module
+# load — that would be a precompile-time side effect), only if the caller has not set one already.
+_ensure_ua() = isempty(strip(try EDGAR.get_user_agent() catch; "" end)) &&
     EDGAR.set_user_agent(get(ENV, "EDGAR_UA", "EDGAR.jl validation noreply@example.com"))
 
 # A headline metric: the candidate XBRL concepts per taxonomy, the Yahoo line-item key(s), and which
@@ -194,6 +194,7 @@ one [`Row`](@ref) per metric (tagged `:bs`/`:is`/`:cf`): EDGAR's value, Yahoo's,
 whether they `match` within 1%.
 """
 function validate(system::Symbol, locator::AbstractString, ticker::AbstractString)
+    _ensure_ua()
     rows = Row[]
     edgar = _edgar_rows(system, locator)
     edgar === nothing && return rows
@@ -292,7 +293,3 @@ function report(firms = FIRMS)
 end
 
 end # module YahooOracle
-
-if abspath(PROGRAM_FILE) == @__FILE__
-    exit(YahooOracle.report() ? 0 : 1)
-end

@@ -2161,9 +2161,10 @@ end
 
 # ── Network (live) — all tests that hit the network, grouped so they skip as a set ──────
 if RUN_NETWORK
-# do-it-yourself oracles (src/sources/, not part of the package) — loaded only for the live tests
+# do-it-yourself oracles — Arelle is still an on-demand include (needs only EDGAR); the Yahoo oracle
+# is now part of the package (EDGAR.YahooOracle, YFinance a hard dep), aliased here for the live tests.
 include(joinpath(@__DIR__, "..", "src", "sources", "arelle_esef_oracle.jl"))   # -> ArelleEsefOracle (needs only EDGAR)
-include(joinpath(@__DIR__, "..", "src", "sources", "yahoo_oracle.jl"))    # -> YahooOracle (uses YFinance)
+const YahooOracle = EDGAR.YahooOracle
 @testset "network (live)" begin
 @testset "Russia: RFSD discovery + fetch (R2, live)" begin
     # discover (MOEX ISS ticker→INN) → fetch (DuckDB partition query over httpfs) → facts, end-to-end.
