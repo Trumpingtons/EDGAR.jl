@@ -5177,6 +5177,71 @@ So the account-form ``\emph{T}'' is \emph{permitted} in the Netherlands but not 
 listed groups present the vertical Model~A, and the ESEF/IFRS consolidated statements the three examples file
 are the IAS~1 vertical layout throughout.
 
+\subsection{Validation against Yahoo/Morningstar: a $20.6\%$ revenue gap that is \emph{entirely} excise duty}
+\label{sec:esef-nl-yahoo}
+
+Beyond the same-document Arelle parity above, each filer is cross-checked against the \emph{independent}
+Yahoo/Morningstar pipeline (\S\ref{sec:yahoo-oracle}, \S\ref{sec:morningstar}; \(\sim\)1\% tolerance). Heineken
+(FY2024, \texttt{HEIA.AS}) matches on four of the five headline metrics to the euro, but \textbf{Revenue differs
+by $20.57\%$} --- \texttt{EDGAR} €35{,}955\,m against Yahoo's €29{,}821\,m (Table~\ref{tab:heineken-yahoo}).
+A fifth of the top line is a large gap, and it is worth showing exactly where it comes from, because the whole
+of it --- to a €0 residual --- is a single reconciling item: \textbf{excise duty}.
+
+\begin{table}[h]
+\centering
+\caption{Heineken N.V.\ FY2024 (€\,million) --- \texttt{EDGAR} vs Yahoo/Morningstar. Four metrics agree to
+the euro; Revenue differs by exactly the excise-duty pass-through.}
+\label{tab:heineken-yahoo}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Metric} & \textbf{EDGAR} & \textbf{Yahoo} & \textbf{$\Delta$} \\
+\midrule
+Assets              & 53{,}773 & 53{,}773 & 0.00\% \\
+Equity              & 19{,}576 & 19{,}576 & 0.00\% \\
+\textbf{Revenue}    & \textbf{35{,}955} & \textbf{29{,}821} & \textbf{20.57\%} \\
+Net income (owners) &    978 &    978 & 0.00\% \\
+Operating cash flow &  5{,}503 &  5{,}503 & 0.00\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The reconciliation, to the euro.} Heineken's income statement carries \emph{two} revenue lines, and
+\texttt{EDGAR.jl} and Morningstar simply anchor on different ones:
+\[
+\underbrace{\texttt{ifrs-full:Revenue}}_{\text{€35{,}955\,m (gross)}}
+\;-\;
+\underbrace{\texttt{…:TaxExpenseOtherThanIncomeTaxExpense}}_{\text{excise duty, €6{,}134\,m}}
+\;=\;
+\underbrace{\texttt{heia:RevenueLessExciseTaxExpense}}_{\text{€29{,}821\,m (net)}}.
+\]
+Yahoo/Morningstar's \texttt{TotalRevenue} for FY2024 is €29{,}821\,m --- \textbf{identical to the euro} to
+Heineken's own \texttt{heia:RevenueLessExciseTaxExpense} extension. \texttt{EDGAR.jl} reports
+\texttt{ifrs-full:Revenue}, the IAS~1 top line the company presents first (€35{,}955\,m). The difference is
+neither a scope, period, nor currency artefact (the other four metrics tie out to the euro on the same period):
+it is \emph{one} line, the €6{,}134\,m of excise duty, and \(35{,}955 - 6{,}134 = 29{,}821\) exactly.
+
+\paragraph{Why $20.6\%$ is the \emph{expected} size, not a red flag.} The gap looks large only because Heineken's
+excise burden \emph{is} large: alcohol duty is levied per hectolitre and per degree of alcohol and is collected
+by the brewer \emph{on the tax authorities' behalf}, then remitted --- economically a pass-through, not the
+brewer's own income. At €6{,}134\,m it is $17.1\%$ of gross revenue and $20.57\%$ of net revenue --- and
+$20.57\%$ is precisely the reported \(\lvert\text{EDGAR}-\text{Yahoo}\rvert/\text{Yahoo}\) figure, because the
+gap \emph{is} the excise. Morningstar's standardisation rule strips such consumption taxes so that a brewer's
+``revenue'' is comparable with a company that has no excise; IFRS itself lets the issuer choose whether to
+present revenue gross or net of these duties, which is why Heineken discloses both. This is the same rule that
+drives the Indian excise reconciliation (\S\ref{sec:morningstar}; Yahoo revenue = \texttt{RevenueFromOperations}
+$-$ excise duty) --- the beverage sector merely makes it unusually visible. The comparison is therefore a
+\emph{match with a documented standardisation}, not a defect: a user who wants the Morningstar-comparable figure
+reads \texttt{heia:RevenueLessExciseTaxExpense} directly; the default \texttt{facts(f)} faithfully reports the
+IFRS gross top line.
+
+\paragraph{The other three jurisdictions.} On the same five metrics, the freshly validated non-Dutch filers
+match Yahoo/Morningstar with \emph{no} standardisation delta: \textbf{L'Or\'eal} (FR, \texttt{OR.PA}),
+\textbf{Moncler} (IT, \texttt{MONC.MI}) and \textbf{Inditex} (ES, \texttt{ITX.MC}) each agree on all five to
+$\Delta\le 0.01\%$ --- consumer names with no excise, financial-income or insurance-float wrinkle, so gross
+IFRS revenue \emph{is} the Morningstar revenue. Heineken is the instructive case precisely because it is the
+one where the two pipelines legitimately diverge.
+
 \section{Sweden}
 \label{sec:esef-sweden}
 
