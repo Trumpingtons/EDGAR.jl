@@ -18,12 +18,19 @@ struct FilingsXBRLOrg <: FilingSource end
 const _FXBRL_BASE = "https://filings.xbrl.org"
 
 # Build the filings.xbrl.org filter querystring (JSON:API): a JSON array of {name, op, val} objects,
-# URL-encoded. `entity.identifier` filters by the filer's LEI (a relationship attribute the API
-# supports); `country` filters by ISO country. Empty ⇒ no `filter` param.
-function _fxbrl_filter(pairs::Vector{Pair{String,String}})
-    isempty(pairs) && return ""
-    objs = [(name = n, op = "eq", val = v) for (n, v) in pairs]   # NamedTuple ⇒ stable key order
-    return "&filter=" * HTTP.URIs.escapeuri(JSON3.write(objs))
+# URL-encoded. Each object carries its own operator; `val` is a String (`eq`) or a Vector{String} (`in`).
+# `entity.identifier` filters by the filer's LEI, `country` by ISO country, `period_end` by an `in` set of
+# dates. Empty ⇒ no `filter` param.
+_fxbrl_filter(objs::AbstractVector) = isempty(objs) ? "" :
+    "&filter=" * HTTP.URIs.escapeuri(JSON3.write(objs))
+
+# The twelve month-end dates of a calendar year — the plausible set of fiscal year-ends — so a `year` filter
+# matches a June/March/January(retail)/… year-end via one `period_end in […]` query, not only 31 December.
+# February is leap-aware: only a VALID date is sent (an invalid 29 Feb makes the API 500, not ignore it).
+function _year_end_dates(y::Integer)
+    feb = ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) ? 29 : 28
+    dpm = (31, feb, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    return [string(y, "-", lpad(m, 2, '0'), "-", lpad(dpm[m], 2, '0')) for m in 1:12]
 end
 
 """
@@ -31,11 +38,12 @@ end
 
 Find ESEF filings on [filings.xbrl.org](https://filings.xbrl.org). Filter by `lei` (the filer's Legal
 Entity Identifier) and/or `country` (ISO-3166 alpha-2, e.g. `"FI"`), and optionally `year` — **all applied
-server-side**. `year` matches `period_end == <year>-12-31`, i.e. a calendar (31 December) year-end, which is
-the near-universal case for these annual reports; a non-December fiscal year-end is *not* matched by `year`
-(query without it and filter the returned handles by `period_end`). `size` caps how many filings are
-requested. Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each carrying the report-package
-URL; fetch one with [`fetch_filing`](@ref).
+server-side**. `year` matches a filing whose `period_end` is *any* month-end of that year (a single
+`period_end in […]` query over the twelve month-ends), so a June/March/January fiscal year-end is caught, not
+only 31 December. `size` caps how many filings are requested (for a bulk `country` query with `year`, a rare
+minority year-end can still fall outside the first `size`; raise `size` or query that `period_end` directly).
+Returns [`FilingHandle`](@ref)s (tagged `ESEF()`), newest first, each carrying the report-package URL; fetch
+one with [`fetch_filing`](@ref).
 
 An entity often has several packages for one period (language variants, amendments); they are all
 returned, so pick the one you want (e.g. the English `…-en.zip`).
@@ -50,14 +58,15 @@ facts(f; classify = true, labels = true)
 function discover(::FilingsXBRLOrg; lei::Union{AbstractString,Nothing}=nothing,
                   country::Union{AbstractString,Nothing}=nothing,
                   year::Union{Integer,Nothing}=nothing, size::Integer=100)
-    pairs = Pair{String,String}[]
-    lei === nothing || push!(pairs, "entity.identifier" => String(lei))
-    country === nothing || push!(pairs, "country" => String(country))
-    # `year` server-side: filings.xbrl.org accepts only `eq` on period_end (no gte/lte), so match the calendar
-    # year-end. This is the fix for the pagination trap — a client-side year filter over one page of `size`
-    # returns nothing when that page happens to hold no filings from `year` (the API is not ordered by period).
-    year === nothing || push!(pairs, "period_end" => "$(year)-12-31")
-    url = "$_FXBRL_BASE/api/filings?include=entity&page%5Bsize%5D=$size" * _fxbrl_filter(pairs)
+    objs = Any[]
+    lei === nothing || push!(objs, (name = "entity.identifier", op = "eq", val = String(lei)))
+    country === nothing || push!(objs, (name = "country", op = "eq", val = String(country)))
+    # `year` server-side. filings.xbrl.org accepts only `eq`/`in` on period_end (no gte/lte), so match `year`
+    # as `period_end in [<every month-end of the year>]`. This fixes the pagination trap — a client-side year
+    # filter over one page of `size` returns nothing when that page happens to hold no filings from `year` (the
+    # API is not ordered by period) — AND catches non-December fiscal year-ends, all in one request.
+    year === nothing || push!(objs, (name = "period_end", op = "in", val = _year_end_dates(year)))
+    url = "$_FXBRL_BASE/api/filings?include=entity&page%5Bsize%5D=$size" * _fxbrl_filter(objs)
     doc = _get_json(url)
 
     # identifier (LEI) per included entity, keyed by its JSON:API resource id.
