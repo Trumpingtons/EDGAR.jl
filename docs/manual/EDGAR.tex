@@ -4321,6 +4321,13 @@ f  = fetch_filing(h)                                       # download + read the
 facts(f; classify = true, labels = true)
 \end{lstlisting}
 
+\noindent The filters are applied \textbf{server-side}: \texttt{lei}, \texttt{country} (ISO-3166 alpha-2,
+e.g.\ \texttt{"FI"}), and \texttt{year} --- where \texttt{year} matches \emph{any} month-end of that year (a
+June, March or January-31 fiscal year-end, not only 31 December). \texttt{discover} then returns the
+\emph{whole} matching set, following filings.xbrl.org's JSON:API pagination transparently --- so a bulk
+\texttt{country} query spans many pages under the hood; pass \texttt{limit = N} for a quick sample. (An
+entity's \texttt{lei} query is a single page anyway.)
+
 \noindent A handle is the portable currency between discovery and fetch: it carries the system, the
 filer's identity (LEI), the opaque filing reference and the package URL. Because the source axis is
 distinct from the system axis, one source can feed several systems (filings.xbrl.org also covers
