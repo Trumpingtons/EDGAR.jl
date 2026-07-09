@@ -4193,15 +4193,35 @@ undocumented delta appears.
 
 \section{Stern Stewart}
 \label{sec:schemes-sternstewart}
+Where Morningstar \emph{standardises} accounting figures so that filers compare like with like,
+Stern~Stewart \emph{re-derives} them onto an \emph{economic} basis. Its \textbf{Economic Value Added (EVA)}
+framework recasts reported profit and capital into \emph{economic} NOPAT and \emph{economic capital
+employed} --- the true operating profit, and the true stock of capital tied up in the business (the
+\emph{assets in place}), stripped of the distortions that conservative accounting introduces.
 
-Where Morningstar \emph{standardises} accounting figures, Stern~Stewart \emph{re-derives} them onto an
-economic basis. Its \textbf{Economic Value Added (EVA)} framework applies a long list of adjustments --- of
-the order of a hundred in the full methodology, a handful in practice --- that convert reported profit and
-capital into \emph{economic} NOPAT and \emph{invested capital}: capitalising R\&D and (historically)
-operating leases, adding back goodwill amortisation and non-recurring charges, unwinding excess provisions
-and LIFO reserves, and treating such items as investments rather than expenses. The goal is not
-comparability across filers but a truer measure of \emph{value creation} --- earnings above the charge for
-the capital employed --- which is why the scheme belongs as much to valuation as to validation.
+The premise is that traditional accounting is built for \emph{lenders and tax authorities} and so prizes
+prudence over economic reality --- which systematically penalises the firms that create the most value. EVA
+reverses the specific conservatisms:
+\begin{itemize}
+  \item \textbf{R\&D and brand-building} are expensed at once under GAAP/IFRS; EVA treats them as the
+    long-lived investments they are --- added back to profit and \emph{capitalised} onto the balance sheet.
+  \item \textbf{Operating leases} (long before the accounting standards caught up) are capitalised, to show
+    the capital a firm has genuinely tied up rather than kept off balance sheet.
+  \item \textbf{Provisions and bad-debt allowances} --- precautionary pools set aside for future losses ---
+    are added back to capital, since that money is still at work in the business today.
+  \item \textbf{Goodwill amortisation, non-recurring charges, deferred taxes and LIFO reserves} are unwound
+    on the same principle: treat the item as an investment, not an expense.
+\end{itemize}
+
+The full methodology famously enumerated as many as \textbf{164} such adjustments --- the rigour that made
+its academic name, and that also made routine computation impractical. In practice, as Stern~Stewart
+themselves conceded, some \textbf{five to ten} of them (R\&D, leases, deferred taxes) account for the
+overwhelming majority of the result and the rest are effectively rounding --- so a working EVA scheme need
+implement only the handful that move the number.
+
+The goal is not comparability across filers, as with Morningstar, but a truer measure of \emph{value
+creation} --- earnings above the charge for the capital employed --- which is why the scheme belongs as much
+to valuation as to validation.
 
 Selecting \texttt{scheme = :sternstewart} applies these EVA adjustments in place of Morningstar's
 standardisation, so a figure is read on the economic basis rather than the accounting one. It is the second
