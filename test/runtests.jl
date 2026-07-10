@@ -1281,6 +1281,43 @@ end
     @test !any(n -> startswith(n, "in-bse-fin:"), named)                 # no raw member QNames leak through
 end
 
+@testset "segments: table-path locator + parser + reconciliation (offline fixtures)" begin
+    # The source-independent core (S1–S3 of the segments-pdf-plan): given the table GRIDs a Docling/HTML
+    # adapter would produce, locate the operating-segment table by structure, parse per-segment revenue, and
+    # self-validate with the reconciliation oracle (Σ segments = total). Deterministic — no Docling/network.
+    cont = [["€ millions","Automotive","Tires","ContiTech","Contract Manufacturing","Other/ Holding/ Consolidation","Continental Group"],
+            ["External sales","19,405","13,768","6,308","238","-","39,719"],
+            ["EBIT","229","1,870","261","15","-88","2,287"]]                                   # EN, segments-as-columns
+    gree = [["项目","消费电器","工业制品及绿色能源","智能装备","其他","分部间抵销","合计"],
+            ["对外交易收入","133,055","17,380","680","20,001","","171,116"]]                    # CJK / CAS
+    enel = [["","Thermal Generation and Trading","Enel Green Power","Enel Grids","Total","Eliminations and reporting"],
+            ["Millions of euro","","","","",""],
+            ["Revenue and other income","10,355","8,940","20,449","39,744",""],
+            ["from third parties","","","","",""]]                                             # ESEF, label wraps across rows
+    geo  = [["","Revenue","Non-current assets"],["North America","11,440","2,757"],
+            ["Europe","2,630","245"],["Total","15,259","4,837"]]                               # geography DECOY
+    mgmt = [["","2024","2023","RIG (%)","OG (%)"],["Total sales","24,786","24,598","+1.6","+3.3"]]  # management-view DECOY
+
+    # locator picks the operating-segment table among the co-located decoys, and rejects a decoy on its own
+    best = EDGAR._find_segment_grid([geo, mgmt, cont])
+    @test best !== nothing && best[1] === cont
+    @test EDGAR._find_segment_grid([geo])  === nothing
+    @test EDGAR._find_segment_grid([mgmt]) === nothing
+
+    # the reconciliation oracle passes across EN / CJK / wrapped-label tables (Σ segments = total)
+    for (g, rr) in ((cont, 2), (gree, 2), (enel, 3))
+        @test EDGAR._find_segment_grid([g]) !== nothing
+        @test EDGAR._segment_revenue(g, rr).ok
+    end
+
+    # breakdown()-shaped output: one row per segment (not total/reconciliation), correct names & shape
+    rows, ok = EDGAR._seg_rows(cont, 2)
+    @test ok
+    @test Set(r.name for r in rows) == Set(["Automotive","Tires","ContiTech","Contract Manufacturing"])
+    @test all(r -> r.axis == "segment" && r.is_instant == false, rows)
+    @test "其他" in Set(r.name for r in EDGAR._seg_rows(gree, 2)[1])     # CJK segment names survive
+end
+
 @testset "golden: real captured payload -> all exports (W8, offline)" begin
     # A genuine picker transport payload for Walmart's income statement (test/data/), so the
     # whole pipeline is exercised against real data with no live browser.

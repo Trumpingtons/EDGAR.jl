@@ -184,17 +184,48 @@ function _seg_scale(g)
     return 1.0
 end
 
+# The reporting year: the first 4-digit 20xx in the header rows (the current/leftmost column year).
+function _seg_year(g)
+    for i in 1:min(length(g), 6), c in g[i]
+        m = match(r"\b(20\d{2})\b", c)
+        m !== nothing && return parse(Int, m.captures[1])
+    end
+    return nothing
+end
+
+# Fallback: the reporting year from the COVER page (a cheap single-page pdf.js pass). The cover states the
+# reporting year prominently ("Annual Report 2024", "2024年年度报告") without the
+# future-dated noise (subsequent events, certificate validities) that pollutes the note pages.
+function _seg_cover_year(path)
+    txt = ""
+    try
+        for pg in _pdf_words(path; page = 1).pages; txt *= _seg_pagetext(pg) * " "; end
+    catch; return nothing end
+    # Prefer the year bound to the report TITLE (excludes the publication date, which is often the next year).
+    for pat in (r"(20\d{2})[年\s]{0,3}年度报告", r"annual\s+re(?:port|view)\s+(20\d{2})"i, r"(20\d{2})\s+annual\s+re(?:port|view)"i)
+        m = match(pat, txt); m !== nothing && return parse(Int, m.captures[1])
+    end
+    yrs = filter(y -> 2000 <= y <= 2099, [parse(Int, m.captures[1]) for m in eachmatch(r"\b(20\d{2})\b", txt)])
+    return isempty(yrs) ? nothing : maximum(yrs)
+end
+
 # Convert a located+parsed grid into `breakdown()`-shaped rows (one per segment). `axis = "segment"` is
 # synthesised (there is no QName); `member`/`name` are the segment label; revenue is a duration → not instant.
-# Returns `(rows, reconciles)` so the PDF page-selector can prefer a page whose table reconciles.
-function _seg_rows(g::Vector{Vector{String}}, revrow::Int)
+# The fiscal year-end (`month`/`day`) defaults to 31 Dec (China + most ESEF); the PDF path passes the value
+# `_ifrs_period` detected (e.g. 30 June for HK/Australian filers). Returns `(rows, reconciles)` so the PDF
+# page-selector can prefer a page whose table reconciles.
+function _seg_rows(g::Vector{Vector{String}}, revrow::Int;
+                   year::Union{Int,Nothing} = nothing, month::Int = 12, day::Int = 31)
     p = _segment_revenue(g, revrow)
     scale = _seg_scale(g)
+    yr = year === nothing ? _seg_year(g) : year        # PDF: from `_ifrs_period`; ESEF: from the grid header
+    pe = yr === nothing ? nothing : Date(yr, month, day)
+    ps = pe === nothing ? nothing : pe - Year(1) + Day(1)
     rows = NamedTuple[]
     for r in p.rows
         r.kind === :segment || continue
         push!(rows, (axis = "segment", member = r.name, name = r.name, value = r.value * scale,
-                     period_start = nothing, period_end = nothing, is_instant = false, other_dims = ""))
+                     period_start = ps, period_end = pe, is_instant = false, other_dims = ""))
     end
     return (rows, p.ok)
 end
@@ -235,7 +266,12 @@ function _segments_pdf(path::AbstractString)
     for pg in _segment_pdf_pages(path)
         sd = try structured_document(path; pages = (max(1, pg - 1), pg + 1)) catch; continue end
         res = _find_segment_grid(_grid(t) for t in sd.tables); res === nothing && continue
-        rows, ok = _seg_rows(res[1], res[2])
+        md = try _ifrs_period(sd) catch; nothing end                # (month, day, years-desc) or nothing
+        # Reporting year: `_ifrs_period` (needs the period phrase) → grid header → most-frequent year across
+        # the segment-page tables. Fiscal year-end month/day from `_ifrs_period`, else 31 Dec.
+        yr = (md !== nothing && !isempty(md[3])) ? md[3][1] : something(_seg_year(res[1]), _seg_cover_year(path), Some(nothing))
+        rows, ok = _seg_rows(res[1], res[2]; year = yr,
+                             month = md === nothing ? 12 : md[1], day = md === nothing ? 31 : md[2])
         isempty(rows) && continue
         ok && return rows
         isempty(fallback) && (fallback = rows)
