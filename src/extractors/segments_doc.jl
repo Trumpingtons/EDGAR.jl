@@ -16,12 +16,12 @@
 # that distinguishes segment external revenue (which sums to consolidated) from inter-segment/total revenue.
 # Learned across the S0 corpus: "External sales" (Continental/Techtronic), "对外交易收入" (Gree), "Revenue and
 # other income from third parties" (Enel) — the label can also wrap onto the next grid row.
-const _SEG_REVENUE  = r"(?i)\brevenues?\b|\bturnover\b|external sales|营业收入|对外交易收入|外部客户"
-const _SEG_EXTERNAL = r"(?i)external|third[- ]part|对外|外部"
+const _SEG_REVENUE  = r"(?i)\brevenues?\b|\bturnover\b|external sales|umsatzerl\p{L}se|\bums\p{L}tze\b|营业收入|对外交易收入|外部客户"
+const _SEG_EXTERNAL = r"(?i)external|third[- ]part|fremden|konzernfremd|对外|外部"
 # TOTAL column/row label.
-const _SEG_TOTAL  = r"(?i)\b(total|consolidated|group)\b|合计|总计"
+const _SEG_TOTAL  = r"(?i)\b(total|consolidated|group)\b|\bkonzern\b|\bgesamt\b|合计|总计"
 # RECONCILIATION / elimination column (unallocated, inter-segment, holding, other).
-const _SEG_RECON  = r"(?i)elimination|unallocated|reconcil|inter[- ]?segment|holding|corporate|分部间抵销|抵销|未分配"
+const _SEG_RECON  = r"(?i)elimination|unallocated|reconcil|inter[- ]?segment|holding|corporate|\p{L}berleitung|eliminierung|zentral|sonstige|分部间抵销|抵销|未分配"
 # MANAGEMENT-view / disaggregation decoy signals (organic-growth review, like-for-like) → not the note.
 const _SEG_MGMT   = r"(?i)\bRIG\b|\bOG\b|organic growth|proportion of total|like-for-like"
 
@@ -121,16 +121,19 @@ end
 _find_segment_html(html::AbstractString) = _find_segment_grid(_grids_html(html))
 
 # ── S2: parse the located table into per-segment revenue ─────────────────────
-# A monetary amount from a cell: parenthesised → negative; strip currency/percent; drop thousands
-# separators (English/international format — German decimal-comma is a hardening item). Nil ("-"/"–") → nothing.
-function _seg_amount(s::AbstractString)
-    t = strip(s)
-    (isempty(t) || t in ("-", "–", "—", "n/a", "N/A")) && return nothing
-    neg = startswith(t, "(") && endswith(t, ")")
-    t = strip(t, ['(', ')', '$', '€', '£', '%', '¥', ' ', '*'])
-    t = replace(t, "," => "")
-    v = tryparse(Float64, t)
-    return v === nothing ? nothing : (neg ? -v : v)
+# A monetary amount from a cell, locale-aware, via the shared `parse_amount` (handles parentheses, currency,
+# nil placeholders, and the thousands/decimal convention). `:en` = comma-thousands/dot-decimal (US/GB, and
+# CN/JP/KR/IN), `:eu_dot` = dot-thousands/comma-decimal (DE/IT/ES). A nil cell ("-"/empty) → nothing.
+_seg_amount(s::AbstractString, locale::Symbol = :en) =
+    (p = parse_amount(s; locale = locale); p === nothing || p.nil ? nothing : p.val)
+
+# The number-format locale of a grid, from the thousands grouping actually used: a comma before exactly
+# three digits is `:en`, a dot is `:eu_dot`. Decimals (comma/dot before 1–2 digits) don't confuse it.
+function _seg_locale(g)
+    txt = join((join(r, " ") for r in g), " ")
+    en = length(collect(eachmatch(r",\d{3}(?:\D|$)", txt)))
+    eu = length(collect(eachmatch(r"\.\d{3}(?:\D|$)", txt)))
+    return eu > en ? :eu_dot : :en
 end
 
 # Header rows of a grid = the multi-cell, non-numeric rows above the revenue row (segment-name headers,
@@ -153,9 +156,10 @@ function _segment_revenue(g::Vector{Vector{String}}, revrow::Int)
     ncol = maximum(length.(g); init = 0)
     colname(c) = _seg_clean_name(strip(join((get(g[i], c, "") for i in hdrs), " ")))
     rev = g[revrow]
+    loc = _seg_locale(g)
     rows = NamedTuple[]; seen = Set{Tuple{String,Float64}}()
     for c in 1:ncol
-        v = _seg_amount(get(rev, c, "")); v === nothing && continue
+        v = _seg_amount(get(rev, c, ""), loc); v === nothing && continue
         name = colname(c); isempty(name) && continue
         (name, v) in seen && continue                                   # dedup colspan-expanded repeats
         push!(seen, (name, v))
@@ -176,11 +180,11 @@ end
 # so scale the segment values to match for a true drop-in. Detected from the header/unit tokens.
 function _seg_scale(g)
     txt = join((join(r, " ") for r in first(g, min(length(g), 5))), " ")
-    occursin(r"(?i)\bbillion", txt) && return 1.0e9
+    occursin(r"(?i)\bbillion|\bmrd\b", txt) && return 1.0e9              # Mrd. = Milliarde (DE billion)
     occursin("亿", txt) && return 1.0e8
-    occursin(r"(?i)\bmillions?\b|€\s*millions?|rmb'?\s?million|hk\$'?\s?m\b|百万", txt) && return 1.0e6
+    occursin(r"(?i)\bmillions?\b|\bmio\b|€\s*millions?|rmb'?\s?million|hk\$'?\s?m\b|百万", txt) && return 1.0e6  # Mio. (DE)
     occursin("万", txt) && return 1.0e4
-    occursin(r"(?i)thousand|'000|千元|us\$'?0{2,}|hk\$'?0{2,}|\$'?0{3}", txt) && return 1.0e3
+    occursin(r"(?i)thousand|\btsd\b|teur\b|'000|千元|us\$'?0{2,}|hk\$'?0{2,}|\$'?0{3}", txt) && return 1.0e3    # Tsd./TEUR (DE)
     return 1.0
 end
 

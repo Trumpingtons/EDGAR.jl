@@ -1316,6 +1316,18 @@ end
     @test Set(r.name for r in rows) == Set(["Automotive","Tires","ContiTech","Contract Manufacturing"])
     @test all(r -> r.axis == "segment" && r.is_instant == false, rows)
     @test "其他" in Set(r.name for r in EDGAR._seg_rows(gree, 2)[1])     # CJK segment names survive
+
+    # German-LANGUAGE report: dot-thousands/comma-decimal locale + German anchors (Umsatzerlöse / fremden
+    # Dritten / Konzern) + the "Mio." scale abbreviation. (English ARs of German filers already use :en.)
+    de = [["Mio. €","Digital Industries","Smart Infrastructure","Konzern"],
+          ["Umsatzerlöse mit fremden Dritten","20.594","57.175","77.769"]]
+    @test EDGAR._seg_locale(de) == :eu_dot
+    @test EDGAR._seg_amount("8,50", :eu_dot) == 8.5                     # decimal comma, not thousands
+    dres = EDGAR._find_segment_grid([de])
+    @test dres !== nothing && EDGAR._segment_revenue(de, dres[2]).ok    # 20.594 + 57.175 = 77.769 (Konzern)
+    drows = EDGAR._seg_rows(de, dres[2])[1]
+    @test Set(r.name for r in drows) == Set(["Digital Industries","Smart Infrastructure"])
+    @test any(r -> r.value == 2.0594e10, drows)                        # 20.594 Mio. → base units
 end
 
 @testset "golden: real captured payload -> all exports (W8, offline)" begin
