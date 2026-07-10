@@ -31,9 +31,10 @@
 \newcommand{\krcjk}[2]{{\cjkKRfont #1}}
 \newcommand{\jpcjk}[2]{{\cjkJPfont #1}}
 \newcommand{\cncjk}[2]{{\cjkCNfont #1}}
-% Cyrillic (Russia) needs no dedicated font: the Latin Modern body font covers Cyrillic natively under
-% XeTeX, so \rus is a single-arg passthrough (swap the body to a Cyrillic-specific face here if ever needed).
-\newcommand{\rus}[1]{#1}
+% Cyrillic (Russia): the default Latin Modern body font has NO Cyrillic glyphs under XeTeX (Russian would
+% render blank), so it needs a dedicated face. \rusfont is a Cyrillic-capable text font; \rus{…} routes to it.
+\newfontfamily\rusfont{Times New Roman}  % macOS system serif with Cyrillic; swap to Noto Serif / DejaVu Serif on Linux/CI
+\newcommand{\rus}[1]{{\rusfont #1}}
 
 \usepackage{amsmath}   % \text, \lvert/\rvert, aligned display math (Heineken excise identity; event-study formulae)
 \usepackage[margin=1in]{geometry}
@@ -9397,7 +9398,6 @@ Laos, Cambodia, and Myanmar share a common linguistic heritage rooted in ancient
   \item Laos (Lao Script): Part of the Tai-Kadai family, the Lao writing system is a direct evolutionary descendant of the Old Khmer script and the ancient Mon scripts.
   \item Myanmar (Burmese Script): While the language is Sino-Tibetan, its writing system was also adapted from Indian roots (like the Pyu and Mon scripts).
 \end{itemize}
-\section{Local Variations}
 
 \subsection{China: Simplified and Traditional Chinese}
 Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
@@ -9548,9 +9548,9 @@ body face covers Cyrillic natively (hence the source below is set in the ordinar
 \paragraph{Worked example.} From LUKOIL's consolidated IFRS statements, the opening of Note~1 --- a plain
 statement of the group's business:
 \begin{quote}
-Основными видами деятельности ПАО «ЛУКОЙЛ» (далее -- Компания)\\
+{\rusfont Основными видами деятельности ПАО «ЛУКОЙЛ» (далее -- Компания)\\
 и его дочерних компаний (вместе -- Группа) являются разведка,\\
-добыча, переработка и реализация нефти и нефтепродуктов.
+добыча, переработка и реализация нефти и нефтепродуктов.}
 \end{quote}
 
 \begin{table}[h]
@@ -9585,6 +9585,7 @@ pipeline is direct: the cloud-versus-local decision is \emph{not} uniform across
 other high-resource scripts a small local model is close enough to run at volume; it is the CJK and
 lower-resource scripts that still justify reaching for the cloud.
 
+\section{Local Variations}
 
 \subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
  Languages spoken in India do not all use the same alphabet. India has massive linguistic diversity, and languages are written using several distinct scripts. While many share roots in the ancient Brahmi script, they have evolved into unique writing systems.
