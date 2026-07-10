@@ -61,13 +61,79 @@ revenue** that `extract_ifrs_pdf`/`extract_cas_pdf` already recovers — `Σ seg
 This is the same-document cross-check the project favours (cf. Arelle/CSV oracles), and it doubles as the S4
 gate.
 
+## S0 findings (recon — 2026-07-10, six FRESH filers across HK/DE/CN)
+
+Corpus (saved under `~/EDGAR-Reports/`, fetched fresh, not the Siemens/VW stash): HK — ANTA (02020),
+Techtronic (00669); DE — Henkel, Continental (group); CN — Midea (000333), Gree (000651). Segment notes
+Docling-extracted from each. Findings (they **revise the Design above**):
+
+1. **Orientation is segments-as-COLUMNS, universally** in the sample (ANTA, Techtronic, Continental, Gree —
+   all columns). The header row is the segment names ending in a total column; metric rows sit below. My
+   earlier "segments-as-rows" (from Siemens *nach Konzernbereichen*) was wrong as a default. → **S2 default:
+   segments-as-columns**, with segments-as-rows as the fallback orientation.
+2. **The revenue anchor is the external-revenue row**, label per framework/language: `External sales` /
+   `Revenue from external customers` (IFRS-EN), `对外交易收入` (CAS). Pick this row, not "total segment
+   revenue" (which includes inter-segment).
+3. **Total column**: `Consolidated` / `Continental Group` / `Total` / `合计`. **Reconciliation/elimination
+   column**: `Other/Holding/Consolidation` / `Headquarters and unallocated items` / `分部间抵销` (+ `其他`).
+4. **The data table is located by STRUCTURE, not by heading.** Heading and table can be far apart — Gree's
+   分部报告 heading is p125, its table p207 (**82 pages**). And segment figures appear in *two* places: the
+   management-report disaggregation (Midea p49, Henkel p28) and the formal notes table (Gree p207). → **S1
+   must scan broadly and match on structure** (a segment-name header row + an external-revenue row),
+   disambiguating from the co-located **geography** and **product** breakdown tables (Techtronic has all
+   three).
+5. **Reconciliation oracle confirmed real**: Σ external-revenue = total column — Gree 133.06+17.38+0.68+20.00
+   = 171.12bn = 合计 ✓; Continental 19,405+13,768+6,308+238 = 39,719 = Group ✓.
+6. **Docling captures CJK segment tables cleanly** (Gree p207 came through with correct Chinese headers and
+   values) — CJK is *not* a blocker; page-range location was.
+7. **Docling robustness risk**: Henkel's segment table was **not captured** on either the notes pages (p343)
+   or the management-report page (p28) — two misses. Some presentations (infographic-style / very wide
+   tables) defeat the parser. → S2/S3 must **fail gracefully and flag** "segment table not found", and S1
+   may try a wider range / the alternate (mgmt-report vs notes) presentation before giving up.
+8. **Plan correction**: the persisted repo `StructuredDocument`s are page-scoped to the **primary
+   statements** and do **not** contain the segment note (Siemens p45–56 held EU-taxonomy tables, not
+   segments). So `_segments_pdf` **cannot** reuse the persisted SD as-is; it needs the segment-note pages —
+   either a wider persist range or on-demand extraction located by finding #4.
+
+## S0-extended findings (Russia / Generic / ESEF — 2026-07-10)
+
+Broadened the fresh corpus to Russia (Nornickel, Severstal), Generic (Nestlé) and ESEF (Airbus, Enel). Two
+findings **reshape the architecture and the fetch layer**:
+
+9. **Document selection is a first-class problem.** The segment note lives in the **consolidated financial
+   statements**, which for many issuers is a \emph{separate} document from the annual report / review. The
+   Russian IFRS annual reports (Nornickel, Severstal) and Nestlé's *Annual Review* carried **no** IFRS-8
+   segment note — Nestlé's p42 "operating segment review" is a \emph{management-view category} sales table
+   (a decoy, like Techtronic's product/geography tables). → S1 (or the fetch layer) must target the
+   **financial-statements** document, not the flagship annual report; and the parser must reject
+   management-view / product / geography tables in favour of the statutory segment note.
+10. **ESEF is a table-parse over the iXBRL HTML — one parser, two source adapters.** Confirmed on Airbus:
+    segments are **not dimensioned** (`segments(f, "ifrs-full:Revenue")` → 0 rows), the block-tagged
+    `DisclosureOfEntitysReportableSegmentsExplanatory` is **prose** (1.7 kB, no `<table>`), yet the segment
+    numbers sit in a **rendered HTML table** (segment names — Commercial Aircraft, Defence and Space,
+    Helicopters — are all over the iXBRL). So the ESEF adapter parses the iXBRL **HTML into `DocTable`s**
+    (the existing HTML document path, not Docling) and then runs the \emph{same} segment-table parser.
+
+**Finalized architecture — one parser, two adapters.** The S1/S2 logic (locate the segment table by a
+\emph{segment-name header row + an external-revenue row}; parse segments-as-columns; exclude/capture the
+total + elimination columns; reject geography/product/management decoys) is **source-independent** and runs
+on a `DocTable`. Two adapters feed it:
+- **Docling adapter** — PDF (China/Germany/HK/Russia/Generic), page-scoped extraction located by structure.
+- **HTML adapter** — ESEF/UKSEF iXBRL, tables from the HTML document builder; the block-tagged explanatory
+  text is prose only, so it is ignored for the numbers.
+
+**Scope (settled).** In: China, Germany, HK, Russia (IFRS-statements PDF), Generic (uncovered geographies),
+and ESEF (HTML adapter). Out: UK Companies House (small PDF filers disclose no segments; large UK groups ride
+the UKSEF/HTML adapter). EDINET/DART/India/SEC already work via XBRL dimensions.
+
 ## Phases
 
-- **S0 — Recon (Germany first).** Dump the real segment `DocTable`s for the stashed DE panel (Siemens, VW,
-  BASF, Deutsche Telekom-EN) via Docling. Catalogue per filer: the caption/heading text (and language),
-  orientation, the metric columns, unit/scale, the total/eliminations rows, and segment-name language.
-  Confirm Docling captures the table cleanly (multi-row headers, merged cells). **Gate:** for each DE filer
-  the by-segment revenue table is present in `sd.tables` and its revenue column is human-identifiable.
+- **S0 — Recon. ✅ DONE** (see *S0 findings* above). Reconned six FRESH filers across HK/DE/CN (not the
+  stash), Docling-extracting each segment note. Catalogued orientation, revenue anchor, total/elimination
+  columns, table-location behaviour, CJK fidelity and Docling robustness. **Gate met:** the by-segment
+  external-revenue table was located and its revenue row/column identified for HK (ANTA, Techtronic), DE
+  (Continental) and CN (Gree); Henkel flagged as a Docling-miss robustness case; Midea's figures found in
+  the management report.
 - **S1 — Locate.** Heuristics to select the by-segment revenue table among the note's several tables,
   multilingual, robust to caption-on-section vs caption-on-table. **Gate:** the correct table is selected for
   every DE panel filer (and, once added, HK/CN).

@@ -88,6 +88,7 @@ include("filing_systems/china/cas.jl")       # 🟡 China CAS PDF extraction (C3
 include("filing_systems/china/portfolio.jl") # 🟡 China fund §8 portfolio (投资组合报告): holdings + summaries (extract_fund_portfolio)
 include("extractors/ifrs_pdf.jl")           # 🟢 English-PDF statement extraction: primary statements → Facts on ifrs-full via vocab_ifrs_labels (extract_ifrs_pdf) — shared by HK (HKFRS) + UK Companies House
 include("extractors/hgb_pdf.jl")            # 🟢 HGB single-entity Jahresabschluss extraction (G2): account-form Bilanz + GuV → Facts on hgb: via vocab_hgb (extract_hgb_pdf)
+include("extractors/segments_doc.jl")       # 🟡 S1: structure-based operating-segment TABLE locator (source-independent; Docling + HTML adapters) — revenue-by-segment for PDF/ESEF (segments-pdf-plan)
 include("filing_systems/hkex/reit_portfolio.jl") # 🟣 HK REIT property-portfolio composition (extract_reit_portfolio) — the REIT analogue of extract_fund_portfolio, reusing FundPortfolio
 include("core/export.jl")                   # 🟢 save_selection + DuckDB extension stubs
 include("core/narratives.jl")               # 🟢 narratives(): prose/text layer parallel to facts() — Narrative rows from XBRL/iXBRL/PDF/HTML
