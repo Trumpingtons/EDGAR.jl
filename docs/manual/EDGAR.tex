@@ -1414,6 +1414,58 @@ unchanged. This is the furthest-out frontier and is \textbf{not yet built}.
 text-extraction regimes on the roadmap of Table~\ref{tab:auditor-split}). Everything above is future work; it
 is captured here so the chapter maps the whole layer, not only its first capability.
 
+\section{Understanding non-English text}
+\label{sec:narratives-multilingual}
+
+The narratives layer \emph{reads} prose regardless of script: the parser ingests CJK, Cyrillic, Arabic and
+Indic text as faithfully as Latin and returns the native strings verbatim (extraction is byte-level, not
+language-aware). But reading a filing is not \emph{understanding} it, and the two split into problems with
+completely different answers.
+
+\paragraph{Render versus understand.} \emph{Displaying} a non-Latin script --- Arabic's right-to-left abjad,
+Devanagari's abugida, Chinese logograms --- is a \emph{typesetting} problem, solved by Unicode and fonts (this
+manual itself sets CJK via \texttt{fontspec}; the reference tour is Appendix~\ref{ch:writing-systems}).
+\emph{Comprehending} what a non-English narrative \emph{says} --- summarising a Chinese risk factor,
+translating a Japanese extraordinary report, judging whether a German ad-hoc disclosure is material --- is a
+different problem that no font or parser touches. It needs a \textbf{language model}.
+
+\paragraph{LLMs as a provider axis.} The answer has the same shape as the two pluggable axes already in this
+book --- the fundamentals \texttt{provider} (\S\ref{sec:oracle-api}) and the adjustment \texttt{scheme}
+(\S\ref{sec:schemes}): a \emph{cloud} backend and a \emph{local} one, chosen per task, degrading gracefully
+when a backend is absent (Table~\ref{tab:llm-providers}).
+
+\begin{table}[h]
+\centering\small
+\caption{The LLM provider axis --- cloud versus local, chosen by purpose.}
+\label{tab:llm-providers}
+\begin{tabular}{@{}lp{0.42\textwidth}p{0.28\textwidth}@{}}
+\toprule
+\textbf{Provider} & \textbf{Best for} & \textbf{Cost / privacy} \\
+\midrule
+\texttt{:claude} (cloud) & any language, hard comprehension, low-volume / high-value work, unstructured non-regulatory text & per-call cost; \textbf{data leaves the machine} \\
+\texttt{:local} (Ollama / vLLM) & high-volume, privacy-sensitive, offline, cost-controlled batch work & free \& offline; needs GPU/RAM; lower ceiling \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Choosing a local model.} For \emph{non-Latin} comprehension the standout open-weight family is
+\textbf{Qwen} (Alibaba, trained heavily on Chinese and the CJK scripts); \textbf{Llama\,3.3} and Mistral are
+the general defaults; run any of them through \textbf{Ollama} (simplest) or vLLM. Rule of thumb: default to
+the cloud model for quality and breadth, and switch to local when \emph{privacy} (a filing that must not
+leave the machine), \emph{volume} (thousands of documents at no per-call cost) or \emph{offline} operation
+dominates.
+
+\paragraph{Language is not \emph{format}.} A related trap worth naming: even a filing written \emph{in English}
+(India, Hong Kong, Singapore) carries \emph{convention} variations --- the \emph{lakh}/\emph{crore} grouping,
+CJK ``myriad'' scales, decimal-comma numbers, jurisdiction-specific taxonomy terms --- that are \emph{not} a
+language problem, and for which an LLM is the wrong tool. Those are handled \emph{deterministically} in the
+extractors (a rule, not a model). Language needs a model; format needs a rule --- do not conflate them.
+
+\paragraph{Status.} The provider abstraction is the design target; comprehension today is delegated to the
+host application rather than a built-in verb. The question resurfaces --- more sharply --- the moment one
+leaves the regulated perimeter for the unstructured non-regulatory sources of the next chapter
+(\S\ref{sec:beyond-filing}), where there is no taxonomy to lean on at all.
+
 \chapter{Events: Announcements, News and Alerts}
 
 A company's \emph{events} are the dated, discrete developments that move its value \emph{between} the
@@ -1583,6 +1635,12 @@ a retrieval index, an LLM judge) can weight by trust rather than treat every sen
 The mechanism lives with the narratives layer; this chapter supplies the non-regulated end of its range. The
 line is not always crisp: a promotional claim about emissions or product safety may still be legally
 constrained --- but by a \emph{different} body of rules, with a different remedy, than a financial misstatement.
+
+\noindent It is also here, past the regulated perimeter, that \emph{comprehension} bites hardest: these
+sources are disproportionately multilingual and unstructured, with no taxonomy to lean on, so understanding
+them leans on the cloud-vs-local LLM provider axis (\S\ref{sec:narratives-multilingual}) --- and the trust
+axis above becomes a routing decision, since a sensitive source may be one that must \emph{not} be sent to a
+cloud backend at all.
 
 \section{Marketing and Product Documents}
 \label{sec:marketing-sources}
@@ -8666,68 +8724,13 @@ of the graceful floor into a specialised ceiling. Generic is thus both the fallb
 \section{Examples from: Australia, Brazil and Canada}
 
 
-\section{Dealing with Writing Systems}
+\section{Writing systems and local variations}
 
-Only Greece uses a true alphabet on that list. The rest use a fascinating mix of abjads, abugidas, syllabaries, and logograms.
-
-\subsection{Egypt}
-Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
-Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
-
-\subsection{Greece}
-System: Alphabet
-How it works: A true alphabet has distinct symbols for both consonants and vowels. The Greek alphabet was actually the world's first true alphabet (derived from the Phoenician system, but they added vowels).
-
-\subsection{Israel}
-System: Abjad (Consonantal alphabet)
-How it works: Hebrew is written primarily with consonants. Vowels are mostly omitted in everyday writing, though they can be indicated with little dots and dashes called niqqud (usually found in children's books or poetry).
-
-
-\subsection{Thailand}
-System: Abugida (Alphasyllabary) script derived from the Old Khmer script, which ultimately traces back to the ancient South Indian Pallava script. 
-How it works: In the Thai script, the base characters are consonants that have an inherent vowel sound automatically attached to them (usually an "a" or "o"). To change the vowel, you add a diacritic mark above, below, before, or after the consonant. The script is written continuously with no spaces between words.
-
-\subsection{Malaysia and Vietnam}
-The writing systems of Malaysia and Vietnam are quite similar in their modern forms. Both countries officially use a Latin-based (Romanized) alphabet. However, the foundational rules, accents, and historical evolutions of each are distinct.
-\begin{itemize}
-  \item Vietnam: Uses the Latin alphabet with an extensive system of diacritics (e.g., ă, â, ê, ơ, ư) to denote vowels and tones. It was developed by 17th-century Portuguese missionaries and replaced a previous writing system (chữ Nôm) that relied on Chinese characters.
-  \item Malaysia: Official Script: Rumi, which is the standardized Latin alphabet. It uses the same 26 letters as the English alphabet (with minor spelling agreements to match local pronunciations).Second Script: Jawi, a modified Arabic script used primarily for religious, cultural, and historical heritage purposes.
-\end{itemize}
- 
-
-\subsection{Cambodia, Laos and Myanmar}
-Laos, Cambodia, and Myanmar share a common linguistic heritage rooted in ancient Indian scripts.
-
-\begin{itemize}
-  \item Cambodia (Khmer Script): The oldest script in this group. It evolved from the Pallava and ancient Brahmi scripts of Southern India.
-  \item Laos (Lao Script): Part of the Tai-Kadai family, the Lao writing system is a direct evolutionary descendant of the Old Khmer script and the ancient Mon scripts.
-  \item Myanmar (Burmese Script): While the language is Sino-Tibetan, its writing system was also adapted from Indian roots (like the Pyu and Mon scripts).
-\end{itemize}
-\section{Local Variations}
-
-\subsection{China: Simplified and Traditional Chinese}
-Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
-\begin{itemize}
-  \item Written Standard: Mandarin primarily uses Simplified Chinese (used in mainland China), whereas Cantonese predominantly uses Traditional Chinese (used in Hong Kong and Macau).
-  \item Spoken Differences: Spoken Mandarin and Cantonese are completely different languages and are not mutually intelligible. A Mandarin speaker cannot understand spoken Cantonese. 
-  \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
-  \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
-\end{itemize}
-
-
-\subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
- Languages spoken in India do not all use the same alphabet. India has massive linguistic diversity, and languages are written using several distinct scripts. While many share roots in the ancient Brahmi script, they have evolved into unique writing systems.
-
- The primary scripts used include:
- \begin{itemize}
-  \item Devanagari: The script used for Hindi, Sanskrit, Marathi, Nepali, and Konkani.
-  \item Dravidian Scripts: Languages in the south have their own distinct scripts, such as Tamil, Telugu, Kannada, and Malayalam.
-  \item Other Major Scripts: Bengali, Punjabi (Gurmukhi script), and Odia each use their own distinct writing systems.
-  \item Perso-Arabic: Used primarily for Urdu.
-  \item Latin: Extensively used for English and sometimes for writing regional languages on digital platforms or in specific localized areas.
- \end{itemize}
-
-
+Non-Latin scripts (Arabic, CJK, Devanagari, Cyrillic\ldots) and the language and format variations that come
+with them are a \emph{cross-jurisdiction} concern, not a Generic-Filing one, so their treatment lives
+elsewhere. The \emph{comprehension} side --- understanding non-English prose, and the cloud-vs-local LLM
+provider axis it needs --- is in the narratives layer (\S\ref{sec:narratives-multilingual}); the script
+\emph{reference} tour is Appendix~\ref{ch:writing-systems}.
 
 \part{Business Reports}
 
@@ -9296,6 +9299,75 @@ headline-line \emph{definitions} are in Table~\ref{tab:morningstar-defs}. Extrac
 \texttt{ChangeinCashSupplementalAsReported} (26305) & \texttt{CashFlowfromOperationsbeforeNWC} (26306) \\
 \bottomrule
 \end{longtable}}
+
+
+\chapter{Writing Systems Reference}
+\label{ch:writing-systems}
+
+A reference tour of the writing systems behind the jurisdictions this book covers --- background for the
+\emph{rendering} side of \S\ref{sec:narratives-multilingual} (the \emph{understanding} side is the LLM
+provider axis documented there).
+
+\section{Dealing with Writing Systems}
+
+Only Greece uses a true alphabet on that list. The rest use a fascinating mix of abjads, abugidas, syllabaries, and logograms.
+
+\subsection{Egypt}
+Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
+Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
+
+\subsection{Greece}
+System: Alphabet
+How it works: A true alphabet has distinct symbols for both consonants and vowels. The Greek alphabet was actually the world's first true alphabet (derived from the Phoenician system, but they added vowels).
+
+\subsection{Israel}
+System: Abjad (Consonantal alphabet)
+How it works: Hebrew is written primarily with consonants. Vowels are mostly omitted in everyday writing, though they can be indicated with little dots and dashes called niqqud (usually found in children's books or poetry).
+
+
+\subsection{Thailand}
+System: Abugida (Alphasyllabary) script derived from the Old Khmer script, which ultimately traces back to the ancient South Indian Pallava script. 
+How it works: In the Thai script, the base characters are consonants that have an inherent vowel sound automatically attached to them (usually an "a" or "o"). To change the vowel, you add a diacritic mark above, below, before, or after the consonant. The script is written continuously with no spaces between words.
+
+\subsection{Malaysia and Vietnam}
+The writing systems of Malaysia and Vietnam are quite similar in their modern forms. Both countries officially use a Latin-based (Romanized) alphabet. However, the foundational rules, accents, and historical evolutions of each are distinct.
+\begin{itemize}
+  \item Vietnam: Uses the Latin alphabet with an extensive system of diacritics (e.g., ă, â, ê, ơ, ư) to denote vowels and tones. It was developed by 17th-century Portuguese missionaries and replaced a previous writing system (chữ Nôm) that relied on Chinese characters.
+  \item Malaysia: Official Script: Rumi, which is the standardized Latin alphabet. It uses the same 26 letters as the English alphabet (with minor spelling agreements to match local pronunciations).Second Script: Jawi, a modified Arabic script used primarily for religious, cultural, and historical heritage purposes.
+\end{itemize}
+ 
+
+\subsection{Cambodia, Laos and Myanmar}
+Laos, Cambodia, and Myanmar share a common linguistic heritage rooted in ancient Indian scripts.
+
+\begin{itemize}
+  \item Cambodia (Khmer Script): The oldest script in this group. It evolved from the Pallava and ancient Brahmi scripts of Southern India.
+  \item Laos (Lao Script): Part of the Tai-Kadai family, the Lao writing system is a direct evolutionary descendant of the Old Khmer script and the ancient Mon scripts.
+  \item Myanmar (Burmese Script): While the language is Sino-Tibetan, its writing system was also adapted from Indian roots (like the Pyu and Mon scripts).
+\end{itemize}
+\section{Local Variations}
+
+\subsection{China: Simplified and Traditional Chinese}
+Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
+\begin{itemize}
+  \item Written Standard: Mandarin primarily uses Simplified Chinese (used in mainland China), whereas Cantonese predominantly uses Traditional Chinese (used in Hong Kong and Macau).
+  \item Spoken Differences: Spoken Mandarin and Cantonese are completely different languages and are not mutually intelligible. A Mandarin speaker cannot understand spoken Cantonese. 
+  \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
+  \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
+\end{itemize}
+
+
+\subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
+ Languages spoken in India do not all use the same alphabet. India has massive linguistic diversity, and languages are written using several distinct scripts. While many share roots in the ancient Brahmi script, they have evolved into unique writing systems.
+
+ The primary scripts used include:
+ \begin{itemize}
+  \item Devanagari: The script used for Hindi, Sanskrit, Marathi, Nepali, and Konkani.
+  \item Dravidian Scripts: Languages in the south have their own distinct scripts, such as Tamil, Telugu, Kannada, and Malayalam.
+  \item Other Major Scripts: Bengali, Punjabi (Gurmukhi script), and Odia each use their own distinct writing systems.
+  \item Perso-Arabic: Used primarily for Urdu.
+  \item Latin: Extensively used for English and sometimes for writing regional languages on digital platforms or in specific localized areas.
+ \end{itemize}
 
 
 \chapter{References}
