@@ -1455,6 +1455,28 @@ the cloud model for quality and breadth, and switch to local when \emph{privacy}
 leave the machine), \emph{volume} (thousands of documents at no per-call cost) or \emph{offline} operation
 dominates.
 
+\paragraph{Running local models in practice.} Local inference is free in dollars but not in \emph{memory}, and
+on a typical laptop (say 16\,GB of unified memory) two non-obvious pitfalls will thrash the machine to a halt
+if left to their defaults. Both reduce to the same discipline: \emph{bound the memory footprint explicitly}.
+\begin{enumerate}
+  \item \textbf{Model residency.} Ollama keeps a model resident in RAM after a call (its \texttt{keep\_alive}
+  default is five minutes) so a follow-up request is instant. Running several models \emph{in sequence} therefore
+  still \emph{accumulates} them --- three mid-sized models can be cached at once, and their sizes \emph{sum}. On
+  constrained memory this looks and behaves exactly like running them in parallel, and overflows just the same.
+  The fix is to hold \emph{one model resident at a time}: finish all the work for a model, then evict it
+  (\texttt{keep\_alive:\,0}) before loading the next, so peak memory is the \emph{largest single} model, not the
+  sum.
+  \item \textbf{Default context window.} A model's advertised context length sizes its KV-cache \emph{allocation},
+  independently of how much context the task uses. Some open-weight models ship enormous defaults --- a 12\,B
+  Gemma variant we tested advertises a \emph{262{,}144}-token (256\,K) window --- and Ollama dutifully reserves
+  the cache for it. On a 16\,GB machine that reservation does not fit, so the runtime offloads most of the model
+  to CPU and pages to disk: a translation that should take five seconds crawls for minutes. Cap \texttt{num\_ctx}
+  to what the task needs --- a short filing passage is a few dozen tokens, so \texttt{4096} is already generous
+  --- and the same model runs entirely on the GPU.
+\end{enumerate}
+\noindent The worked translation ladder of Appendix~\ref{ch:writing-systems} was produced under exactly this
+discipline (one model resident at a time, \texttt{num\_ctx} capped, \texttt{temperature\,0} for reproducibility).
+
 \paragraph{Language is not \emph{format}.} A related trap worth naming: even a filing written \emph{in English}
 (India, Hong Kong, Singapore) carries \emph{convention} variations --- the \emph{lakh}/\emph{crore} grouping,
 CJK ``myriad'' scales, decimal-comma numbers, jurisdiction-specific taxonomy terms --- that are \emph{not} a
@@ -9312,6 +9334,36 @@ provider axis documented there).
 
 Only Greece uses a true alphabet on that list. The rest use a fascinating mix of abjads, abugidas, syllabaries, and logograms.
 
+\paragraph{A worked translation ladder.} The subsections for China, Japan, Korea and Russia below each carry a
+\emph{worked example}: one real passage from an actual filing in that script, translated by the LLM provider
+axis of \S\ref{sec:narratives-multilingual}. Five translators are compared --- four \emph{local} open-weight
+models that fit a 16\,GB laptop, plus the \emph{cloud} model (Opus~4.8) --- so the reader can \emph{feel} how
+translation quality falls off as the local model shrinks. Every local run is deterministic
+(\texttt{temperature\,0}, fixed seed) and ran one model at a time with \texttt{num\_ctx} capped
+(\S\ref{sec:narratives-multilingual}). Provenance for each passage:
+
+\begin{table}[h]
+\centering\small
+\caption{Source of each worked passage (page = PDF sheet number in the filing).}
+\label{tab:ladder-provenance}
+\begin{tabular}{@{}llll r@{}}
+\toprule
+\textbf{Filer} & \textbf{Filing type} & \textbf{Section} & \textbf{Period} & \textbf{Pg} \\
+\midrule
+Gree Electric (Zhuhai) & Annual Report & MD\&A: principal business & FY2025 & 10 \\
+Nintendo & Ann. Securities Report & Overview: business description & FY2026 (86th term) & 5 \\
+Samsung Electronics & Indep. Auditor's Report & Key Audit Matters & FY2023 & 4 \\
+PJSC LUKOIL & Consolidated IFRS FS & Note 1: general information & 31 Dec 2021 & 12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The local ladder, fastest (smallest) to slowest: \texttt{gemma3:4b} (4\,B), \texttt{qwen2.5:7b}
+(7\,B), \texttt{gemma4:12b} (12\,B, a verbose vision-instruct model that over-generates and so runs far
+slower --- 100--170\,s per passage against ~10\,s for the small models), \texttt{qwen2.5:14b} (14\,B). Qwen
+is trained heavily on CJK; the Gemma pair is general-purpose. The comparison therefore mixes model
+\emph{family} with model \emph{size} --- it is what actually runs on 16\,GB, not a pure size sweep.
+
 \subsection{Egypt}
 Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
 Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
@@ -9355,6 +9407,183 @@ Mandarin and Cantonese do not have an alphabet. Instead, they share a writing sy
   \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
   \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
 \end{itemize}
+
+\paragraph{Worked example (Simplified).} From Gree Electric's FY2025 annual report (CNINFO), the opening of
+the ``principal business'' discussion --- a passage dense with \emph{brand names}, which is exactly where
+translators diverge:
+\begin{quote}
+{\cjkCNfont 公司是一家多元化、科技型的全球工业集团，\\
+旗下拥有格力、TOSOT、晶弘、凌达、凯邦、新元等品牌。\\
+格力产品已服务全球190多个国家和地区，\\
+坚持以核心科技与高品质服务用户。}
+\end{quote}
+
+\begin{table}[h]
+\small
+\caption{Chinese passage translated by the five-rung ladder (smallest local model to cloud).}
+\label{tab:ladder-china}
+\begin{tabular}{@{}l l p{0.60\textwidth}@{}}
+\toprule
+\textbf{Translator} & \textbf{Time} & \textbf{English} \\
+\midrule
+\texttt{gemma3:4b} & 9.8\,s & The company is a diversified, technology-based global industrial group with brands such as Gree, TOSOT, \textbf{Crystal Crown}, Lingda, \textbf{Kairui}, and Xin Yuan. Gree products have served over 190 countries and regions worldwide, consistently focusing on core technology and high-quality service to users. \\
+\addlinespace
+\texttt{qwen2.5:7b} & 11.4\,s & The company is a diversified and technology-driven global industrial group featuring brands such as GREE, TOSOT, Jinghong, Lingda, Kebang, and Xinyuan. GREE products serve over 190 countries and regions worldwide, committed to delivering core technologies and high-quality service to users. \\
+\addlinespace
+\texttt{gemma4:12b} & 170\,s & The company is a diversified, technology-driven global industrial group that owns brands such as GREE, TOSOT, Jinghong, Lingda, Kaibang, and Xinyuan. GREE products have served more than 190 countries and regions worldwide, committed to serving users with core technologies and high quality. \\
+\addlinespace
+\texttt{qwen2.5:14b} & 22.6\,s & The company is a diversified, technology-driven global industrial group with brands including Gree, TOSOT, \textbf{Jinhong}, \textbf{Linder}, \textbf{Kebin}, and Xinyuan. Gree products have served over 190 countries and regions worldwide, consistently prioritizing core technology and high-quality service for its users. \\
+\addlinespace
+\texttt{:claude} (cloud) & --- & The company is a diversified, technology-driven global industrial group, whose brands include Gree, TOSOT, \emph{Kinghome}, \emph{Landa}, Kaibang and Xinyuan. Gree's products already serve more than 190 countries and regions worldwide, staying committed to serving users with core technology and high-quality service. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Reading the ladder.} The prose bodies are all fluent and near-identical --- the whole
+passage's factual content survives at every rung. The \emph{tell} is the six brand names, transliterations
+of \cncjk{晶弘}{}, \cncjk{凌达}{}, \cncjk{凯邦}{} and the rest. The 4\,B model mistranslates two: it renders
+\cncjk{晶弘}{} literally as ``Crystal Crown'' and invents ``Kairui'' for \cncjk{凯邦}{}. Note that bigger is
+\emph{not} monotonic here --- the 14\,B Qwen actually mangles \emph{more} brands than the 7\,B (``Jinhong'',
+``Linder'', ``Kebin''), because brand transliteration rewards specific training exposure, not raw parameter
+count. Only the cloud model reaches for the companies' \emph{official} English names (Kinghome, Landa). And
+the cost of the 12\,B rung is stark: 170 seconds against ten, for an answer no better than the 7\,B's.
+
+\subsection{Japan}
+System: a \emph{mixed} script --- three writing systems in one sentence. \textbf{Kanji} (logographic
+characters borrowed from Chinese) carry the content words; \textbf{hiragana} (a syllabary) supplies the
+grammar --- particles, inflections, function words; \textbf{katakana} (a second syllabary) writes loanwords
+and foreign names. A single line typically interleaves all three, and there are no spaces between words.
+
+\paragraph{Worked example.} From Nintendo's Annual Securities Report (\emph{yūka shōken hōkokusho}), the
+one-sentence business description --- note the katakana loanwords (\emph{home entertainment}, \emph{game})
+and the term \cncjk{トランプ}{}, Nintendo's origin product:
+\begin{quote}
+{\cjkJPfont 当社グループは、ホームエンターテインメントの分野で\\
+娯楽製品の開発、製造及び販売等を事業としています。\\
+主な製品は、コンピューターを利用した娯楽機器である\\
+「ゲーム専用機」とキャラクターグッズ・トランプ等です。}
+\end{quote}
+
+\begin{table}[h]
+\small
+\caption{Japanese passage translated by the five-rung ladder.}
+\label{tab:ladder-japan}
+\begin{tabular}{@{}l l p{0.60\textwidth}@{}}
+\toprule
+\textbf{Translator} & \textbf{Time} & \textbf{English} \\
+\midrule
+\texttt{gemma3:4b} & 4.3\,s & Our group's business involves the development, manufacture, and sale of entertainment products in the home entertainment field. Our main products include ``game-dedicated machines,'' which are entertainment devices utilizing computers, as well as character goods and playing cards. \\
+\addlinespace
+\texttt{qwen2.5:7b} & 5.6\,s & Our group engages in the development, manufacturing, and sales of entertainment products in the home entertainment field. The main products include game consoles utilizing computers and character goods, \textbf{trading cards}, etc. \\
+\addlinespace
+\texttt{gemma4:12b} & 107\,s & Our Group is engaged in the development, manufacture, and sale of entertainment products in the field of home entertainment. Our main products include ``game consoles,'' which are computer-based entertainment devices, as well as character goods and playing cards. \\
+\addlinespace
+\texttt{qwen2.5:14b} & 10.8\,s & Our group engages in the business of developing, manufacturing, and selling entertainment products in the home entertainment sector. The main products are game consoles designed for use with computers, character goods, and playing cards. \\
+\addlinespace
+\texttt{:claude} (cloud) & --- & Our group is engaged in the development, manufacture and sale of entertainment products in the field of home entertainment. Its main products are computer-based entertainment devices --- ``dedicated game machines'' --- together with character goods, playing cards, and the like. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Reading the ladder.} As in Chinese, every rung conveys the gist. The discriminating word is
+\cncjk{トランプ}{} --- Western \emph{playing} cards (the business Nintendo was founded on in 1889), \emph{not}
+collectible ``trading cards'' (\emph{torēdingu kādo}). The 7\,B Qwen makes exactly that slip. The other tell
+is \cncjk{ゲーム専用機}{}, literally a \emph{dedicated} games machine: the cloud model keeps the ``dedicated''
+sense, while both Qwen rungs flatten it to plain ``game consoles'' and subtly invert the computer relation
+(the device \emph{uses} computer technology; it is not ``for use with computers''). Again the 12\,B rung buys
+nothing over the 4\,B for 25$\times$ the time.
+
+\subsection{Korea}
+System: \textbf{Hangul}, an \emph{alphabet} --- but an unusually clever one. Commissioned by King Sejong in
+1443, its letters are \emph{featural}: their shapes encode the articulation (where the tongue and lips sit)
+of the sound. The letters are then packed into square \emph{syllabic blocks}, one block per syllable, so at a
+glance Hangul can be mistaken for the logographic scripts around it --- but it is a true alphabet, learnable
+in an afternoon.
+
+\paragraph{Worked example.} From Samsung Electronics' independent auditor's report, a \emph{Key Audit Matter}
+--- so the discriminating vocabulary here is \emph{accounting} terminology, not brand names:
+\begin{quote}
+{\cjkKRfont 연결회사의 DS(Device Solutions) 부문이 생산ㆍ판매하는\\
+메모리 반도체 제품은 당기 중 수요 약세를 포함한\\
+거시적 경기 불확실성 등으로 인한 가격 하락의 영향을 받았습니다.}
+\end{quote}
+
+\begin{table}[h]
+\small
+\caption{Korean passage translated by the five-rung ladder.}
+\label{tab:ladder-korea}
+\begin{tabular}{@{}l l p{0.60\textwidth}@{}}
+\toprule
+\textbf{Translator} & \textbf{Time} & \textbf{English} \\
+\midrule
+\texttt{gemma3:4b} & 3.2\,s & The DS (Device Solutions) division of the \textbf{connected company}'s production and sales of memory semiconductor products has been affected by price declines due to macroeconomic uncertainties, including weak demand \textbf{among the aforementioned factors}. \\
+\addlinespace
+\texttt{qwen2.5:7b} & 4.9\,s & The memory semiconductor products produced and sold by the DS (Device Solutions) division of the consolidated company were affected by a price decline due to macroeconomic uncertainties including weak demand. \\
+\addlinespace
+\texttt{gemma4:12b} & 124\,s & Memory semiconductor products manufactured and sold by the consolidated company's DS (Device Solutions) division were affected by price declines resulting from macroeconomic uncertainties, including weak demand, during the current period. \\
+\addlinespace
+\texttt{qwen2.5:14b} & 11.0\,s & The memory semiconductor products produced and sold by the DS (Device Solutions) division of the \textbf{affiliated company} were affected by price declines due to macroeconomic economic uncertainty, including a weak demand during the period. \\
+\addlinespace
+\texttt{:claude} (cloud) & --- & The memory-semiconductor products manufactured and sold by the consolidated company's DS (Device Solutions) division were affected during the period by price declines arising from macroeconomic uncertainty, including weak demand. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Reading the ladder.} This passage exposes a \emph{terminology} failure that matters far more
+than a brand name. \cncjk{연결회사}{} is a term of art: the \emph{consolidated} entity (the parent together
+with its subsidiaries), the reporting boundary of a consolidated financial statement. Two rungs get it wrong
+in accounting-significant ways --- the 4\,B model reads the character literally as ``\textbf{connected}
+company'', and the 14\,B renders it ``\textbf{affiliated} company'' (\cncjk{관계회사}{}, a \emph{different} and
+narrower concept). Either error would mislead a reader about \emph{which} entity the statement covers. The
+4\,B also loses \cncjk{당기 중}{} (``during the current period''), garbling it into ``among the aforementioned
+factors''. The 7\,B, the 12\,B and the cloud all handle the term correctly --- another reminder that on
+specialist vocabulary the ranking is exposure-driven, not size-ordered.
+
+\subsection{Russia}
+System: the \textbf{Cyrillic} alphabet --- a true alphabet (distinct letters for consonants and vowels),
+derived from Greek in the 9th century and named for the missionary Saint Cyril. Of the four scripts in this
+ladder it is the only one that needs \emph{no} dedicated font in this manual: under XeTeX the Latin Modern
+body face covers Cyrillic natively (hence the source below is set in the ordinary body font, not a CJK one).
+
+\paragraph{Worked example.} From LUKOIL's consolidated IFRS statements, the opening of Note~1 --- a plain
+statement of the group's business:
+\begin{quote}
+Основными видами деятельности ПАО «ЛУКОЙЛ» (далее -- Компания)\\
+и его дочерних компаний (вместе -- Группа) являются разведка,\\
+добыча, переработка и реализация нефти и нефтепродуктов.
+\end{quote}
+
+\begin{table}[h]
+\small
+\caption{Russian passage translated by the five-rung ladder.}
+\label{tab:ladder-russia}
+\begin{tabular}{@{}l l p{0.60\textwidth}@{}}
+\toprule
+\textbf{Translator} & \textbf{Time} & \textbf{English} \\
+\midrule
+\texttt{gemma3:4b} & 3.6\,s & The main activities of PJSC ``LUKOIL'' (hereinafter -- the Company) and its subsidiary companies (together -- the Group) are exploration, extraction, refining, and sale of oil and petroleum products. \\
+\addlinespace
+\texttt{qwen2.5:7b} & 5.7\,s & The main activities of \textbf{PAO} Lukoil (hereinafter referred to as the Company) and its subsidiaries (collectively referred to as the Group) are exploration, production, processing, and sale of oil and \textbf{oil products}. \\
+\addlinespace
+\texttt{gemma4:12b} & 121\,s & The main activities of PJSC LUKOIL (hereinafter referred to as the Company) and its subsidiaries (collectively, the Group) are the exploration, production, refining, and sale of oil and petroleum products. \\
+\addlinespace
+\texttt{qwen2.5:14b} & 11.7\,s & The main activities of PJSC ``LUKOIL'' (hereinafter, the Company) and its subsidiary companies (together, the Group) include exploration, production, refining, and \textbf{marketing} of oil and petroleum products. \\
+\addlinespace
+\texttt{:claude} (cloud) & --- & The principal activities of PJSC LUKOIL (hereinafter --- the Company) and its subsidiaries (together --- the Group) are the exploration, production, refining and sale of oil and petroleum products. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Reading the ladder.} The contrast with the CJK passages is the whole point. Russian is a
+high-resource, Latin-adjacent European language, and \emph{every} rung --- including the 4\,B laptop model ---
+produces a correct, fluent, essentially publication-ready translation. The gap that yawned open on Chinese
+brand names and Korean accounting terms has all but closed. What remains are \emph{conventions}, not errors:
+the 7\,B keeps the transliteration ``PAO'' instead of the standard English abbreviation \textbf{PJSC}
+(\emph{publichnoye aktsionernoye obshchestvo}, public joint-stock company) and softens \emph{nefteproduktov}
+to ``oil products''; the 14\,B stretches \emph{realizatsiya} to ``marketing''. The lesson for a filing
+pipeline is direct: the cloud-versus-local decision is \emph{not} uniform across languages. For Cyrillic and
+other high-resource scripts a small local model is close enough to run at volume; it is the CJK and
+lower-resource scripts that still justify reaching for the cloud.
 
 
 \subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
