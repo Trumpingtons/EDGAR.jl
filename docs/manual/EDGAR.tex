@@ -4203,6 +4203,91 @@ ArelleEsefOracle.statements("549300P8N0P6KDGTJ206")    # parity per BS / IS / CF
 \texttt{(statement, matched, total)} for \texttt{BalanceSheet}, \texttt{IncomeStatement} and
 \texttt{CashFlow} --- near-exact on the default panel (\textbf{100\,\% fact parity}).
 
+\subsection{Why Arelle validates but does not \emph{parse} --- and why not Docling for XBRL}
+\label{sec:validation-arelle-vs-parse}
+
+A fair question, since \texttt{EDGAR.jl} already leans on \textbf{Docling} to read \emph{PDFs}
+(\S\ref{sec:pdf-pipeline}) and Docling ships an XBRL backend built on Arelle: \emph{why not read XBRL with it
+too, instead of maintaining a hand-written inline-XBRL parser?} There are two reasons --- one mechanical, one
+architectural --- and a benchmark that settles the tradeoff with data rather than assertion.
+
+\paragraph{Docling's XBRL backend cannot read \emph{inline} XBRL.} Its backend accepts only a \emph{pure XBRL
+instance} (Arelle document type \texttt{INSTANCE}); it explicitly rejects inline XBRL (\emph{``Document is not
+an XBRL instance''}). But every filing that matters is inline: the SEC has been \emph{inline-only} since
+\(\sim\)2020, and ESEF is inline by definition. So the Docling path cannot ingest a single SEC or ESEF report
+as filed. And underneath it is Arelle regardless --- the backend merely packages
+\texttt{arelle.ModelXbrl.facts}, so where it \emph{could} run it would return identical values.
+
+\paragraph{The parser and the validator must be \emph{independent}.} This is the deeper reason. Arelle is
+\texttt{EDGAR.jl}'s independent reference (\S\ref{sec:validation-parser}): a second, unrelated implementation
+of the XBRL standard, against which the native parser is checked fact-for-fact. If Arelle \emph{became} the
+parser, that check would evaporate --- one cannot validate Arelle against Arelle. The entire trust model (two
+independent readings of the same bytes must agree) depends on the reader and the referee being different
+programs. Arelle is therefore kept, deliberately, on the \emph{validation} side of the line.
+
+\paragraph{The benchmark.} The choice is not merely defensive; the native parser wins on the merits. Across
+\textbf{13 fresh filings} --- ten distinct SEC filers (10-K \emph{and} 10-Q) and three ESEF annual reports ---
+every fact was extracted both ways (the native parser vs.\ Arelle, via \texttt{ArelleLocalOracle.validate})
+and compared:
+
+\begin{table}[h]
+\centering\small
+\caption{Native parser vs.\ Arelle across 13 fresh filings: fact concordance and wall-clock speed.}
+\label{tab:parser-vs-arelle}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Jurisdiction} & \textbf{Filings} & \textbf{Fact concordance} & \textbf{BS/IS/CF} & \textbf{Speed} \\
+\midrule
+SEC (10-K, 10-Q) & 10 & 99.3\,\% & 99.6\,\% & EDGAR \textbf{6\(\times\)} faster \\
+ESEF (annual)    & 3  & \textbf{100\,\%} & \textbf{100\,\%} & EDGAR \textbf{17\(\times\)} faster \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent And every SEC discrepancy, on inspection, was \emph{not} an extraction defect. Each fell into one
+of two buckets: Arelle silently dropping non-monetary \emph{integer counts} (\texttt{NumberOfStores},
+\texttt{NumberOfOperatingSegments}, litigation-claim counts --- returned as \texttt{NaN}), or the filer
+\emph{duplicate-tagging} one figure at two precisions --- the precise value on the face of the statement, a
+rounded value in a note --- where the native parser prefers the precise one. For one issuer's \textbf{total
+assets} the filing tags both \$208{,}160\,M (balance sheet, \texttt{scale=6}) and \$208\,B (note,
+\texttt{scale=9}); the native parser reports the former, the correct primary figure. ESEF, cleaner
+(single-tagged and all-monetary), agreed to the last fact.
+
+So the native parser is \textbf{6--17\(\times\) faster and at least as precise} --- indeed the \emph{more}
+precise on every delta examined --- \emph{and} it preserves the independence that makes Arelle a meaningful
+check. Arelle stays what it should be here: the second opinion, not the first.
+
+\paragraph{Dependency footprint.} Adopting the Arelle backend is cheaper than it looks, and it is
+\emph{optional} --- it rides Docling's \texttt{[xbrl]} extra (\texttt{docling[xbrl]} \(\to\)
+\texttt{docling-slim[format-xml-xbrl]} \(\to\) \texttt{arelle-release}), and Docling degrades gracefully
+without it (\texttt{\_XBRL\_AVAILABLE = False}). The \texttt{arelle-release} package is the \emph{full} Arelle
+(engine, command line, web server, Tk GUI, every plugin), of which fact extraction touches a small slice;
+Table~\ref{tab:arelle-footprint} shows where its \(\sim\)33\,MB goes. Crucially, the heavy binary dependencies
+it declares --- \texttt{lxml}, \texttt{numpy}, \texttt{pillow} --- are \emph{already} pulled by Docling's
+PDF/ML stack, so the \emph{net} new footprint is Arelle itself plus a few small pure-Python libraries
+(\texttt{bottle}, \texttt{openpyxl}, \texttt{jsonschema}, \ldots) --- no new heavy dependency. And it
+\emph{consolidates}: the same bundled \texttt{arelleCmdLine} also serves the local-Arelle oracle
+(\S\ref{sec:validation-parser}), which otherwise needs a \emph{separately} installed Arelle --- point
+\texttt{ARELLE\_CMD} at the venv's \texttt{arelleCmdLine} and one Arelle serves both.
+
+\begin{table}[h]
+\centering\small
+\caption{Where \texttt{arelle-release}'s \(\sim\)33\,MB goes. Fact extraction uses only the core; the GUI
+images, locale translations and most plugins are unused ballast.}
+\label{tab:arelle-footprint}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Component} & \textbf{Size} & \textbf{Used for facts?} \\
+\midrule
+\texttt{plugin/} \small(SEC, ESEF, EBA, xbrlDB, OIM\ldots) & 13\,MB & mostly no \\
+\texttt{resources/} & 6\,MB & partial \\
+\texttt{\_\_pycache\_\_/} & 4\,MB & regenerable \\
+\texttt{locale/} \small(translations) & 2\,MB & no \\
+\texttt{images/} \small(GUI icons) & 2\,MB & no \\
+core \texttt{.py} $+$ \texttt{oim}/\texttt{formula} & \(\sim\)6\,MB & \textbf{yes} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 
 \section{Cross-Format Check (PDF vs iXBRL)}
