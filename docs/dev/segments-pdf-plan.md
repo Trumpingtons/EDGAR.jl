@@ -126,6 +126,29 @@ on a `DocTable`. Two adapters feed it:
 and ESEF (HTML adapter). Out: UK Companies House (small PDF filers disclose no segments; large UK groups ride
 the UKSEF/HTML adapter). EDINET/DART/India/SEC already work via XBRL dimensions.
 
+## S1 findings (locator + adapters built — 2026-07-10)
+
+Built `src/extractors/segments_doc.jl`: the source-independent locator (`_segment_score`/`_find_segment_grid`)
++ the Docling adapter (`_grid` over `DocTable`) + the HTML adapter (`_grids_html` via `Documents.TableProcessor`
+→ `TableMatrix`). Verified on the corpus:
+
+- **Locator generalises**: one scorer finds the segment table across Docling PDF (Continental/EN, Techtronic/EN,
+  Gree/CJK) and HTML iXBRL (Enel), and rejects the geography/product/management-view decoys (Techtronic, Nestlé).
+- **Anchor generalised beyond "external sales".** The revenue-row label varies more than S0 showed: Enel uses
+  **"Revenue and other income from third parties"**, and the label **wraps across grid rows** (numbers on one,
+  "from third parties" on the next). So the anchor is now a revenue FAMILY (`_SEG_REVENUE`) + an EXTERNAL
+  qualifier (`_SEG_EXTERNAL`: external / third-party / 对外 / 外部), with a `_row_label` that stitches the wrapped
+  continuation, preferring the external row over "total revenue" (which includes inter-segment).
+- **ESEF iXBRL has TWO flavours** — the decisive S1 finding:
+  - **Semantic-table** (Enel: 274 `<table>`) → the HTML adapter parses it directly (XPath must use
+    `local-name()='table'` — iXBRL is XHTML with a default namespace, so bare `//table` matches nothing).
+  - **Div/span-positioned** (Airbus: **0** `<table>`, 1706 `<div>`, absolutely-positioned spans from a
+    PDF-to-iXBRL converter) → there is no HTML table to parse; it needs **Docling over the HTML** (visual
+    reconstruction), i.e. the *Docling* adapter with an HTML input. **Remaining S1 task.**
+
+So the "two adapters" are really **table-source strategies**: `Documents`-HTML for semantic-table iXBRL,
+Docling for PDF *and* div-positioned iXBRL. The locator is unchanged across all of them.
+
 ## Phases
 
 - **S0 — Recon. ✅ DONE** (see *S0 findings* above). Reconned six FRESH filers across HK/DE/CN (not the
