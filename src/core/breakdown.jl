@@ -105,7 +105,12 @@ segments(f, "ifrs-full:Revenue"; lang = "en")                                # E
 """
 function segments(f::Filing, concept::AbstractString; labels::Bool=true,
                   lang::Union{AbstractString,Nothing}=nothing)
-    rows = breakdown(f, concept; axis = nothing, labels = labels, lang = lang)   # auto-detect prefers a segment axis
-    (isempty(rows) || !occursin(r"(?i)segment", rows[1].axis)) && return NamedTuple[]  # only a segment axis counts
-    return rows
+    # Dispatch on the filing's format (segments-pdf-plan). PDF-native filings carry no XBRL dimensions —
+    # recover the segment note from the document's tables (`_segments_pdf`, Docling). iXBRL/HTML filings
+    # try dimensions first; ESEF block-tags the note (no dimension), so fall back to the rendered HTML table.
+    f.kind === :pdf && return _segments_pdf(f.content)
+    rows = try breakdown(f, concept; axis = nothing, labels = labels, lang = lang) catch; NamedTuple[] end
+    (!isempty(rows) && occursin(r"(?i)segment", rows[1].axis)) && return rows    # XBRL segment dimension carried it
+    (f.kind in (:ixbrl, :html)) && return _segments_ixbrl(f.content)             # ESEF: block-tagged HTML table
+    return NamedTuple[]
 end

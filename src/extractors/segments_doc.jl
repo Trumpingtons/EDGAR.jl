@@ -170,3 +170,81 @@ function _segment_revenue(g::Vector{Vector{String}}, revrow::Int)
     ok = tv !== nothing && abs(segsum + rv - tv) <= 0.005 * max(abs(tv), 1)
     return (rows = rows, total = tv, recon = (recon === nothing ? nothing : rows[recon].value), ok = ok)
 end
+
+# ── S3: source entry points + breakdown()-shaped rows ────────────────────────
+# The table states amounts in a scale (millions/thousands); XBRL-backed `breakdown` values are base units,
+# so scale the segment values to match for a true drop-in. Detected from the header/unit tokens.
+function _seg_scale(g)
+    txt = join((join(r, " ") for r in first(g, min(length(g), 5))), " ")
+    occursin(r"(?i)\bbillion", txt) && return 1.0e9
+    occursin("亿", txt) && return 1.0e8
+    occursin(r"(?i)\bmillions?\b|€\s*millions?|rmb'?\s?million|hk\$'?\s?m\b|百万", txt) && return 1.0e6
+    occursin("万", txt) && return 1.0e4
+    occursin(r"(?i)thousand|'000|千元|us\$'?0{2,}|hk\$'?0{2,}|\$'?0{3}", txt) && return 1.0e3
+    return 1.0
+end
+
+# Convert a located+parsed grid into `breakdown()`-shaped rows (one per segment). `axis = "segment"` is
+# synthesised (there is no QName); `member`/`name` are the segment label; revenue is a duration → not instant.
+# Returns `(rows, reconciles)` so the PDF page-selector can prefer a page whose table reconciles.
+function _seg_rows(g::Vector{Vector{String}}, revrow::Int)
+    p = _segment_revenue(g, revrow)
+    scale = _seg_scale(g)
+    rows = NamedTuple[]
+    for r in p.rows
+        r.kind === :segment || continue
+        push!(rows, (axis = "segment", member = r.name, name = r.name, value = r.value * scale,
+                     period_start = nothing, period_end = nothing, is_instant = false, other_dims = ""))
+    end
+    return (rows, p.ok)
+end
+
+# Reading-order page text from the pdf.js word pass (rows grouped by y, then x) — for the text-scan fallback.
+function _seg_pagetext(pg)
+    ws = sort([(y = Float64(w.y), x = Float64(w.x), s = String(w.str)) for w in pg.words];
+              by = t -> (round(t.y / 3.5), t.x))
+    return join((t.s for t in ws), " ")
+end
+
+const _SEG_TOC_TITLE   = r"(?i)segment|分部|Segmentbericht"
+const _SEG_PAGE_ANCHOR = r"(?i)external sales|revenue from external|外部客户|对外交易收入|revenue.{0,30}external customers|third[- ]part"
+
+# Candidate segment-note pages for a PDF: TOC-titled entries first (cheap, precise), then a `_pdf_words`
+# text scan for the external-revenue anchor when the TOC is coarse/absent.
+function _segment_pdf_pages(path::AbstractString)
+    cands = Int[]
+    try
+        for r in toc(path)
+            r.page !== nothing && occursin(_SEG_TOC_TITLE, r.title) && push!(cands, r.page)
+        end
+    catch; end
+    if isempty(cands)
+        try
+            for pg in _pdf_words(path).pages
+                occursin(_SEG_PAGE_ANCHOR, _seg_pagetext(pg)) && push!(cands, Int(pg.page))
+            end
+        catch; end
+    end
+    return unique(cands)
+end
+
+# The PDF entry point: locate candidate pages, Docling a tight range around each, and return the segment
+# rows from the first table that RECONCILES (Σ segments = total); fall back to the first non-empty parse.
+function _segments_pdf(path::AbstractString)
+    fallback = NamedTuple[]
+    for pg in _segment_pdf_pages(path)
+        sd = try structured_document(path; pages = (max(1, pg - 1), pg + 1)) catch; continue end
+        res = _find_segment_grid(_grid(t) for t in sd.tables); res === nothing && continue
+        rows, ok = _seg_rows(res[1], res[2])
+        isempty(rows) && continue
+        ok && return rows
+        isempty(fallback) && (fallback = rows)
+    end
+    return fallback
+end
+
+# The ESEF/iXBRL entry point: the segment note is a rendered HTML table in the in-memory iXBRL (no location).
+function _segments_ixbrl(html::AbstractString)
+    res = _find_segment_html(html); res === nothing && return NamedTuple[]
+    return _seg_rows(res[1], res[2])[1]
+end

@@ -160,6 +160,20 @@ row count, contiguous columns) before locating; (b) the revenue anchor must also
 guard, which only appears once the fragments are joined). The geography (Australia/NZ) and management-view
 `%` tables were correctly rejected.
 
+## S3 page-location — TOC first, text-scan fallback, reconciliation arbitrates
+
+For a PDF filing the segment note must be found *before* Docling (Docling the whole 200-page report is
+infeasible). Layered strategy, cheapest first:
+1. **`toc(path)`** — the pdf.js bookmark outline (no Docling). When the PDF has a **note-level** TOC it names
+   the exact page, and even distinguishes the *data* table from the policy heading (Gree: "6、分部报告" → p207
+   vs "37、分部报告" → p125). Continental → p240, Wesfarmers → p139, Gree → p207 all resolved directly.
+2. **`_pdf_words` text scan (fallback)** — when the TOC is coarse (Techtronic, ANTA: chapter-level only) or
+   absent (Midea, Nornickel: no bookmarks), scan per-page reading-order text for the external-revenue anchor
+   (External sales / 对外交易收入 / third-party revenue).
+3. **Reconciliation arbitrates** — Docling a tight range around each candidate page, locate + parse; the
+   table whose `Σ segments = total` **reconciles** wins (also resolves TOC's policy-vs-data ambiguity). The
+   ESEF/HTML path needs no location (the iXBRL is in-memory).
+
 ## Phases
 
 - **S0 — Recon. ✅ DONE** (see *S0 findings* above). Reconned six FRESH filers across HK/DE/CN (not the
