@@ -9365,48 +9365,10 @@ slower --- 100--170\,s per passage against ~10\,s for the small models), \texttt
 is trained heavily on CJK; the Gemma pair is general-purpose. The comparison therefore mixes model
 \emph{family} with model \emph{size} --- it is what actually runs on 16\,GB, not a pure size sweep.
 
-\subsection{Egypt}
-Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
-Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
-
-\subsection{Greece}
-System: Alphabet
-How it works: A true alphabet has distinct symbols for both consonants and vowels. The Greek alphabet was actually the world's first true alphabet (derived from the Phoenician system, but they added vowels).
-
-\subsection{Israel}
-System: Abjad (Consonantal alphabet)
-How it works: Hebrew is written primarily with consonants. Vowels are mostly omitted in everyday writing, though they can be indicated with little dots and dashes called niqqud (usually found in children's books or poetry).
-
-
-\subsection{Thailand}
-System: Abugida (Alphasyllabary) script derived from the Old Khmer script, which ultimately traces back to the ancient South Indian Pallava script. 
-How it works: In the Thai script, the base characters are consonants that have an inherent vowel sound automatically attached to them (usually an "a" or "o"). To change the vowel, you add a diacritic mark above, below, before, or after the consonant. The script is written continuously with no spaces between words.
-
-\subsection{Malaysia and Vietnam}
-The writing systems of Malaysia and Vietnam are quite similar in their modern forms. Both countries officially use a Latin-based (Romanized) alphabet. However, the foundational rules, accents, and historical evolutions of each are distinct.
-\begin{itemize}
-  \item Vietnam: Uses the Latin alphabet with an extensive system of diacritics (e.g., ă, â, ê, ơ, ư) to denote vowels and tones. It was developed by 17th-century Portuguese missionaries and replaced a previous writing system (chữ Nôm) that relied on Chinese characters.
-  \item Malaysia: Official Script: Rumi, which is the standardized Latin alphabet. It uses the same 26 letters as the English alphabet (with minor spelling agreements to match local pronunciations).Second Script: Jawi, a modified Arabic script used primarily for religious, cultural, and historical heritage purposes.
-\end{itemize}
- 
-
-\subsection{Cambodia, Laos and Myanmar}
-Laos, Cambodia, and Myanmar share a common linguistic heritage rooted in ancient Indian scripts.
-
-\begin{itemize}
-  \item Cambodia (Khmer Script): The oldest script in this group. It evolved from the Pallava and ancient Brahmi scripts of Southern India.
-  \item Laos (Lao Script): Part of the Tai-Kadai family, the Lao writing system is a direct evolutionary descendant of the Old Khmer script and the ancient Mon scripts.
-  \item Myanmar (Burmese Script): While the language is Sino-Tibetan, its writing system was also adapted from Indian roots (like the Pyu and Mon scripts).
-\end{itemize}
-
-\subsection{China: Simplified and Traditional Chinese}
-Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
-\begin{itemize}
-  \item Written Standard: Mandarin primarily uses Simplified Chinese (used in mainland China), whereas Cantonese predominantly uses Traditional Chinese (used in Hong Kong and Macau).
-  \item Spoken Differences: Spoken Mandarin and Cantonese are completely different languages and are not mutually intelligible. A Mandarin speaker cannot understand spoken Cantonese. 
-  \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
-  \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
-\end{itemize}
+\subsection{China}
+System: logographic --- Chinese characters, each representing a word or morpheme rather than a sound; written
+Simplified on the mainland (CNINFO) and Traditional in Hong Kong and Macau. See
+\S\ref{subsec:china-local} under Local Variations for the Simplified/Traditional and Mandarin/Cantonese detail.
 
 \paragraph{Worked example (Simplified).} From Gree Electric's FY2025 annual report (CNINFO), the opening of
 the ``principal business'' discussion --- a passage dense with \emph{brand names}, which is exactly where
@@ -9585,7 +9547,51 @@ pipeline is direct: the cloud-versus-local decision is \emph{not} uniform across
 other high-resource scripts a small local model is close enough to run at volume; it is the CJK and
 lower-resource scripts that still justify reaching for the cloud.
 
+\subsection{Egypt}
+Egypt's official language is Arabic, and they use the Arabic alphabet (which, linguistically speaking, is also an abjad).
+Just like Hebrew, the Arabic script primarily focuses on consonants. Vowels are usually omitted in everyday writing (like newspapers, books, and street signs) and are only filled in by the reader based on context. When they are written out—like in the Quran, children's books, or grammar texts—they are added as small diacritical marks (called tashkeel) above or below the letters.
+
+\subsection{Greece}
+System: Alphabet
+How it works: A true alphabet has distinct symbols for both consonants and vowels. The Greek alphabet was actually the world's first true alphabet (derived from the Phoenician system, but they added vowels).
+
+\subsection{Israel}
+System: Abjad (Consonantal alphabet)
+How it works: Hebrew is written primarily with consonants. Vowels are mostly omitted in everyday writing, though they can be indicated with little dots and dashes called niqqud (usually found in children's books or poetry).
+
+
+\subsection{Thailand}
+System: Abugida (Alphasyllabary) script derived from the Old Khmer script, which ultimately traces back to the ancient South Indian Pallava script. 
+How it works: In the Thai script, the base characters are consonants that have an inherent vowel sound automatically attached to them (usually an "a" or "o"). To change the vowel, you add a diacritic mark above, below, before, or after the consonant. The script is written continuously with no spaces between words.
+
+\subsection{Malaysia and Vietnam}
+The writing systems of Malaysia and Vietnam are quite similar in their modern forms. Both countries officially use a Latin-based (Romanized) alphabet. However, the foundational rules, accents, and historical evolutions of each are distinct.
+\begin{itemize}
+  \item Vietnam: Uses the Latin alphabet with an extensive system of diacritics (e.g., ă, â, ê, ơ, ư) to denote vowels and tones. It was developed by 17th-century Portuguese missionaries and replaced a previous writing system (chữ Nôm) that relied on Chinese characters.
+  \item Malaysia: Official Script: Rumi, which is the standardized Latin alphabet. It uses the same 26 letters as the English alphabet (with minor spelling agreements to match local pronunciations).Second Script: Jawi, a modified Arabic script used primarily for religious, cultural, and historical heritage purposes.
+\end{itemize}
+ 
+
+\subsection{Cambodia, Laos and Myanmar}
+Laos, Cambodia, and Myanmar share a common linguistic heritage rooted in ancient Indian scripts.
+
+\begin{itemize}
+  \item Cambodia (Khmer Script): The oldest script in this group. It evolved from the Pallava and ancient Brahmi scripts of Southern India.
+  \item Laos (Lao Script): Part of the Tai-Kadai family, the Lao writing system is a direct evolutionary descendant of the Old Khmer script and the ancient Mon scripts.
+  \item Myanmar (Burmese Script): While the language is Sino-Tibetan, its writing system was also adapted from Indian roots (like the Pyu and Mon scripts).
+\end{itemize}
+
 \section{Local Variations}
+
+\subsection{China: Simplified and Traditional Chinese}
+\label{subsec:china-local}
+Mandarin and Cantonese do not have an alphabet. Instead, they share a writing system based on Chinese characters, where each character represents a word or meaningful part of a word rather than a sound. While they share the same fundamental writing system, they have major differences:
+\begin{itemize}
+  \item Written Standard: Mandarin primarily uses Simplified Chinese (used in mainland China), whereas Cantonese predominantly uses Traditional Chinese (used in Hong Kong and Macau).
+  \item Spoken Differences: Spoken Mandarin and Cantonese are completely different languages and are not mutually intelligible. A Mandarin speaker cannot understand spoken Cantonese.
+  \item Slang \& Grammar: Cantonese has its own unique spoken grammar and vocabulary that isn't used in Mandarin, and Cantonese speakers often write exactly the way they speak using unique characters.
+  \item Phonetics: If a speaker wants to spell out Chinese words using the Roman alphabet (for typing or learning), Mandarin uses Pinyin, while Cantonese has a different system called Jyutping.
+\end{itemize}
 
 \subsection{India: Devanagari, Bengali, Gurmukhi and Dravidian Scripts}
  Languages spoken in India do not all use the same alphabet. India has massive linguistic diversity, and languages are written using several distinct scripts. While many share roots in the ancient Brahmi script, they have evolved into unique writing systems.
