@@ -119,3 +119,54 @@ end
 
 # Locate the operating-segment table in an iXBRL HTML document (the ESEF adapter's entry point).
 _find_segment_html(html::AbstractString) = _find_segment_grid(_grids_html(html))
+
+# ── S2: parse the located table into per-segment revenue ─────────────────────
+# A monetary amount from a cell: parenthesised → negative; strip currency/percent; drop thousands
+# separators (English/international format — German decimal-comma is a hardening item). Nil ("-"/"–") → nothing.
+function _seg_amount(s::AbstractString)
+    t = strip(s)
+    (isempty(t) || t in ("-", "–", "—", "n/a", "N/A")) && return nothing
+    neg = startswith(t, "(") && endswith(t, ")")
+    t = strip(t, ['(', ')', '$', '€', '£', '%', '¥', ' ', '*'])
+    t = replace(t, "," => "")
+    v = tryparse(Float64, t)
+    return v === nothing ? nothing : (neg ? -v : v)
+end
+
+# Header rows of a grid = the multi-cell, non-numeric rows above the revenue row (segment-name headers,
+# possibly split across several lines); single-cell title rows ("Results for 2024") and numeric rows are excluded.
+_seg_header_rows(g, revrow) = [i for i in 1:revrow-1 if count(_seg_isnum, g[i]) == 0 && count(!isempty, g[i]) >= 2]
+
+# Strip a trailing unit token a header cell may carry ("Power Equipment US$'000" → "Power Equipment").
+_seg_clean_name(s) = strip(replace(s, r"(?i)\s*(US\$'?0*|HK\$'?\w*|RMB'?\s?[Mm]illion|€\s?millions?|\$'?0*m?|£'?[m0]*|千元|百万元)\s*$" => ""))
+
+"""
+    _segment_revenue(g, revrow) -> (rows, total, recon, ok)
+
+Parse the located segment grid at its revenue `revrow` into per-column results. `rows` is a vector of
+`(name, value, kind)` — `kind ∈ (:segment, :total, :recon)` — one per numeric column, deduplicated against
+colspan repeats. `total`/`recon` are the total-column and reconciliation/elimination values (or `nothing`).
+`ok` is the reconciliation oracle: `Σ segment values (+ recon) ≈ total`, within 0.5%.
+"""
+function _segment_revenue(g::Vector{Vector{String}}, revrow::Int)
+    hdrs = _seg_header_rows(g, revrow)
+    ncol = maximum(length.(g); init = 0)
+    colname(c) = _seg_clean_name(strip(join((get(g[i], c, "") for i in hdrs), " ")))
+    rev = g[revrow]
+    rows = NamedTuple[]; seen = Set{Tuple{String,Float64}}()
+    for c in 1:ncol
+        v = _seg_amount(get(rev, c, "")); v === nothing && continue
+        name = colname(c); isempty(name) && continue
+        (name, v) in seen && continue                                   # dedup colspan-expanded repeats
+        push!(seen, (name, v))
+        kind = occursin(_SEG_TOTAL, name) ? :total : occursin(_SEG_RECON, name) ? :recon : :segment
+        push!(rows, (name = name, value = v, kind = kind))
+    end
+    total = findlast(r -> r.kind === :total, rows)
+    recon = findlast(r -> r.kind === :recon, rows)
+    tv = total === nothing ? nothing : rows[total].value
+    rv = recon === nothing ? 0.0 : rows[recon].value
+    segsum = sum((r.value for r in rows if r.kind === :segment); init = 0.0)
+    ok = tv !== nothing && abs(segsum + rv - tv) <= 0.005 * max(abs(tv), 1)
+    return (rows = rows, total = tv, recon = (recon === nothing ? nothing : rows[recon].value), ok = ok)
+end

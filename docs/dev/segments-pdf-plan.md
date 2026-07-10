@@ -149,6 +149,17 @@ Built `src/extractors/segments_doc.jl`: the source-independent locator (`_segmen
 So the "two adapters" are really **table-source strategies**: `Documents`-HTML for semantic-table iXBRL,
 Docling for PDF *and* div-positioned iXBRL. The locator is unchanged across all of them.
 
+**Table fragmentation (Wesfarmers, Generic ×2).** A filer with many segments (Wesfarmers: 8) has a *wide*
+segment table that Docling **splits into two** by column-group — one fragment `BUNNINGS | KMART | WesCEF`
+with the `Revenue from contracts with customers` row, the other `OFFICEWORKS | … | CONSOLIDATED`. Neither
+half carries the full *segment-header + external-revenue + total* structure, so the single-table locator
+misses it. This is the same class as Henkel's Docling-miss — the *table extractor* is the limiting factor,
+not the locator. Two consequences for S2/hardening: (a) **re-join adjacent same-page table fragments** (same
+row count, contiguous columns) before locating; (b) the revenue anchor must also accept the IFRS-15 label
+`Revenue from contracts with customers` (no "external" qualifier — so it relies on the total+reconciliation
+guard, which only appears once the fragments are joined). The geography (Australia/NZ) and management-view
+`%` tables were correctly rejected.
+
 ## Phases
 
 - **S0 — Recon. ✅ DONE** (see *S0 findings* above). Reconned six FRESH filers across HK/DE/CN (not the
