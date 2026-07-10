@@ -143,8 +143,13 @@ Built `src/extractors/segments_doc.jl`: the source-independent locator (`_segmen
   - **Semantic-table** (Enel: 274 `<table>`) → the HTML adapter parses it directly (XPath must use
     `local-name()='table'` — iXBRL is XHTML with a default namespace, so bare `//table` matches nothing).
   - **Div/span-positioned** (Airbus: **0** `<table>`, 1706 `<div>`, absolutely-positioned spans from a
-    PDF-to-iXBRL converter) → there is no HTML table to parse; it needs **Docling over the HTML** (visual
-    reconstruction), i.e. the *Docling* adapter with an HTML input. **Remaining S1 task.**
+    PDF-to-iXBRL converter) → there is no HTML table to parse. **Feasibility gate (2026-07-10): FAILED** —
+    Docling on the 16.7 MB iXBRL returns **0 tables** in 11 s (its HTML path needs semantic `<table>`s; only
+    its PDF path does visual reconstruction). `toc(f)` gives 7 coarse entries, no segment section; only 4
+    total-level revenue facts are tagged. So Docling-over-HTML, TOC, and facts all miss. The only path left is
+    **geometric span-grouping** — decode the CSS-class→(x,y) map and reuse the PDF `_pdf_rows`/`_pdf_columns`
+    reconstruction — a **large**, converter-specific job. Affects only the subset of ESEF filers whose
+    converter emits positioned-div iXBRL (semantic-table iXBRL like Enel already works). **Deferred.**
 
 So the "two adapters" are really **table-source strategies**: `Documents`-HTML for semantic-table iXBRL,
 Docling for PDF *and* div-positioned iXBRL. The locator is unchanged across all of them.
@@ -159,6 +164,17 @@ row count, contiguous columns) before locating; (b) the revenue anchor must also
 `Revenue from contracts with customers` (no "external" qualifier — so it relies on the total+reconciliation
 guard, which only appears once the fragments are joined). The geography (Australia/NZ) and management-view
 `%` tables were correctly rejected.
+
+**Update (2026-07-10): #2 is harder than catalogued — TWO coupled problems.** Inspecting the fragments in
+full: the left one is `label | BUNNINGS 2024 2023 | KMART 2024 2023 | WesCEF 2024 2023` (**two years
+interleaved** per segment), the right one is label-less with a **different row count** (24 vs 27) and holds
+`CONSOLIDATED`. So fixing Wesfarmers needs (i) a fragment-join that aligns by the *year-header row* (naïve
+index-join fails on the row-count mismatch and the missing labels), AND (ii) **multi-year column handling** —
+select the current-year value per segment; the working cases (Continental/Gree/Techtronic/Enel) only parsed
+because Docling *happened to split the years* into single-year tables, so the parser/oracle assume one value
+per segment. Neither fix alone suffices. This is a real chunk, low generality (one filer's layout); the
+multi-year piece is the more broadly useful sub-part but has no clean (non-fragmented) 2-year corpus example
+to validate against. **Deferred.**
 
 ## S3 page-location — TOC first, text-scan fallback, reconciliation arbitrates
 
