@@ -94,9 +94,17 @@ end
 
 `concept` broken down by **operating / reportable segment** — a convenience over [`breakdown`](@ref)
 that picks the filing's segment axis for you (an axis whose name contains "Segment"), returning the same
-rows. Returns an empty vector when the filing tags no segment dimension — common at ESEF (the segment
-note is block-tagged, not dimensioned) and for small Companies House filers (no segment disclosure). For
-any OTHER dimension — product, geography, maturity — call [`breakdown`](@ref) with an explicit `axis`.
+rows. For any OTHER dimension — product, geography, maturity — call [`breakdown`](@ref) with an explicit `axis`.
+
+Dispatches on the filing's format (`f.kind`). Dimensionally-tagged filings (SEC/EDINET/DART/India/…) use
+the XBRL path above. **PDF-native filings** (China, Germany, HK, Russia, Generic) and **ESEF** (which
+block-tags the segment note, so it carries no dimension) carry no segment cube — there `segments` recovers
+the note from the document's *table*: a structure-based locator finds the operating-segment table (a
+segment-name header + an external-revenue row, rejecting geography/product/management-view decoys) via a
+Docling adapter (PDF) or the HTML table reader (semantic iXBRL); for a PDF the note is located by the `toc`
+outline then a text scan, with a built-in reconciliation check (Σ segments = consolidated) arbitrating and
+validating. Values are scaled to base units — a drop-in for the dimension path. Returns an empty vector
+when no segment table is found (e.g. a filing with no segment disclosure). See `docs/dev/segments-pdf-plan.md`.
 
 ```julia
 segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")   # revenue by segment

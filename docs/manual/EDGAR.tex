@@ -1027,6 +1027,46 @@ recovering the \emph{same} \texttt{Fact}s regardless of format (\S\ref{sec:pdf-p
 (\texttt{``PDF debit lines store the value, not the presentation sign''}) pins this so the convention cannot
 silently drift.
 
+\section{Revenue by segment from the document}
+\label{sec:pdf-segments}
+
+The primary statements are not the only structured table worth recovering. A filing's \textbf{operating-segment
+note} (IFRS~8 / CAS) breaks revenue down by reportable segment --- and where the source carries no XBRL segment
+dimension (every PDF-native system, and \textbf{ESEF}, which \emph{block-tags} its notes) the uniform
+\texttt{segments(f)} accessor (\S\ref{sec:api-analysis}) recovers it from the document's \emph{table} rather
+than a dimensional cube. This section is that machinery.
+
+\paragraph{One locator, two source adapters.} The hard part is source-independent, so it is written once and
+run on a \emph{grid} (rows of cell strings) produced by either adapter: \textbf{Docling} for PDF (and for the
+div-positioned iXBRL that some ESEF PDF-to-iXBRL converters emit), and a lightweight \textbf{HTML} table reader
+for semantic-table iXBRL. The locator finds the operating-segment table among a document's tables by its
+\emph{structure} --- a segment-name header row and an \textbf{external-revenue} row (``External sales'',
+``Revenue from external customers'', \cncjk{对外交易收入}{external-transaction revenue}, ``Revenue and other
+income from third parties''; the label may even wrap across grid rows), plus the \emph{total} and
+\emph{reconciliation/elimination} columns. It deliberately \textbf{rejects} the co-located \emph{geography},
+\emph{product} and \emph{management-view} tables that are not the statutory note --- the discriminator that
+travels across languages and layouts is the external-revenue row, not any fixed caption.
+
+\paragraph{Finding the note without reading the whole book.} Docling a 200-page report is infeasible, so a PDF's
+segment note is located first by a cheap, layered search:
+\begin{enumerate}
+  \item the \texttt{toc} bookmark outline (\S\ref{sec:api-toc}) --- when the PDF has a note-level TOC it names
+    the exact page, and even distinguishes the \emph{data} table from the accounting-policy heading (a filer
+    may list ``Segment reporting'' twice, 80~pages apart);
+  \item a per-page text scan (the \texttt{pdf.js} word pass) for the external-revenue anchor, when the TOC is
+    coarse or absent (no bookmarks at all is common);
+  \item Docling then runs on only a tight range around each candidate page.
+\end{enumerate}
+
+\paragraph{The reconciliation oracle.} Among the candidate pages, the table whose \textbf{segments sum to the
+consolidated total} ($\Sigma$~segments~$+$~eliminations~$=$~total) is the one kept --- so the reconciliation
+both \emph{arbitrates} the page choice and \emph{validates} the extraction, self-checking on every filing with
+no external reference (the same-document spirit of the Arelle/CSV oracles, \S\ref{sec:validation-parser}).
+Values are scaled to base units so the result is a drop-in for the XBRL dimension path. Verified across a dozen
+fresh filers (HK, DE, CN and EU/ESEF) that each reconcile to the reported total; the remaining hardening ---
+wide tables an extractor splits into column-groups, div-positioned iXBRL, and decimal-comma locales --- is
+tracked in \texttt{docs/dev/segments-pdf-plan.md}.
+
 \section{The deterministic fallback}
 \label{sec:pdf-fallback}
 
@@ -3485,9 +3525,17 @@ themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang="
 than the native names), and Companies House (all FRC-module labels resolved). \textbf{Generic members} ---
 \textbf{India}'s \texttt{…Segment01Member} placeholders --- are named instead from their
 \texttt{DescriptionOfReportableSegment} \emph{text} fact, which \texttt{breakdown} reads automatically (the
-non-numeric descriptor is invisible to \texttt{facts}, which is numeric-only). One caveat is a property of
-the filings, not the tool: at \textbf{ESEF} filers detail-tag the primary statements but \emph{block-tag the
-notes}, so the segment note usually carries no dimensional facts and the result is empty.
+non-numeric descriptor is invisible to \texttt{facts}, which is numeric-only).
+
+\paragraph{Beyond XBRL dimensions.} Coverage is not limited to dimensionally-tagged filings.
+\texttt{PDF}-native filers (China, Germany, Hong Kong, Russia, \texttt{Generic}) and \textbf{ESEF} (whose
+block-tagged notes carry no segment dimension) have \emph{no} segment cube; there \texttt{segments}
+transparently recovers the note from the document's \emph{table} instead. It is the same call and the same
+result --- the method dispatches on the filing's format (\texttt{f.kind}) and returns the same rows, scaled to
+base units, so a caller cannot tell whether the numbers came from an XBRL cube or a parsed table --- and a
+built-in reconciliation check ($\Sigma$ segments $=$ consolidated revenue) validates each extraction. The
+extraction machinery --- locating the note, the Docling / HTML table adapters --- belongs with the PDF filing
+systems (\S\ref{sec:pdf-segments}), not this uniform surface.
 
 
 \section{Text Layer}
