@@ -21,7 +21,12 @@ concept is unmapped. This drives the `standard_concept` column of every fact; th
 `concept` and `label` are always preserved alongside it (the dual-label approach), so
 standardization never loses information.
 """
-standardize(concept::AbstractString) = _STANDARDIZER[](concept)
+# A built-in national-taxonomy → IFRS translation (currently Danish DCCA `fsa:`) is consulted FIRST: it is an
+# objective concept-for-concept correspondence, not the opinionated synonym-collapse `set_standardizer`
+# configures, so it applies automatically. Non-national concepts fall through to the user standardizer
+# (neutral `nothing` by default).
+standardize(concept::AbstractString) =
+    (d = dcca_ifrs(concept); d === nothing ? _STANDARDIZER[](concept) : d)
 
 """
     set_standardizer(mapping) -> Function

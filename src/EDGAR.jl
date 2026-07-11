@@ -50,6 +50,7 @@ include("core/taxonomy/vocab_incapmkt.jl")  # 🟢 in-capmkt (SEBI Integrated Fi
 include("core/taxonomy/vocab_cas.jl")       # 🟡 CAS (China 企业会计准则) label-driven vocabulary (PDF path; cas_concept)
 include("core/taxonomy/vocab_hgb.jl")       # 🟢 HGB (Germany Handelsgesetzbuch) label-driven German-GAAP vocabulary (single-entity Jahresabschluss PDF path; hgb_concept)
 include("core/taxonomy/vocab_ifrs_labels.jl") # 🟢 English-label → ifrs-full vocabulary for the PDF path (HK HKFRS + UK Companies House FRS 101/102; ifrs_label_concept)
+include("core/taxonomy/vocab_dcca.jl")      # 🟢 Danish DCCA (fsa:) → ifrs-full concept translation (Denmark register filings; dcca_ifrs)
 include("core/classify_engine.jl")          # 🟢 statement-classification engine (adapted from edgartools, MIT)
 include("core/extract_xbrl.jl")             # 🟢 standard-agnostic XBRL parsing + native extraction
 include("core/breakdown.jl")                # 🟢 dimensional breakdown (revenue by segment/product/geography)
