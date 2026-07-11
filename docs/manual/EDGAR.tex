@@ -4491,8 +4491,8 @@ set, so a divergence can be attributed to a methodology rather than mistaken for
     (\S\ref{sec:schemes-sternstewart}).
   \item \texttt{:penmannissim} --- the Penman--Nissim operating/financing reformulation onto an economic
     basis (\S\ref{sec:schemes-penmannissim}).
-  \item \texttt{:cfroi} --- the Credit~Suisse HOLT \emph{cash-flow return on investment}, a real economic
-    return on existing assets (\S\ref{sec:schemes-cfroi}).
+  \item \texttt{:holt} --- HOLT Value: the Credit~Suisse HOLT \emph{cash-flow return on investment} (CFROI)
+    on existing assets, a real economic return (\S\ref{sec:schemes-holt}).
   \item \texttt{:compustat} --- the S\&P Global \emph{Compustat} standardisation, the reference template of
     academic finance (\S\ref{sec:schemes-compustat}).
   \item \texttt{:worldscope} --- the LSEG (Refinitiv) \emph{Worldscope} standardisation, the international
@@ -4638,8 +4638,8 @@ is built for \emph{lenders and tax authorities} and so prizes prudence over econ
 long-lived investments such as R\&D and brands, historically kept leases off the balance sheet, and holds
 assets at depreciated historical cost --- which systematically understates the capital at work and the return
 earned on it. The three schemes below re-derive along different cuts: Stern~Stewart's EVA by \emph{adding back}
-those conservatisms, Penman--Nissim by \emph{re-partitioning} operations from financing, and CFROI by
-expressing the result as a \emph{real internal rate of return} on the assets in place. The aim is not
+those conservatisms, Penman--Nissim by \emph{re-partitioning} operations from financing, and HOLT Value by
+expressing the result as a \emph{real internal rate of return} (CFROI) on the assets in place. The aim is not
 comparability to a provider's template but the measurement of value, which is why these schemes belong as much
 to valuation as to validation.
 
@@ -4711,15 +4711,16 @@ net operating assets in place of the as-filed profit and equity totals. The entr
 one and the reclassification that produces it, so \texttt{report(; scheme = :penmannissim)} flags a documented
 pair \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
 
-\subsection{CFROI}
-\label{sec:schemes-cfroi}
+\subsection{HOLT Value}
+\label{sec:schemes-holt}
 
-\textbf{Cash-flow return on investment} (CFROI) is the third economic re-derivation, and the one that expresses
-value creation as a \emph{rate} rather than a currency amount. Developed at HOLT Value Associates and now the
-framework of \textbf{Credit~Suisse HOLT}, it measures the \emph{real} (inflation-adjusted) internal rate of
-return a firm earns on the assets already in place --- a return that can be set directly against the real cost
-of capital and, crucially, compared across sectors, countries and decades once inflation and accounting
-distortions are stripped out. Its canonical public treatment is Madden (1999; Ch.~\ref{ch:references}).
+\textbf{HOLT Value} --- developed at HOLT Value Associates and now the framework of \textbf{Credit~Suisse
+HOLT} --- is the third economic re-derivation, and the one that expresses value creation as a \emph{rate}
+rather than a currency amount. Its measure is \textbf{cash-flow return on investment} (CFROI): the \emph{real}
+(inflation-adjusted) internal rate of return a firm earns on the assets already in place --- a return that can
+be set directly against the real cost of capital and, crucially, compared across sectors, countries and decades
+once inflation and accounting distortions are stripped out. Its canonical public treatment is Madden (1999;
+Ch.~\ref{ch:references}).
 
 CFROI is computed as the internal rate of return that equates the firm's gross investment to the stream of
 gross cash flows its assets throw off over their life:
@@ -4743,10 +4744,10 @@ One caveat, in the spirit of the citations here: the \emph{public} framework is 
 implementation --- its inflation indices, asset-life estimates and the ``fade'' of returns toward the cost of
 capital --- is proprietary to Credit~Suisse and not reproducible in full from outside.
 
-Selecting \texttt{scheme = :cfroi} reads a figure on this basis --- gross, inflation-adjusted cash flow and
+Selecting \texttt{scheme = :holt} reads a figure on this basis --- gross, inflation-adjusted cash flow and
 investment in place of the as-filed profit and asset totals. The entries under
-\texttt{SCHEME\_REGISTRY[:cfroi]} carry both the reason a CFROI figure departs from the as-filed one and the
-adjustment that produces it, so \texttt{report(; scheme = :cfroi)} flags a documented pair
+\texttt{SCHEME\_REGISTRY[:holt]} carry both the reason a CFROI figure departs from the as-filed one and the
+adjustment that produces it, so \texttt{report(; scheme = :holt)} flags a documented pair
 \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
 
 \section{Custom Schemes}
@@ -9867,7 +9868,7 @@ accounting-anomaly results (\S\ref{sec:schemes-compustat}). DOI~\texttt{10.1016/
 \textsc{Madden, B.~J.} (1999): \emph{CFROI Valuation: A Total System Approach to Valuing the Firm},
 Butterworth-Heinemann, Oxford. The canonical public treatment of the cash-flow-return-on-investment framework
 --- gross cash flow, gross investment, and the real internal rate of return on assets in place --- behind the
-Credit~Suisse HOLT scheme (\S\ref{sec:schemes-cfroi}). ISBN~\texttt{978-0-7506-3865-4}.
+Credit~Suisse HOLT scheme (\S\ref{sec:schemes-holt}). ISBN~\texttt{978-0-7506-3865-4}.
 \par
 
 \textsc{Morningstar, Inc.} (2021): \emph{Global Equity Data Definitions}, data-definitions document
