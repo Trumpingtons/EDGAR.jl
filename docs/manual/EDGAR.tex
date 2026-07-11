@@ -6344,6 +6344,47 @@ on the report-form side; the genuine account-form ``T'' is the continental trait
 \textbf{Italy} and \textbf{France} (\S\ref{sec:esef-germany-tshape}, \S\ref{sec:esef-italy-tshape},
 \S\ref{sec:esef-france-tshape}), \emph{not} in Sweden.
 
+\section{Denmark}
+\label{sec:esef-denmark}
+
+Danish listed groups (Nasdaq Copenhagen) file their consolidated IFRS annual report as ESEF inline XBRL on
+\texttt{filings.xbrl.org}, exactly as the other EU jurisdictions --- \texttt{ifrs-full} concepts, amounts in
+\textbf{DKK} (Denmark is outside the eurozone, like Sweden's SEK). What makes Denmark distinctive is a
+\emph{second} source of inline XBRL. The Danish Business Authority (\emph{Erhvervsstyrelsen}) requires
+\emph{every} company --- listed or not --- to lodge a \emph{digital} annual report, so the business register
+carries iXBRL for the vast private universe ESEF never reaches (the LEGO Group among them). The two
+repositories tag under \emph{different} taxonomies, and that is the whole story of reading Denmark.
+
+\subsection{Two iXBRL repositories}
+\label{sec:dk-repos}
+\begin{description}[leftmargin=1.4em,style=nextline,itemsep=3pt]
+  \item[ESEF --- listed issuers] The consolidated annual financial report, inline XBRL on the \textbf{IFRS}
+    taxonomy (\texttt{ifrs-full} plus the issuer extension), retrievable from \texttt{filings.xbrl.org} by LEI
+    like any EU filer (\S\ref{sec:esef-forms}). The self-describing XBRL path reads it with zero Danish
+    knowledge --- 359 Danish issuers file this way (Table earlier this chapter).
+  \item[Erhvervsstyrelsen --- every company] The statutory digital annual report (\emph{\aa rsrapport}),
+    inline XBRL on Denmark's \textbf{national DCCA} taxonomy (the \texttt{fsa:} namespace,
+    \texttt{xbrl.dcca.dk}), retrievable from the public register API \texttt{distribution.virk.dk} by CVR
+    number. This is the \emph{only} machine-readable source for the privately-held filers --- LEGO~System~A/S,
+    and the tens of thousands of unlisted companies --- that carry no ESEF obligation. Opened through the
+    Generic path (\S\ref{ch:generic}); the sniffer routes its \texttt{.xhtml} to the XBRL extractor.
+\end{description}
+
+\subsection{National-taxonomy standardisation: \texttt{fsa:} to \texttt{ifrs-full}}
+\label{sec:dk-standardisation}
+An ESEF instance already speaks \texttt{ifrs-full}; a register instance speaks \texttt{fsa:}. Because the DCCA
+taxonomy mirrors IFRS concept-for-concept, \texttt{EDGAR.jl} carries a \textbf{DCCA vocabulary}
+(\texttt{vocab\_dcca}) that translates the headline national concepts to their canonical IFRS equivalents ---
+\texttt{fsa:Revenue}\,$\to$\,\texttt{ifrs-full:Revenue}, \texttt{fsa:Assets}\,$\to$\,\texttt{ifrs-full:Assets},
+\texttt{fsa:Equity}\,$\to$\,\texttt{ifrs-full:Equity}, and so on. The translation is an objective, concept-for-concept
+correspondence (not the opinionated synonym-collapse of a \texttt{standardize} mapping), so it is applied
+\emph{automatically}: a fact extracted from a Danish register filing keeps its original \texttt{fsa:}
+\texttt{concept} \emph{and} carries the \texttt{ifrs-full} \texttt{standard\_concept} --- the dual-label approach
+extended to a national taxonomy. A LEGO register report thus lands its revenue, profit, assets and equity on the
+same canonical concepts as any IFRS filer, in DKK. Coverage is the headline income-statement and balance-sheet
+concepts, extended as needed; the long tail of DCCA detail concepts is preserved verbatim but not yet
+translated.
+
 \section{Workflow Use Case Examples}
 \label{sec:esef-example}
 
@@ -9137,19 +9178,18 @@ repository, a label map for its taxonomy, and fixes for its quirks --- each inde
 of the graceful floor into a specialised ceiling. Generic is thus both the fallback for the long tail and the
 \emph{starting point} for the next specialised chapter.
 
-\section{Examples from ABCD}
+\section{Examples from ABC}
 \label{sec:generic-examples}
 
-The subsections that follow run the \emph{unmodified} Generic path of this chapter on a real filing from four
-jurisdictions --- conveniently alphabetical: \textbf{A}ustralia, \textbf{B}razil, \textbf{C}anada and
-\textbf{D}enmark. The first three have no specialised system and arrive as \emph{PDF} annual reports; Denmark
-is included to show the other half of the format story --- a tagged \emph{iXBRL} filing, the self-describing
-best case the format table promises (\S\ref{sec:generic-format}). The point is not to make any of them work
-\emph{well}; it is to drive the same format-dispatching core against a genuine foreign filing and record,
-honestly, what each format yields and where it stops. Nothing here is adapted to a country --- that would
-defeat Generic's purpose --- so where an accessor returns little or nothing, that is documented as the status
-of the \emph{general} path, not patched away. Each example is a snapshot of one filing on one run, not a
-jurisdiction-wide guarantee.
+The subsections that follow run the \emph{unmodified} Generic path of this chapter on a real \emph{PDF} annual
+report from three jurisdictions with no specialised system --- conveniently alphabetical: \textbf{A}ustralia,
+\textbf{B}razil and \textbf{C}anada. (For the tagged-\emph{iXBRL} best case the format table promises,
+\S\ref{sec:generic-format}, see \textbf{Denmark} --- promoted to a specialised EU jurisdiction with two iXBRL
+repositories, \S\ref{sec:esef-denmark}.) The point is not to make any of them work \emph{well}; it is to drive
+the same format-dispatching core against a genuine foreign filing and record, honestly, what each format yields
+and where it stops. Nothing here is adapted to a country --- that would defeat Generic's purpose --- so where
+an accessor returns little or nothing, that is documented as the status of the \emph{general} path, not patched
+away. Each example is a snapshot of one filing on one run, not a jurisdiction-wide guarantee.
 
 \subsection{Australia}
 \label{sec:generic-australia}
@@ -9359,96 +9399,14 @@ format sniffer (\S\ref{sec:generic-format}) currently rejects it as a report pac
 once it has been exported to PDF.
 
 
-\subsection{Denmark}
-\label{sec:generic-denmark}
-
-Denmark is the counter-example on \emph{format}, and it lets us test the tagged path against \emph{two}
-different taxonomies. A listed issuer, \textbf{Novo Nordisk~A/S} (OMX:~NOVO-B), files under \textbf{ESEF} ---
-the EU's mandated inline-XBRL format on the \emph{IFRS} taxonomy, for which \texttt{EDGAR.jl} has a specialised
-system (Ch.~\ref{sys:esef}). The privately-held \textbf{LEGO Group}, not being an ESEF filer, instead lodges a
-digital annual report with the business register on Denmark's \emph{national} (DCCA) taxonomy. Both are inline
-XBRL; here we point the \emph{Generic} core at each and see what the tagged path alone recovers. An ESEF report
-ships as a ZIP package, which the format sniffer (\S\ref{sec:generic-format}) deliberately rejects --- so, as
-its error message instructs, we unzip and pass the inline-XBRL \texttt{.xhtml} instance directly. First, Novo
-Nordisk's ESEF report:
-
-\begin{lstlisting}
-julia> using EDGAR
-julia> f = fetch_filing(Generic(), "NOVO-2025-03-31-en.xhtml");   # the ESEF iXBRL instance, unzipped
-julia> f.kind                                    # sniffed as inline XBRL, not PDF
-:ixbrl
-julia> length(toc(f)), length(narratives(f))     # no PDF outline, no prose from a bare instance
-(0, 0)
-julia> fa = facts(f); length(fa)                 # the statements classify -- self-describing XBRL, no Docling
-216
-julia> unique(r.unit for r in fa)                # ...currency read straight from the instance
-["DKK", "DKK/shares"]
-julia> (fa[1].concept, fa[1].value, fa[1].unit)
-("ifrs-full:Revenue", 7.8087e10, "DKK")
-\end{lstlisting}
-
-\begin{table}[h]
-\centering
-\small
-\caption{The unmodified Generic path on a Danish ESEF filing (Novo Nordisk, inline XBRL), as run above. The
-mirror image of the PDF cases: clean facts, no outline or prose.}
-\label{tab:generic-denmark}
-\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
-\toprule
-\textbf{Step} & \textbf{Result} & \textbf{Detail} \\
-\midrule
-\texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:ixbrl} (a ZIP package is rejected --- pass the unzipped instance) \\
-\texttt{toc} (outline) & empty (0) & an inline-XBRL instance has no PDF bookmark tree \\
-\texttt{narratives} (prose) & empty (0) & the prose path is PDF-oriented; nothing from a bare instance \\
-\texttt{facts} (statements) & works & 216 rows on \texttt{ifrs-full} + issuer-extension concepts, correct \texttt{DKK} currency \\
-XBRL / iXBRL path & \emph{this is it} & self-describing --- classified by the filing's own linkbase, no Docling \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\noindent Denmark is the format table's promise made good. Because inline XBRL is \emph{self-describing} --- the
-instance carries its own concepts, units and presentation --- the Generic core classified 216 facts onto the
-right \texttt{ifrs-full} concepts \emph{and} the issuer's own extensions
-(\texttt{NOV:SellingExpenseAndDistributionCosts}), in the correct currency (\texttt{DKK}) read straight from
-the instance --- none of the currency guesswork that mis-stamped Loblaw's numbers \texttt{HKD}
-(\S\ref{sec:generic-canada}), and no Docling at all. It is the exact opposite trade from the PDF reports: there
-you get the outline and the prose but weak or no facts; here you get clean facts but no outline (an iXBRL
-instance has no bookmark tree) and no prose. A tagged foreign filing is thus handled about as well by Generic
-as by a bespoke adapter --- the specialised ESEF system (Ch.~\ref{sys:esef}) adds discovery, national
-standardisation and quirk-fixes on top, but the \emph{numbers} are already here.
-
-\paragraph{A second taxonomy: LEGO from the business register.} The contrast sharpens off the IFRS taxonomy.
-LEGO System~A/S (a LEGO Group company) lodges its digital annual report with the Danish Business Authority
-(Erhvervsstyrelsen), retrievable from the public \texttt{distribution.virk.dk} register as inline XBRL on the
-DCCA taxonomy --- the \texttt{fsa:} namespace, \emph{not} \texttt{ifrs-full}. The same Generic core, unchanged:
-
-\begin{lstlisting}
-julia> f = fetch_filing(Generic(), "GEN-LEGO-DK-2025.xhtml");   # Danish-register iXBRL, national taxonomy
-julia> f.kind
-:ixbrl
-julia> fa = facts(f); length(fa)                 # facts still classify -- self-describing, no Docling
-227
-julia> unique(r.unit for r in fa)                # correct currency, read from the instance
-["DKK", "pure"]
-julia> (fa[1].concept, fa[1].value, fa[1].unit)  # ...but the concept is the NATIONAL one, not ifrs-full
-("fsa:Revenue", 6.1963e10, "DKK")
-\end{lstlisting}
-
-\noindent Self-describing XBRL delivers even off the IFRS taxonomy: 227 facts, correct \texttt{DKK}, no Docling
---- but every concept is a raw Danish \texttt{fsa:} term (\texttt{fsa:Revenue},
-\texttt{fsa:ProfitLossFromOrdinaryOperatingActivities}) rather than the canonical \texttt{ifrs-full:Revenue}
-Novo Nordisk yielded. That last step --- mapping \texttt{fsa:Revenue} onto a standard concept --- is exactly
-the \emph{national standardisation} a specialised system supplies (\S\ref{sec:generic-floor}), and it is the
-one thing Generic leaves undone here. The numbers are all present; only their \emph{vocabulary} is national.
-
 \medskip
-\noindent \textbf{Across the four.} For \emph{PDF} reports (Australia, Brazil, Canada) \texttt{toc} and
-\texttt{narratives} are the reliable floor, while \texttt{facts} are weak and layout-dependent (0, error, or
-partial-with-a-currency-bug). For \emph{tagged} filings (Denmark) the pattern inverts: \texttt{facts} are clean
-and correctly denominated, \texttt{toc} and \texttt{narratives} empty --- and whether those facts arrive
-canonical (\texttt{ifrs-full}, from ESEF) or in a national vocabulary (\texttt{fsa:}, from the Danish register)
-is the \emph{taxonomy's} doing, the one gap a specialised system closes. Format, not jurisdiction, decides
-which half of a document you recover --- exactly the design claim of this chapter (\S\ref{sec:generic-format}).
+\noindent \textbf{Across the three.} For these \emph{PDF} reports \texttt{toc} and \texttt{narratives} are the
+reliable floor, while \texttt{facts} are weak and layout-dependent (0, error, or partial-with-a-currency-bug).
+The mirror case is a \emph{tagged} filing, where the pattern inverts --- clean, correctly-denominated facts but
+no outline or prose --- treated now under \textbf{Denmark} (\S\ref{sec:esef-denmark}), whose ESEF and
+business-register iXBRL both classify directly (the latter promoted from raw \texttt{fsa:} concepts to
+\texttt{ifrs-full} by the DCCA vocabulary). Format, not jurisdiction, decides which half of a document you
+recover --- the design claim of this chapter (\S\ref{sec:generic-format}).
 
 \section{Writing systems and local variations}
 
