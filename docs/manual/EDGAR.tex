@@ -4454,20 +4454,35 @@ set, so a divergence can be attributed to a methodology rather than mistaken for
     (\S\ref{sec:schemes-morningstar}); documented gaps are annotated, not faulted.
   \item \texttt{:sternstewart} --- the Stern~Stewart EVA adjustments onto an economic basis
     (\S\ref{sec:schemes-sternstewart}).
+  \item \texttt{:penmannissim} --- the Penman--Nissim operating/financing reformulation onto an economic
+    basis (\S\ref{sec:schemes-penmannissim}).
+  \item \texttt{:cfroi} --- the Credit~Suisse HOLT \emph{cash-flow return on investment}, a real economic
+    return on existing assets (\S\ref{sec:schemes-cfroi}).
   \item \texttt{:compustat} --- the S\&P Global \emph{Compustat} standardisation, the reference template of
     academic finance (\S\ref{sec:schemes-compustat}).
+  \item \texttt{:worldscope} --- the LSEG (Refinitiv) \emph{Worldscope} standardisation, the international
+    counterpart to Compustat (\S\ref{sec:schemes-worldscope}).
   \item \texttt{:auto} --- resolve to the provider's \texttt{default\_scheme} (\texttt{:morningstar} for both
     current providers).
 \end{itemize}
 
-\paragraph{Documenting and adjusting.} A scheme has two faces, and \texttt{SCHEME\_REGISTRY} --- a
+\paragraph{Two faces.} The schemes divide into two kinds by what they \emph{do} to a figure. Some
+\emph{standardise} --- re-cast each filer onto a common provider template so that companies, data providers
+and periods compare like with like (Morningstar, \S\ref{sec:schemes-morningstar}; Compustat,
+\S\ref{sec:schemes-compustat}). Others \emph{re-derive} --- restate the accounting numbers onto an
+\emph{economic} basis, a truer measure of operating profit and of the capital tied up in the business than the
+as-filed statements give (Stern~Stewart's EVA, \S\ref{sec:schemes-sternstewart}; the Penman--Nissim
+operating/financing reformulation, \S\ref{sec:schemes-penmannissim}). The mechanism is identical either way
+(below); the two faces differ only in \emph{intent} --- comparability versus economic truth.
+
+\paragraph{Documenting and adjusting.} A scheme entry has two roles, and \texttt{SCHEME\_REGISTRY} --- a
 \texttt{Dict} keyed by scheme --- carries both. It \emph{documents}: for each \texttt{(issuer, metric)} pair
 it records the reason the scheme's figure legitimately departs from the as-filed one, so \texttt{report},
 run under a scheme, flags a registered pair \texttt{◑~documented} (printed with its reason) and does \emph{not}
 count it, while an unregistered divergence still shows \texttt{✗~MISMATCH}. And it \emph{adjusts}: the same
 entry carries the transformation that produces that figure, so a scheme applied to an as-filed number yields
 the standardised or economic one --- net-of-excise revenue under Morningstar, economic NOPAT under
-Stern~Stewart. The two faces are one object seen twice: the reason an adjusted figure differs, and the
+Stern~Stewart. The two roles are one object seen twice: the reason an adjusted figure differs, and the
 adjustment that makes it differ. This is why the panel stays green on understood differences while still
 catching anything new --- each entry both \emph{explains} the gap and \emph{is} the rule that opens it.
 
@@ -4528,6 +4543,91 @@ occupant of the axis, and the one that shows its full breadth: a scheme is not o
 to a provider's template but a way to \emph{re-derive} the numbers themselves --- standardisation and economic
 adjustment under one mechanism (\S\ref{sec:schemes-overview}).
 
+\section{Penman--Nissim}
+\label{sec:schemes-penmannissim}
+
+Where Stern~Stewart re-derives profit and capital by \emph{adding back} the conservatisms of accounting ---
+capitalising R\&D, leases and provisions --- the \textbf{Penman--Nissim} reformulation re-derives along a
+different cut: it \emph{re-partitions} the statements to separate \emph{operating} activities from
+\emph{financing} ones, on the premise that a firm creates value in its operations while financing is close to
+a zero-sum affair transacted in efficient markets. It is the academic standard for statement analysis, set out
+in Nissim and Penman (2001; Ch.~\ref{ch:references}) and Penman's textbook (2013; Ch.~\ref{ch:references}),
+and unlike Compustat's or Stern~Stewart's proprietary internals its every step is public.
+
+The reformulation recasts both statements around the operating/financing split:
+\begin{itemize}
+  \item \textbf{Balance sheet.} Assets and liabilities are sorted into operating and financial. \emph{Net
+    operating assets} (NOA) are operating assets less operating liabilities; \emph{net financial obligations}
+    (NFO) are financial obligations less financial assets. Common equity is the difference,
+    $\mathrm{CSE} = \mathrm{NOA} - \mathrm{NFO}$ --- equity is what is left of the operations after the
+    financing claim.
+  \item \textbf{Income statement.} Comprehensive income is split into \emph{operating income} (after tax) and
+    \emph{net financial expense} (after tax), with the tax on financing --- the interest tax shield ---
+    allocated out of operating income so that operating profit is measured on a pre-financing basis.
+  \item \textbf{Profitability.} Return is taken on the operating base, $\mathrm{RNOA} = \mathrm{OI}/\mathrm{NOA}$,
+    which strips out capital structure and so is comparable across firms financed differently --- the number
+    conventional \emph{return on equity} entangles with leverage.
+  \item \textbf{Leverage decomposition.} Return on common equity is then rebuilt as
+    $\mathrm{ROCE} = \mathrm{RNOA} + \mathrm{FLEV} \times (\mathrm{RNOA} - \mathrm{NBC})$, where financial
+    leverage $\mathrm{FLEV} = \mathrm{NFO}/\mathrm{CSE}$ multiplies the \emph{spread} between the operating
+    return and the net borrowing cost --- separating how much of ROCE is earned in the business from how much
+    is manufactured by borrowing.
+\end{itemize}
+
+The purpose is not comparability to a provider's template, as with Morningstar or Compustat, but an
+\emph{economic} reading of profitability: an operating return undistorted by financing, and an equity return
+resolved into its operating and leverage components. That places Penman--Nissim on the same face of the axis
+as Stern~Stewart --- re-derivation onto an economic basis --- differing in method (re-partition rather than
+add-back) rather than in aim.
+
+Selecting \texttt{scheme = :penmannissim} reads a figure on this reformulated basis --- operating income and
+net operating assets in place of the as-filed profit and equity totals. The entries under
+\texttt{SCHEME\_REGISTRY[:penmannissim]} carry both the reason a reformulated figure departs from the as-filed
+one and the reclassification that produces it, so \texttt{report(; scheme = :penmannissim)} flags a documented
+pair \texttt{◑~documented} and still catches any new, unregistered delta with \texttt{✗~MISMATCH}.
+
+\section{CFROI}
+\label{sec:schemes-cfroi}
+
+\textbf{Cash-flow return on investment} (CFROI) is the third economic re-derivation, and the one that expresses
+value creation as a \emph{rate} rather than a currency amount. Developed at HOLT Value Associates and now the
+framework of \textbf{Credit~Suisse HOLT}, it measures the \emph{real} (inflation-adjusted) internal rate of
+return a firm earns on the assets already in place --- a return that can be set directly against the real cost
+of capital and, crucially, compared across sectors, countries and decades once inflation and accounting
+distortions are stripped out. Its canonical public treatment is Madden (1999; Ch.~\ref{ch:references}).
+
+CFROI is computed as the internal rate of return that equates the firm's gross investment to the stream of
+gross cash flows its assets throw off over their life:
+\begin{itemize}
+  \item \textbf{Gross cash flow} (GCF) --- a pre-financing, inflation-adjusted operating cash flow: after-tax
+    earnings with depreciation, interest and operating-lease rentals added back, so the measure is
+    independent of how the assets are financed or depreciated.
+  \item \textbf{Gross investment} (GI) --- the \emph{gross}, undepreciated operating assets restated into
+    current purchasing power: accumulated depreciation is added back, older assets are inflated to today's
+    money, operating leases are capitalised, and inventory is put on a common (FIFO) basis.
+  \item \textbf{Asset life} ($n$) --- gross depreciable assets divided by the annual depreciation charge, the
+    horizon over which the cash flows are discounted.
+  \item \textbf{Non-depreciating assets} --- land and working capital, recovered as a terminal inflow at the
+    end of the asset life.
+\end{itemize}
+CFROI is then the rate $r$ solving $\mathrm{GI} = \sum_{t=1}^{n} \mathrm{GCF}\,(1+r)^{-t} +
+(\text{non-depreciating assets})\,(1+r)^{-n}$ --- the real IRR of the existing business, read against a real
+discount rate rather than a nominal accounting return.
+
+Like Stern~Stewart's EVA and the Penman--Nissim reformulation, CFROI sits on the \emph{economic}
+re-derivation face of the axis (\S\ref{sec:schemes-overview}); the three differ in form --- EVA a currency
+spread, Penman--Nissim an operating/financing decomposition, CFROI a real IRR over the asset life --- but share
+the aim of a truer measure of return than the as-filed statements give. One caveat in the spirit of the
+citations here: the \emph{public} framework is Madden's, but HOLT's operative implementation --- its inflation
+indices, asset-life estimates and the ``fade'' of returns toward the cost of capital --- is proprietary to
+Credit~Suisse and not reproducible in full from outside.
+
+Selecting \texttt{scheme = :cfroi} reads a figure on this basis --- gross, inflation-adjusted cash flow and
+investment in place of the as-filed profit and asset totals. The entries under
+\texttt{SCHEME\_REGISTRY[:cfroi]} carry both the reason a CFROI figure departs from the as-filed one and the
+adjustment that produces it, so \texttt{report(; scheme = :cfroi)} flags a documented pair
+\texttt{◑~documented} and still catches any new, unregistered delta with \texttt{✗~MISMATCH}.
+
 \section{Compustat}
 \label{sec:schemes-compustat}
 
@@ -4571,6 +4671,35 @@ while a new, undocumented delta still shows \texttt{✗~MISMATCH}. It joins Morn
 \emph{standardisation} on the axis --- the same mechanism, a different provider's template --- and is the
 natural basis to select when reconciling \texttt{EDGAR.jl}'s figures against Compustat-sourced data in
 research work.
+
+\section{Worldscope}
+\label{sec:schemes-worldscope}
+
+Worldscope is the \emph{international} standardised-fundamentals database --- originally Thomson Reuters,
+latterly Refinitiv, now \textbf{LSEG} --- and the global counterpart to Compustat. Where Compustat is the
+reference source for North-American empirical work, Worldscope is the one reached for cross-border studies:
+uniform data definitions and a standardised statement layout applied across 120-plus countries and every major
+accounting regime, built expressly to make companies reporting under different national GAAPs and IFRS
+comparable on one basis (Refinitiv, 2020; Ch.~\ref{ch:references}). That is exactly the comparability problem
+\texttt{EDGAR.jl} faces across its own jurisdictions, which makes Worldscope the natural template to reconcile
+against for non-U.S.\ filers.
+
+Like Compustat it sits on the \emph{standardisation} face of the axis (\S\ref{sec:schemes-overview}), and it
+carries the same public/proprietary split. The item layer is public: the \emph{Worldscope Datatype
+Definitions Guide} specifies each standardised field and how it is assembled (Refinitiv, 2020;
+Ch.~\ref{ch:references}). The analyst collection rules that resolve an ambiguous foreign filing into those
+fields are proprietary, so --- as with Compustat --- a Worldscope figure can legitimately depart from the
+as-filed one by a reclassification whose exact rule is not reproducible from outside. That these provider
+standardisations genuinely move the numbers, and diverge from one another, is the subject of Lyle, Riedl, and
+Siano (2022; Ch.~\ref{ch:references}), whose comparison spans Compustat and Worldscope alike.
+
+As a \emph{scheme}, Worldscope is the set of \texttt{(issuer, metric)} entries under
+\texttt{SCHEME\_REGISTRY[:worldscope]}, each annotated with the standardisation rule that opens the gap.
+Running \texttt{report(; scheme = :worldscope)} reads each figure against the Worldscope template: a registered
+pair prints \texttt{◑~documented} with its reason and is not counted, while a new, undocumented delta still
+shows \texttt{✗~MISMATCH}. With Morningstar and Compustat it completes the standardisation face --- three
+provider templates under one mechanism --- and is the basis to select when reconciling \texttt{EDGAR.jl}'s
+cross-jurisdiction figures against Worldscope-sourced international data.
 
 \section{Custom Schemes}
 \label{sec:schemes-custom}
@@ -9687,12 +9816,36 @@ Documents that Compustat's standardisation of as-filed statements is large enoug
 accounting-anomaly results (\S\ref{sec:schemes-compustat}). DOI~\texttt{10.1016/j.jacceco.2022.101528}.
 \par
 
+\textsc{Madden, B.~J.} (1999): \emph{CFROI Valuation: A Total System Approach to Valuing the Firm},
+Butterworth-Heinemann, Oxford. The canonical public treatment of the cash-flow-return-on-investment framework
+--- gross cash flow, gross investment, and the real internal rate of return on assets in place --- behind the
+Credit~Suisse HOLT scheme (\S\ref{sec:schemes-cfroi}). ISBN~\texttt{978-0-7506-3865-4}.
+\par
+
 \textsc{Morningstar, Inc.} (2021): \emph{Global Equity Data Definitions}, data-definitions document
 (``Confidential''), rev.\ 2021-05-18. The standardised financials template (report styles~1/3, six industry
 templates) and per-field definitions behind Yahoo Finance's fundamentals (\S\ref{sec:morningstar},
 Table~\ref{tab:morningstar-defs}). Public PDF:
 \href{https://advisor.morningstar.com/Enterprise/VTC/DataDefinitions_Equity\%20and\%20Executive_2021.05.18.pdf}%
 {advisor.morningstar.com/\ldots/DataDefinitions\_Equity\_and\_Executive}.
+\par
+
+\textsc{Nissim, D., \textsc{and} S.~H. Penman} (2001): ``Ratio Analysis and Equity Valuation: From Research
+to Practice,'' \emph{Review of Accounting Studies}, 6, 109--154. The operating/financing reformulation of the
+financial statements --- net operating assets, RNOA, and the leverage decomposition of return on common
+equity --- underpinning the Penman--Nissim scheme (\S\ref{sec:schemes-penmannissim}).
+DOI~\texttt{10.1023/A:1011338221623}.
+\par
+
+\textsc{Penman, S.~H.} (2013): \emph{Financial Statement Analysis and Security Valuation}, McGraw-Hill/Irwin,
+5th~ed. Textbook treatment of the operating/financing reformulation and residual-operating-income valuation
+applied by the Penman--Nissim scheme (\S\ref{sec:schemes-penmannissim}).
+\par
+
+\textsc{Refinitiv} (2020): \emph{Worldscope Database: Datatype Definitions Guide}, data-definitions document
+(now LSEG; formerly Thomson Reuters). The standardised international-fundamentals template --- uniform item
+definitions and statement layout across 120-plus countries and accounting regimes --- behind the Worldscope
+scheme (\S\ref{sec:schemes-worldscope}). The proprietary analyst collection rules are not published.
 \par
 
 \textsc{Standard \& Poor's} (2003): \emph{Compustat (North America) User's Guide}, data-guide document. The
