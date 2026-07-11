@@ -1484,6 +1484,16 @@ CJK ``myriad'' scales, decimal-comma numbers, jurisdiction-specific taxonomy ter
 language problem, and for which an LLM is the wrong tool. Those are handled \emph{deterministically} in the
 extractors (a rule, not a model). Language needs a model; format needs a rule --- do not conflate them.
 
+\textbf{India} is the clean illustration, and the exact inverse of the CJK/Cyrillic ladder
+(Appendix~\ref{ch:writing-systems}). \emph{Both} of its layers are natively English: the structured layer
+(the Ind-AS and integrated-filing XBRL taxonomies are English-tagged) and the narrative layer (annual reports
+of the large private-sector filers are English). Government-owned entities and public-sector banks add a
+\emph{Hindi} edition under the Official Languages Act, but bilingually --- the English version is always
+present and authoritative --- and SEBI's regional-language rule is a shareholder-communication courtesy, not
+the filed document. So India needs \emph{no} comprehension rung at all; its only challenge is convention
+(\emph{lakh}/\emph{crore}), which is a rule. It is the CJK and Cyrillic jurisdictions, where the narrative is
+genuinely non-English, that call for the provider axis above.
+
 \paragraph{Status.} The provider abstraction is the design target; comprehension today is delegated to the
 host application rather than a built-in verb. The question resurfaces --- more sharply --- the moment one
 leaves the regulated perimeter for the unstructured non-regulatory sources of the next chapter
@@ -4444,6 +4454,8 @@ set, so a divergence can be attributed to a methodology rather than mistaken for
     (\S\ref{sec:schemes-morningstar}); documented gaps are annotated, not faulted.
   \item \texttt{:sternstewart} --- the Stern~Stewart EVA adjustments onto an economic basis
     (\S\ref{sec:schemes-sternstewart}).
+  \item \texttt{:compustat} --- the S\&P Global \emph{Compustat} standardisation, the reference template of
+    academic finance (\S\ref{sec:schemes-compustat}).
   \item \texttt{:auto} --- resolve to the provider's \texttt{default\_scheme} (\texttt{:morningstar} for both
     current providers).
 \end{itemize}
@@ -4515,6 +4527,50 @@ standardisation, so a figure is read on the economic basis rather than the accou
 occupant of the axis, and the one that shows its full breadth: a scheme is not only a way to \emph{reconcile}
 to a provider's template but a way to \emph{re-derive} the numbers themselves --- standardisation and economic
 adjustment under one mechanism (\S\ref{sec:schemes-overview}).
+
+\section{Compustat}
+\label{sec:schemes-compustat}
+
+Compustat is the standardised fundamentals database of \textbf{S\&P Global} (originally Standard \& Poor's),
+and for half a century the reference data source of \emph{academic} finance --- the numbers behind a large
+share of the empirical accounting and asset-pricing literature. Like Morningstar it \emph{standardises} rather
+than re-derives: analysts read each filer's as-filed statements and re-map the disclosed values into one fixed
+template of over 300 annual (and roughly 100 quarterly) data items, so that a cross-section of thousands of
+firms can be pooled on a single consistent basis (S\&P, 2003; Ch.~\ref{ch:references}). Where the two schemes
+differ is in provenance and convention --- Compustat's template, its item mnemonics and its handling of the
+awkward cases are its own, and are what a figure sourced from Compustat is implicitly measured against.
+
+The standardisation is the point and the source of its characteristic deltas. What each item \emph{means} ---
+its inclusion and exclusion rules --- is public: the manual's ``Data Definitions'' chapter specifies every
+item alphabetically (S\&P, 2003; Ch.~\ref{ch:references}), and it is at this level that a Compustat figure
+legitimately departs from the as-filed one. Documented, repeatable examples of the kind of re-mapping the
+template performs include:
+\begin{itemize}
+  \item \textbf{Revenue} is placed on a common operating basis --- revenue from ordinary operations is
+    separated from one-time amounts that a filer may disclose only in footnotes or supplements.
+  \item \textbf{Income items} distinguish \emph{Income Before Extraordinary Items} from all-in net income on
+    a fixed rule, so ``earnings'' means the same line for every firm regardless of how the filer partitions
+    unusual and discontinued items.
+  \item \textbf{Cost of sales and depreciation} are disentangled: depreciation embedded in a filer's cost of
+    sales is identified and reported in its own standard item rather than left where the filing books it.
+\end{itemize}
+
+One layer is \emph{not} public. The item definitions describe what each field should contain, but the
+proprietary \emph{data-collection manual} that governs the analyst judgement calls --- how an ambiguous
+disclosure is forced into the standard item, filing by filing --- is not published, so the exact rule set
+behind any given number cannot be reproduced from outside. That the standardisation measurably \emph{changes}
+the numbers, not merely relabels them, is itself documented: Lyle, Riedl, and Siano (2022;
+Ch.~\ref{ch:references}) show that Compustat-versus-as-filed discrepancies are large enough to alter published
+accounting-anomaly results.
+
+As a \emph{scheme}, Compustat is the set of \texttt{(issuer, metric)} entries under
+\texttt{SCHEME\_REGISTRY[:compustat]} --- the divergences the S\&P standardisation produces, each annotated
+with the template rule that opens it. Running \texttt{report(; scheme = :compustat)} reads each figure against
+the Compustat template: a registered pair prints \texttt{◑~documented} with its reason and is not counted,
+while a new, undocumented delta still shows \texttt{✗~MISMATCH}. It joins Morningstar as the second
+\emph{standardisation} on the axis --- the same mechanism, a different provider's template --- and is the
+natural basis to select when reconciling \texttt{EDGAR.jl}'s figures against Compustat-sourced data in
+research work.
 
 \section{Custom Schemes}
 \label{sec:schemes-custom}
@@ -9625,12 +9681,25 @@ DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: Hug
 \texttt{irlspbru/RFSD}; Zenodo DOI~\texttt{10.5281/zenodo.14622208}; CC\,BY\,4.0.
 \par
 
+\textsc{Lyle, M.~R., E.~J. Riedl, \textsc{and} B.~Siano} (2022): ``Lost in Standardization: Effects of
+Financial Statement Database Discrepancies on Inference,'' \emph{Journal of Accounting and Economics}, 74(2--3).
+Documents that Compustat's standardisation of as-filed statements is large enough to alter published
+accounting-anomaly results (\S\ref{sec:schemes-compustat}). DOI~\texttt{10.1016/j.jacceco.2022.101528}.
+\par
+
 \textsc{Morningstar, Inc.} (2021): \emph{Global Equity Data Definitions}, data-definitions document
 (``Confidential''), rev.\ 2021-05-18. The standardised financials template (report styles~1/3, six industry
 templates) and per-field definitions behind Yahoo Finance's fundamentals (\S\ref{sec:morningstar},
 Table~\ref{tab:morningstar-defs}). Public PDF:
 \href{https://advisor.morningstar.com/Enterprise/VTC/DataDefinitions_Equity\%20and\%20Executive_2021.05.18.pdf}%
 {advisor.morningstar.com/\ldots/DataDefinitions\_Equity\_and\_Executive}.
+\par
+
+\textsc{Standard \& Poor's} (2003): \emph{Compustat (North America) User's Guide}, data-guide document. The
+Compustat template of $>$300 annual / $\sim$100 quarterly standardised data items; Ch.~5 (``Data
+Definitions'') specifies each item's inclusion and exclusion rules, the public spec of what a Compustat figure
+represents (\S\ref{sec:schemes-compustat}). The proprietary analyst data-collection manual governing
+filing-by-filing judgement calls is not published.
 \par
 
 \endgroup
