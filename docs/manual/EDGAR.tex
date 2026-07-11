@@ -9705,22 +9705,31 @@ SEC filings and their structured data come with their own vocabulary.
 The terms that matter here:
 
 \begin{description}[leftmargin=1.4em,style=nextline,itemsep=2pt]
+  \item[Born-digital] a document created in electronic form from the outset --- a PDF exported by
+    software, an HTML page, an XBRL/iXBRL instance --- as opposed to one \textbf{scanned} from paper. A
+    born-digital PDF carries a real \emph{text layer} (its characters are selectable and extractable), so
+    \texttt{EDGAR.jl}'s PDF path can read it directly; a scanned PDF is only an \emph{image} of each page and
+    needs OCR before any text exists. The distinction sets a ceiling on extraction quality --- the Generic
+    filing examples (\S\ref{sec:generic-examples}) all use born-digital reports, where \texttt{toc},
+    \texttt{narratives} and (for tagged filings) \texttt{facts} work without OCR.
   \item[CIK] \emph{Central Index Key}, the SEC's unique ID for a filer,
     zero-padded to 10 digits (Apple $\to$ \texttt{0000320193}). Functions accept it
     as an integer or a string, with or without leading zeros (\texttt{320193}
     $\equiv$ \texttt{0000320193}). Look one up from a ticker or company name with
     \texttt{cik}.
+  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
+    (e.g.\ \texttt{NetIncomeLoss}, \texttt{Assets}, \texttt{Revenues}) --- ``what is
+    being measured''. \texttt{company\_concept} returns one concept over time.
+  \item[Fact] a single reported number: one \emph{concept}, for one
+    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
+    96{,}995{,}000{,}000 USD''). \texttt{company\_facts} returns every fact a
+    company has reported.
   \item[Filing] a document submitted to the SEC, identified by an
     \textbf{accession number} and a \textbf{form type} (\texttt{10-K} annual
     report, \texttt{10-Q} quarterly, \texttt{8-K} current report, \dots). Get a filer's filings with \texttt{filings\_by\_cik}.
-  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable format companies tag their financial statements in; it is what makes the numbers queryable rather than locked inside a document. A pure XBRL filing is an XML document whose primary purpose is to represent structured facts,
-  \begin{lstlisting}
-<us-gaap:Assets contextRef="CurrentYear" unitRef="USD">
-    1000000
-</us-gaap:Assets>
-\end{lstlisting}
-A browser won't render this as a nice financial statement. It's intended for software.
-\item[iXBRL] \emph{Inline-XBRL}: those same tags embedded directly inside the filing's human-readable HTML, so one document is both readable and
+  \item[Frame] a cross-section: one concept, one unit, one period, across
+    \emph{every} filer that reported it. \texttt{xbrl\_frames} returns a frame.
+  \item[iXBRL] \emph{Inline-XBRL}: the same XBRL tags embedded directly inside the filing's human-readable HTML, so one document is both readable and
 machine-parseable. The SEC has required it for financial statements since
 around 2019. An iXBRL filing is an HTML document that looks like a normal report,
 \begin{lstlisting}
@@ -9735,23 +9744,6 @@ Total assets were
 </p>
 \end{lstlisting}
 Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although modern tools often treat it as HTML with XML namespaces.
-  \item[Fact] a single reported number: one \emph{concept}, for one
-    \emph{period}, in one \emph{unit} (e.g.\ ``net income for FY2023 was
-    96{,}995{,}000{,}000 USD''). \texttt{company\_facts} returns every fact a
-    company has reported.
-  \item[Concept] the \emph{name} of a reported line item, drawn from a taxonomy
-    (e.g.\ \texttt{NetIncomeLoss}, \texttt{Assets}, \texttt{Revenues}) --- ``what is
-    being measured''. \texttt{company\_concept} returns one concept over time.
-  \item[Taxonomy] a dictionary that defines concepts. The big one is
-    \textbf{\texttt{us-gaap}} (US accounting standards); \textbf{\texttt{dei}}
-    (\emph{Document and Entity Information}) holds metadata about the filing
-    itself; \textbf{\texttt{srt}} holds shared elements; \textbf{\texttt{ifrs-full}}
-    is for filers reporting under IFRS; and each company has its own
-    \textbf{extension} namespace (e.g.\ \texttt{aapl} for Apple-specific concepts).
-  \item[Frame] a cross-section: one concept, one unit, one period, across
-    \emph{every} filer that reported it. \texttt{xbrl\_frames} returns a frame.
-  \item[Unit] the unit of measure of a fact: \texttt{USD}, \texttt{shares},
-    \texttt{USD/shares} (per-share), \texttt{pure} (a ratio), \dots
   \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
     use \emph{calendar} periods: \texttt{CY} + year, as in \texttt{CY2022} (a full
     calendar year), \texttt{CY2022Q4} (a quarter), or \texttt{CY2022Q4I} (a single
@@ -9761,6 +9753,21 @@ Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although m
     contrast, \textbf{\texttt{FY}} in a company's own facts is its \emph{fiscal}
     year, which need not match the calendar (Apple's \texttt{FY2023} ended in
     September 2023).
+  \item[Taxonomy] a dictionary that defines concepts. The big one is
+    \textbf{\texttt{us-gaap}} (US accounting standards); \textbf{\texttt{dei}}
+    (\emph{Document and Entity Information}) holds metadata about the filing
+    itself; \textbf{\texttt{srt}} holds shared elements; \textbf{\texttt{ifrs-full}}
+    is for filers reporting under IFRS; and each company has its own
+    \textbf{extension} namespace (e.g.\ \texttt{aapl} for Apple-specific concepts).
+  \item[Unit] the unit of measure of a fact: \texttt{USD}, \texttt{shares},
+    \texttt{USD/shares} (per-share), \texttt{pure} (a ratio), \dots
+  \item[XBRL] \emph{eXtensible Business Reporting Language}, the machine-readable format companies tag their financial statements in; it is what makes the numbers queryable rather than locked inside a document. A pure XBRL filing is an XML document whose primary purpose is to represent structured facts,
+  \begin{lstlisting}
+<us-gaap:Assets contextRef="CurrentYear" unitRef="USD">
+    1000000
+</us-gaap:Assets>
+\end{lstlisting}
+A browser won't render this as a nice financial statement. It's intended for software.
 \end{description}
 
 \chapter{Morningstar Standardised Field Reference}
