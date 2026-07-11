@@ -20,9 +20,36 @@
 \usepackage{iftex}
 \RequireXeTeX
 \usepackage{fontspec}
-\newfontfamily\cjkKRfont{Apple SD Gothic Neo}  % macOS system Korean (swap to Noto Sans CJK KR on Linux/CI)
-\newfontfamily\cjkJPfont{Hiragino Sans}        % macOS system Japanese (swap to Noto Sans CJK JP on Linux/CI)
-\newfontfamily\cjkCNfont{Hiragino Sans GB}     % macOS system Simplified Chinese (PingFang SC is not XeTeX-loadable; swap to Noto Sans CJK SC on Linux/CI)
+% ---------------------------------------------------------------------------------------------------
+% Cross-platform font selection. Development is on macOS, but the same source must also compile on
+% Windows and on Linux/CI, where the macOS system fonts are absent. \DeclareFallbackFont binds a
+% \newfontfamily to the FIRST font in its candidate list that is actually installed, so the .tex is
+% never edited per platform. Order each list macOS -> Windows -> portable; end on a font bundled with
+% TeX Live itself (DejaVu Sans Mono / DejaVu Serif, present on every install) so a barren box still
+% compiles. CJK lists end on Noto (not TeX-bundled): a machine with no CJK font at all errors with an
+% installable name rather than compiling to tofu.
+\ExplSyntaxOn
+\tl_new:N  \l__edgar_font_tl
+\bool_new:N \l__edgar_font_found_bool
+\NewDocumentCommand \DeclareFallbackFont { m m }
+  {
+    \tl_set:Nx \l__edgar_font_tl { \clist_item:nn {#2} {-1} }   % default: last (portable) candidate
+    \bool_set_false:N \l__edgar_font_found_bool
+    \clist_map_inline:nn {#2}
+      {
+        \bool_if:NF \l__edgar_font_found_bool
+          {
+            \IfFontExistsTF {##1}
+              { \tl_set:Nn \l__edgar_font_tl {##1} \bool_set_true:N \l__edgar_font_found_bool }
+              { }
+          }
+      }
+    \exp_args:Nnx \newfontfamily #1 { \l__edgar_font_tl }
+  }
+\ExplSyntaxOff
+\DeclareFallbackFont \cjkKRfont {Apple SD Gothic Neo, Malgun Gothic, Noto Sans CJK KR, Noto Sans KR}  % Korean
+\DeclareFallbackFont \cjkJPfont {Hiragino Sans, Yu Gothic, Noto Sans CJK JP, Noto Sans JP}            % Japanese
+\DeclareFallbackFont \cjkCNfont {Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, Noto Sans SC}   % Simplified Chinese (PingFang SC is not XeTeX-loadable)
 
 % CJK helpers — use SPARINGLY, for native company names / regulatory terms where the script itself
 % matters. The native script (first arg) renders; the second arg is kept for a romanization gloss in
@@ -33,12 +60,13 @@
 \newcommand{\cncjk}[2]{{\cjkCNfont #1}}
 % Cyrillic (Russia): the default Latin Modern body font has NO Cyrillic glyphs under XeTeX (Russian would
 % render blank), so it needs a dedicated face. \rusfont is a Cyrillic-capable text font; \rus{…} routes to it.
-\newfontfamily\rusfont{Times New Roman}  % macOS system serif with Cyrillic; swap to Noto Serif / DejaVu Serif on Linux/CI
+\DeclareFallbackFont \rusfont {Times New Roman, Liberation Serif, DejaVu Serif}  % serif with Cyrillic
 \newcommand{\rus}[1]{{\rusfont #1}}
 % Status-marker glyphs (U+2717 ✗ MISMATCH, U+25D1 ◑ documented) are absent from Latin Modern Mono, so the
-% validation-panel marks are set in a symbol-bearing monospace font. Menlo (macOS) carries both; on
-% Linux/Windows/CI swap to DejaVu Sans Mono (free, cross-platform, verified to cover both glyphs).
-\newfontfamily\symbolfont{Menlo}
+% validation-panel marks are set in a symbol-bearing monospace font. Menlo (macOS) carries both; DejaVu
+% Sans Mono is the portable floor (bundled with TeX Live, so present on Windows/Linux/CI) and also covers
+% both glyphs -- both verified.
+\DeclareFallbackFont \symbolfont {Menlo, DejaVu Sans Mono}
 \newcommand{\statmark}[1]{{\symbolfont #1}}
 
 \usepackage{amsmath}   % \text, \lvert/\rvert, aligned display math (Heineken excise identity; event-study formulae)
