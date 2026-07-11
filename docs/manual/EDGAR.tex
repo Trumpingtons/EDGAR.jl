@@ -4501,10 +4501,11 @@ set, so a divergence can be attributed to a methodology rather than mistaken for
     current providers).
 \end{itemize}
 
-\paragraph{Two faces.} The schemes divide into two kinds by what they \emph{do} to a figure. Some
-\emph{standardise} --- re-cast each filer onto a common provider template so that companies, data providers
-and periods compare like with like (Morningstar, \S\ref{sec:schemes-morningstar}; Compustat,
-\S\ref{sec:schemes-compustat}). Others \emph{re-derive} --- restate the accounting numbers onto an
+\paragraph{Two faces.} The schemes divide into two kinds by what they \emph{do} to a figure, and the sections
+below follow that division. Some \emph{standardise} (\S\ref{sec:schemes-standardisation}) --- re-cast each
+filer onto a common provider template so that companies, data providers and periods compare like with like
+(Morningstar, \S\ref{sec:schemes-morningstar}; Compustat, \S\ref{sec:schemes-compustat}). Others
+\emph{re-derive} (\S\ref{sec:schemes-rederivation}) --- restate the accounting numbers onto an
 \emph{economic} basis, a truer measure of operating profit and of the capital tied up in the business than the
 as-filed statements give (Stern~Stewart's EVA, \S\ref{sec:schemes-sternstewart}; the Penman--Nissim
 operating/financing reformulation, \S\ref{sec:schemes-penmannissim}). The mechanism is identical either way
@@ -4521,7 +4522,21 @@ Stern~Stewart. The two roles are one object seen twice: the reason an adjusted f
 adjustment that makes it differ. This is why the panel stays green on understood differences while still
 catching anything new --- each entry both \emph{explains} the gap and \emph{is} the rule that opens it.
 
-\section{Morningstar}
+\section{Standardisation}
+\label{sec:schemes-standardisation}
+
+A \emph{standardisation} scheme re-casts every filer's as-filed statements into one common template, so that
+companies reporting under different rules --- and the data providers and periods that quote them --- compare
+like with like. It does not change what a firm earned; it relabels and re-buckets the figures onto a fixed
+chart of items, which is what lets a cross-jurisdiction cross-check agree on the unambiguous totals yet
+diverge on specific sub-lines. Each provider below is such a template, differing in provenance, coverage and
+convention, and each shares a two-layer structure: a \emph{public} item-definition layer (what each field is
+meant to contain) over a \emph{proprietary} collection layer (the analyst judgement that resolves an ambiguous
+filing into those fields). A standardised figure can therefore legitimately depart from the as-filed one by a
+rule whose exact form is not always reproducible from outside; the divergences a template opens are its
+\texttt{SCHEME\_REGISTRY} entries.
+
+\subsection{Morningstar}
 \label{sec:schemes-morningstar}
 
 Morningstar is the \textbf{default} scheme (\texttt{default\_scheme} is \texttt{:morningstar} for both the
@@ -4540,130 +4555,7 @@ gross-up, Siemens' continuing-operations revenue, Volkswagen's all-in net income
 \texttt{report(; scheme = :morningstar)} is the ``expected-world'' view: green unless a \emph{new},
 undocumented delta appears.
 
-\section{Stern Stewart}
-\label{sec:schemes-sternstewart}
-Where Morningstar \emph{standardises} accounting figures so that filers compare like with like,
-Stern~Stewart \emph{re-derives} them onto an \emph{economic} basis. Its \textbf{Economic Value Added (EVA)}
-framework recasts reported profit and capital into \emph{economic} NOPAT and \emph{economic capital
-employed} --- the true operating profit, and the true stock of capital tied up in the business (the
-\emph{assets in place}), stripped of the distortions that conservative accounting introduces.
-
-The premise is that traditional accounting is built for \emph{lenders and tax authorities} and so prizes
-prudence over economic reality --- which systematically penalises the firms that create the most value. EVA
-reverses the specific conservatisms:
-\begin{itemize}
-  \item \textbf{R\&D and brand-building} are expensed at once under GAAP/IFRS; EVA treats them as the
-    long-lived investments they are --- added back to profit and \emph{capitalised} onto the balance sheet.
-  \item \textbf{Operating leases} (long before the accounting standards caught up) are capitalised, to show
-    the capital a firm has genuinely tied up rather than kept off balance sheet.
-  \item \textbf{Provisions and bad-debt allowances} --- precautionary pools set aside for future losses ---
-    are added back to capital, since that money is still at work in the business today.
-  \item \textbf{Goodwill amortisation, non-recurring charges, deferred taxes and LIFO reserves} are unwound
-    on the same principle: treat the item as an investment, not an expense.
-\end{itemize}
-
-The full methodology famously enumerated as many as \textbf{164} such adjustments --- the rigour that made
-its academic name, and that also made routine computation impractical. In practice, as Stern~Stewart
-themselves conceded, some \textbf{five to ten} of them (R\&D, leases, deferred taxes) account for the
-overwhelming majority of the result and the rest are effectively rounding --- so a working EVA scheme need
-implement only the handful that move the number.
-
-The goal is not comparability across filers, as with Morningstar, but a truer measure of \emph{value
-creation} --- earnings above the charge for the capital employed --- which is why the scheme belongs as much
-to valuation as to validation.
-
-Selecting \texttt{scheme = :sternstewart} applies these EVA adjustments in place of Morningstar's
-standardisation, so a figure is read on the economic basis rather than the accounting one. It is the second
-occupant of the axis, and the one that shows its full breadth: a scheme is not only a way to \emph{reconcile}
-to a provider's template but a way to \emph{re-derive} the numbers themselves --- standardisation and economic
-adjustment under one mechanism (\S\ref{sec:schemes-overview}).
-
-\section{Penman--Nissim}
-\label{sec:schemes-penmannissim}
-
-Where Stern~Stewart re-derives profit and capital by \emph{adding back} the conservatisms of accounting ---
-capitalising R\&D, leases and provisions --- the \textbf{Penman--Nissim} reformulation re-derives along a
-different cut: it \emph{re-partitions} the statements to separate \emph{operating} activities from
-\emph{financing} ones, on the premise that a firm creates value in its operations while financing is close to
-a zero-sum affair transacted in efficient markets. It is the academic standard for statement analysis, set out
-in Nissim and Penman (2001; Ch.~\ref{ch:references}) and Penman's textbook (2013; Ch.~\ref{ch:references}),
-and unlike Compustat's or Stern~Stewart's proprietary internals its every step is public.
-
-The reformulation recasts both statements around the operating/financing split:
-\begin{itemize}
-  \item \textbf{Balance sheet.} Assets and liabilities are sorted into operating and financial. \emph{Net
-    operating assets} (NOA) are operating assets less operating liabilities; \emph{net financial obligations}
-    (NFO) are financial obligations less financial assets. Common equity is the difference,
-    $\mathrm{CSE} = \mathrm{NOA} - \mathrm{NFO}$ --- equity is what is left of the operations after the
-    financing claim.
-  \item \textbf{Income statement.} Comprehensive income is split into \emph{operating income} (after tax) and
-    \emph{net financial expense} (after tax), with the tax on financing --- the interest tax shield ---
-    allocated out of operating income so that operating profit is measured on a pre-financing basis.
-  \item \textbf{Profitability.} Return is taken on the operating base, $\mathrm{RNOA} = \mathrm{OI}/\mathrm{NOA}$,
-    which strips out capital structure and so is comparable across firms financed differently --- the number
-    conventional \emph{return on equity} entangles with leverage.
-  \item \textbf{Leverage decomposition.} Return on common equity is then rebuilt as
-    $\mathrm{ROCE} = \mathrm{RNOA} + \mathrm{FLEV} \times (\mathrm{RNOA} - \mathrm{NBC})$, where financial
-    leverage $\mathrm{FLEV} = \mathrm{NFO}/\mathrm{CSE}$ multiplies the \emph{spread} between the operating
-    return and the net borrowing cost --- separating how much of ROCE is earned in the business from how much
-    is manufactured by borrowing.
-\end{itemize}
-
-The purpose is not comparability to a provider's template, as with Morningstar or Compustat, but an
-\emph{economic} reading of profitability: an operating return undistorted by financing, and an equity return
-resolved into its operating and leverage components. That places Penman--Nissim on the same face of the axis
-as Stern~Stewart --- re-derivation onto an economic basis --- differing in method (re-partition rather than
-add-back) rather than in aim.
-
-Selecting \texttt{scheme = :penmannissim} reads a figure on this reformulated basis --- operating income and
-net operating assets in place of the as-filed profit and equity totals. The entries under
-\texttt{SCHEME\_REGISTRY[:penmannissim]} carry both the reason a reformulated figure departs from the as-filed
-one and the reclassification that produces it, so \texttt{report(; scheme = :penmannissim)} flags a documented
-pair \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
-
-\section{CFROI}
-\label{sec:schemes-cfroi}
-
-\textbf{Cash-flow return on investment} (CFROI) is the third economic re-derivation, and the one that expresses
-value creation as a \emph{rate} rather than a currency amount. Developed at HOLT Value Associates and now the
-framework of \textbf{Credit~Suisse HOLT}, it measures the \emph{real} (inflation-adjusted) internal rate of
-return a firm earns on the assets already in place --- a return that can be set directly against the real cost
-of capital and, crucially, compared across sectors, countries and decades once inflation and accounting
-distortions are stripped out. Its canonical public treatment is Madden (1999; Ch.~\ref{ch:references}).
-
-CFROI is computed as the internal rate of return that equates the firm's gross investment to the stream of
-gross cash flows its assets throw off over their life:
-\begin{itemize}
-  \item \textbf{Gross cash flow} (GCF) --- a pre-financing, inflation-adjusted operating cash flow: after-tax
-    earnings with depreciation, interest and operating-lease rentals added back, so the measure is
-    independent of how the assets are financed or depreciated.
-  \item \textbf{Gross investment} (GI) --- the \emph{gross}, undepreciated operating assets restated into
-    current purchasing power: accumulated depreciation is added back, older assets are inflated to today's
-    money, operating leases are capitalised, and inventory is put on a common (FIFO) basis.
-  \item \textbf{Asset life} ($n$) --- gross depreciable assets divided by the annual depreciation charge, the
-    horizon over which the cash flows are discounted.
-  \item \textbf{Non-depreciating assets} --- land and working capital, recovered as a terminal inflow at the
-    end of the asset life.
-\end{itemize}
-CFROI is then the rate $r$ solving $\mathrm{GI} = \sum_{t=1}^{n} \mathrm{GCF}\,(1+r)^{-t} +
-(\text{non-depreciating assets})\,(1+r)^{-n}$ --- the real IRR of the existing business, read against a real
-discount rate rather than a nominal accounting return.
-
-Like Stern~Stewart's EVA and the Penman--Nissim reformulation, CFROI sits on the \emph{economic}
-re-derivation face of the axis (\S\ref{sec:schemes-overview}); the three differ in form --- EVA a currency
-spread, Penman--Nissim an operating/financing decomposition, CFROI a real IRR over the asset life --- but share
-the aim of a truer measure of return than the as-filed statements give. One caveat in the spirit of the
-citations here: the \emph{public} framework is Madden's, but HOLT's operative implementation --- its inflation
-indices, asset-life estimates and the ``fade'' of returns toward the cost of capital --- is proprietary to
-Credit~Suisse and not reproducible in full from outside.
-
-Selecting \texttt{scheme = :cfroi} reads a figure on this basis --- gross, inflation-adjusted cash flow and
-investment in place of the as-filed profit and asset totals. The entries under
-\texttt{SCHEME\_REGISTRY[:cfroi]} carry both the reason a CFROI figure departs from the as-filed one and the
-adjustment that produces it, so \texttt{report(; scheme = :cfroi)} flags a documented pair
-\texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
-
-\section{Compustat}
+\subsection{Compustat}
 \label{sec:schemes-compustat}
 
 Compustat is the standardised fundamentals database of \textbf{S\&P Global} (originally Standard \& Poor's),
@@ -4707,7 +4599,7 @@ while a new, undocumented delta still shows \texttt{\statmark{✗}~MISMATCH}. It
 natural basis to select when reconciling \texttt{EDGAR.jl}'s figures against Compustat-sourced data in
 research work.
 
-\section{Worldscope}
+\subsection{Worldscope}
 \label{sec:schemes-worldscope}
 
 Worldscope is the \emph{international} standardised-fundamentals database --- originally Thomson Reuters,
@@ -4735,6 +4627,127 @@ pair prints \texttt{\statmark{◑}~documented} with its reason and is not counte
 shows \texttt{\statmark{✗}~MISMATCH}. With Morningstar and Compustat it completes the standardisation face --- three
 provider templates under one mechanism --- and is the basis to select when reconciling \texttt{EDGAR.jl}'s
 cross-jurisdiction figures against Worldscope-sourced international data.
+
+\section{Economic Re-derivation}
+\label{sec:schemes-rederivation}
+
+An \emph{economic re-derivation} scheme changes the figure rather than relabelling it: it restates reported
+profit and capital onto an \emph{economic} basis --- a truer measure of operating profit, and of the capital
+tied up in the business, than the as-filed statements give. The shared premise is that conventional accounting
+is built for \emph{lenders and tax authorities} and so prizes prudence over economic reality: it expenses
+long-lived investments such as R\&D and brands, historically kept leases off the balance sheet, and holds
+assets at depreciated historical cost --- which systematically understates the capital at work and the return
+earned on it. The three schemes below re-derive along different cuts: Stern~Stewart's EVA by \emph{adding back}
+those conservatisms, Penman--Nissim by \emph{re-partitioning} operations from financing, and CFROI by
+expressing the result as a \emph{real internal rate of return} on the assets in place. The aim is not
+comparability to a provider's template but the measurement of value, which is why these schemes belong as much
+to valuation as to validation.
+
+\subsection{Stern Stewart}
+\label{sec:schemes-sternstewart}
+Stern~Stewart's \textbf{Economic Value Added (EVA)} framework re-derives by \emph{adding back} the
+conservatisms of accounting. It recasts reported profit and capital into \emph{economic} NOPAT and
+\emph{economic capital employed} --- the true operating profit, and the true stock of capital tied up in the
+business (the \emph{assets in place}), stripped of the distortions that conservative accounting introduces. It
+reverses the specific conservatisms named above:
+\begin{itemize}
+  \item \textbf{R\&D and brand-building} are expensed at once under GAAP/IFRS; EVA treats them as the
+    long-lived investments they are --- added back to profit and \emph{capitalised} onto the balance sheet.
+  \item \textbf{Operating leases} (long before the accounting standards caught up) are capitalised, to show
+    the capital a firm has genuinely tied up rather than kept off balance sheet.
+  \item \textbf{Provisions and bad-debt allowances} --- precautionary pools set aside for future losses ---
+    are added back to capital, since that money is still at work in the business today.
+  \item \textbf{Goodwill amortisation, non-recurring charges, deferred taxes and LIFO reserves} are unwound
+    on the same principle: treat the item as an investment, not an expense.
+\end{itemize}
+
+The full methodology famously enumerated as many as \textbf{164} such adjustments --- the rigour that made
+its academic name, and that also made routine computation impractical. In practice, as Stern~Stewart
+themselves conceded, some \textbf{five to ten} of them (R\&D, leases, deferred taxes) account for the
+overwhelming majority of the result and the rest are effectively rounding --- so a working EVA scheme need
+implement only the handful that move the number.
+
+Selecting \texttt{scheme = :sternstewart} applies these EVA adjustments in place of a provider's
+standardisation, so a figure is read on the economic basis rather than the accounting one.
+
+\subsection{Penman--Nissim}
+\label{sec:schemes-penmannissim}
+
+Where Stern~Stewart re-derives profit and capital by \emph{adding back} the conservatisms of accounting ---
+capitalising R\&D, leases and provisions --- the \textbf{Penman--Nissim} reformulation re-derives along a
+different cut: it \emph{re-partitions} the statements to separate \emph{operating} activities from
+\emph{financing} ones, on the premise that a firm creates value in its operations while financing is close to
+a zero-sum affair transacted in efficient markets. It is the academic standard for statement analysis, set out
+in Nissim and Penman (2001; Ch.~\ref{ch:references}) and Penman's textbook (2013; Ch.~\ref{ch:references}),
+and unlike Compustat's or Stern~Stewart's proprietary internals its every step is public.
+
+The reformulation recasts both statements around the operating/financing split:
+\begin{itemize}
+  \item \textbf{Balance sheet.} Assets and liabilities are sorted into operating and financial. \emph{Net
+    operating assets} (NOA) are operating assets less operating liabilities; \emph{net financial obligations}
+    (NFO) are financial obligations less financial assets. Common equity is the difference,
+    $\mathrm{CSE} = \mathrm{NOA} - \mathrm{NFO}$ --- equity is what is left of the operations after the
+    financing claim.
+  \item \textbf{Income statement.} Comprehensive income is split into \emph{operating income} (after tax) and
+    \emph{net financial expense} (after tax), with the tax on financing --- the interest tax shield ---
+    allocated out of operating income so that operating profit is measured on a pre-financing basis.
+  \item \textbf{Profitability.} Return is taken on the operating base, $\mathrm{RNOA} = \mathrm{OI}/\mathrm{NOA}$,
+    which strips out capital structure and so is comparable across firms financed differently --- the number
+    conventional \emph{return on equity} entangles with leverage.
+  \item \textbf{Leverage decomposition.} Return on common equity is then rebuilt as
+    $\mathrm{ROCE} = \mathrm{RNOA} + \mathrm{FLEV} \times (\mathrm{RNOA} - \mathrm{NBC})$, where financial
+    leverage $\mathrm{FLEV} = \mathrm{NFO}/\mathrm{CSE}$ multiplies the \emph{spread} between the operating
+    return and the net borrowing cost --- separating how much of ROCE is earned in the business from how much
+    is manufactured by borrowing.
+\end{itemize}
+
+The purpose is an \emph{economic} reading of profitability: an operating return undistorted by financing, and
+an equity return resolved into its operating and leverage components --- a re-derivation that differs from
+Stern~Stewart's in method (re-partition rather than add-back) rather than in aim.
+
+Selecting \texttt{scheme = :penmannissim} reads a figure on this reformulated basis --- operating income and
+net operating assets in place of the as-filed profit and equity totals. The entries under
+\texttt{SCHEME\_REGISTRY[:penmannissim]} carry both the reason a reformulated figure departs from the as-filed
+one and the reclassification that produces it, so \texttt{report(; scheme = :penmannissim)} flags a documented
+pair \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
+
+\subsection{CFROI}
+\label{sec:schemes-cfroi}
+
+\textbf{Cash-flow return on investment} (CFROI) is the third economic re-derivation, and the one that expresses
+value creation as a \emph{rate} rather than a currency amount. Developed at HOLT Value Associates and now the
+framework of \textbf{Credit~Suisse HOLT}, it measures the \emph{real} (inflation-adjusted) internal rate of
+return a firm earns on the assets already in place --- a return that can be set directly against the real cost
+of capital and, crucially, compared across sectors, countries and decades once inflation and accounting
+distortions are stripped out. Its canonical public treatment is Madden (1999; Ch.~\ref{ch:references}).
+
+CFROI is computed as the internal rate of return that equates the firm's gross investment to the stream of
+gross cash flows its assets throw off over their life:
+\begin{itemize}
+  \item \textbf{Gross cash flow} (GCF) --- a pre-financing, inflation-adjusted operating cash flow: after-tax
+    earnings with depreciation, interest and operating-lease rentals added back, so the measure is
+    independent of how the assets are financed or depreciated.
+  \item \textbf{Gross investment} (GI) --- the \emph{gross}, undepreciated operating assets restated into
+    current purchasing power: accumulated depreciation is added back, older assets are inflated to today's
+    money, operating leases are capitalised, and inventory is put on a common (FIFO) basis.
+  \item \textbf{Asset life} ($n$) --- gross depreciable assets divided by the annual depreciation charge, the
+    horizon over which the cash flows are discounted.
+  \item \textbf{Non-depreciating assets} --- land and working capital, recovered as a terminal inflow at the
+    end of the asset life.
+\end{itemize}
+CFROI is then the rate $r$ solving $\mathrm{GI} = \sum_{t=1}^{n} \mathrm{GCF}\,(1+r)^{-t} +
+(\text{non-depreciating assets})\,(1+r)^{-n}$ --- the real IRR of the existing business, read against a real
+discount rate rather than a nominal accounting return.
+
+One caveat, in the spirit of the citations here: the \emph{public} framework is Madden's, but HOLT's operative
+implementation --- its inflation indices, asset-life estimates and the ``fade'' of returns toward the cost of
+capital --- is proprietary to Credit~Suisse and not reproducible in full from outside.
+
+Selecting \texttt{scheme = :cfroi} reads a figure on this basis --- gross, inflation-adjusted cash flow and
+investment in place of the as-filed profit and asset totals. The entries under
+\texttt{SCHEME\_REGISTRY[:cfroi]} carry both the reason a CFROI figure departs from the as-filed one and the
+adjustment that produces it, so \texttt{report(; scheme = :cfroi)} flags a documented pair
+\texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
 
 \section{Custom Schemes}
 \label{sec:schemes-custom}
