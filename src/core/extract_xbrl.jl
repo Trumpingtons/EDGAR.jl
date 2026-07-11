@@ -393,17 +393,18 @@ const _LABEL_ROLES = ["http://www.xbrl.org/2003/role/label",
                       "http://www.xbrl.org/2003/role/terseLabel",
                       "http://www.xbrl.org/2003/role/verboseLabel"]
 
-# `xml:lang` filter for a label resource. When a language is requested (`lang="en"`/`"ja"`), accept
-# only labels whose `xml:lang` matches by language prefix (so `"en"` matches `"en-US"`); a label with
+# `xml:lang` filter for a label resource. When a language is requested (`lang=:en`/`:ja`), accept
+# only labels whose `xml:lang` matches by language prefix (so `:en` matches `"en-US"`); a label with
 # no `xml:lang` always qualifies, so monolingual linkbases (SEC/ESEF) are unaffected. `lang=nothing`
 # disables the filter entirely (the default — exact prior behaviour). Multilingual linkbases (EDINET,
 # DART) carry both ja and en labels per concept, so the filter is what selects the wanted language.
+# `lang` is a `Symbol` (`:en`/`:ja`/…); `String(lang)` normalises it for the prefix match.
 _lang_ok(have::AbstractString, lang) = lang === nothing || isempty(have) ||
-    startswith(lowercase(have), lowercase(lang))
+    startswith(lowercase(have), lowercase(String(lang)))
 
 # Parse a label-linkbase XML into a concept => label map (best available role per concept). With
 # `lang` set, only labels in that language are considered (see `_lang_ok`).
-function _concept_labels(lab_xml::AbstractString; lang::Union{AbstractString,Nothing}=nothing)
+function _concept_labels(lab_xml::AbstractString; lang::Union{Symbol,Nothing}=nothing)
     locmap = Dict{String,String}()                         # loc label -> concept
     for loc in eachmatch(r"(?is)<(?:link:)?loc\b([^>]*)>", lab_xml)
         a = _attrs(loc.captures[1])
@@ -573,8 +574,8 @@ empty (the facts come from the whole filing, not a picked region).
 With `classify=true`, each fact's `statement` is filled from the filing's presentation linkbase
 (see [`statement_map`](@ref)). With `labels=true`, each fact's `label` is filled from the filing's
 label linkbase (see [`label_map`](@ref)); the picker fills this from the rendered row instead. Each
-flag costs one extra linkbase fetch. For multilingual filings (EDINET, DART) pass `lang="en"` /
-`lang="ja"` to choose the label language (ignored when `labels=false`).
+flag costs one extra linkbase fetch. For multilingual filings (EDINET, DART) pass `lang=:en` /
+`lang=:ja` to choose the label language (ignored when `labels=false`).
 
 ```julia
 f = fetch_filing(104169, "0000104169-26-000102")
@@ -582,7 +583,7 @@ facts(f)                                  # all the 10-Q's facts as a row table
 facts(f; classify = true, labels = true)  # …with the `statement` and `label` columns filled
 ```
 """
-facts(f::Filing; classify::Bool=false, labels::Bool=false, lang::Union{AbstractString,Nothing}=nothing) =
+facts(f::Filing; classify::Bool=false, labels::Bool=false, lang::Union{Symbol,Nothing}=nothing) =
     f.kind === :ras ? _rfsd_facts(f; classify = classify, labels = labels) :
     f.kind === :cbr_form ? _cbr_form_facts(f; classify = classify, labels = labels) :
     f.kind === :pdf ? _pdf_filing_facts(f; classify = classify, labels = labels) :
@@ -599,7 +600,7 @@ extracted natively (no browser). `classify=true` fills each fact's `statement` f
 presentation linkbase; `labels=true` fills each fact's `label` from the label linkbase. Round-trips
 via [`read_facts_json`](@ref).
 """
-facts_json(f::Filing; pretty::Bool=true, classify::Bool=false, labels::Bool=false, lang::Union{AbstractString,Nothing}=nothing) =
+facts_json(f::Filing; pretty::Bool=true, classify::Bool=false, labels::Bool=false, lang::Union{Symbol,Nothing}=nothing) =
     facts_json(_filing_selection(f, _extract_facts(f;
         statements = classify ? statement_map_multi(f) : Dict{String,Vector{String}}(),
         negations = classify ? statement_negations(f) : Set{String}(),

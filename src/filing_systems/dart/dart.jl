@@ -104,7 +104,7 @@ end
 #
 # DART splits the LABEL linkbase per language — `…_lab-ko.xml` (Korean) and `…_lab-en.xml` (English), each
 # single-language — unlike EDINET's one bilingual file. So for `suffix=="lab"` with a requested `lang`, we
-# must pick that language's file (`lang="en"` → `_lab-en.xml`); otherwise `label_map`'s `xml:lang` filter
+# must pick that language's file (`lang=:en` → `_lab-en.xml`); otherwise `label_map`'s `xml:lang` filter
 # would drop everything from the wrong-language file (the cause of the empty-labels bug). Falls back to the
 # first label file when the language isn't present; the other linkbases (pre/cal/def) are single files.
 function _fetch_linkbase(::DART, f::Filing, suffix::AbstractString; lang=nothing)

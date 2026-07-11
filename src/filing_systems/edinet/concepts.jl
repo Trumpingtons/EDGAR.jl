@@ -32,12 +32,12 @@ function edinet_balance(qname::AbstractString; version::AbstractString = last(_E
     r === nothing ? nothing : get(r, "balance", nothing)
 end
 
-# A concept's human label in `lang` (`"en"` → `label_en`, anything else → `label_ja`), or nothing.
-function edinet_label(qname::AbstractString; lang::AbstractString = "en",
+# A concept's human label in `lang` (`:en` → `label_en`, anything else → `label_ja`), or nothing.
+function edinet_label(qname::AbstractString; lang::Symbol = :en,
                       version::AbstractString = last(_EDINET_CONCEPT_VERSIONS))
     r = edinet_concept(qname; version)
     r === nothing && return nothing
-    v = get(r, startswith(lowercase(lang), "en") ? "label_en" : "label_ja", nothing)
+    v = get(r, startswith(lowercase(String(lang)), "en") ? "label_en" : "label_ja", nothing)
     v === nothing ? nothing : String(v)
 end
 

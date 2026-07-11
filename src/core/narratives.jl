@@ -24,11 +24,12 @@ is the prose (`text`); its identity/provenance depend on where it came from (`so
   along which narratives from *different* filers are grouped by theme. Empty for now — reserved for a later
   (AI or manual) tagging pass. Multiple axes encode as namespaced tags (`"theme:climate"`, `"risk:fx"`).
 - `text` — the content, HTML-stripped to plain text.
-- `lang` — the ISO-639 content language as a **`Symbol`** (`:zh` / `:ja` / `:ko` / `:en`; `Symbol("")` if
-  unknown), matching the `Symbol` convention of the other tag-like fields on this row (`source`, and a
-  filing's `kind`). The value comes from the source's own tag when meaningful, else a script guess
-  (`_guess_lang`); an undetermined tag (`"und"`) is treated as unknown and re-guessed. It serialises to a
-  plain `String` in the storage row (see `narrative_row`), exactly as `source` does.
+- `lang` — the ISO-639 content language as a **`Symbol`**, matching the `Symbol` convention of the other
+  tag-like fields on this row (`source`, and a filing's `kind`). Under the default `lang=:auto` it is resolved
+  per row: a source-declared language wins (XBRL `xml:lang` / Docling section), else a lightweight detector
+  (`_detect_lang`, 18 languages — en/pt/es/fr/de/it/nl/sv/da/no/fi/pl by markers, plus ja/ko/zh/ru by script),
+  else `:und` (undetermined) — never a falsely-assumed `:en`. Passing `lang=:xx` to `narratives` forces every
+  row to `:xx`. It serialises to a plain `String` in the storage row (see `narrative_row`), exactly as `source` does.
 - `char_len` — `length(text)` (set automatically).
 - `period_end` — the XBRL context period end; `nothing` for PDF/HTML.
 - `dimensions` — axis ⇒ member qualifiers (XBRL only); empty otherwise.
@@ -137,19 +138,54 @@ function _textblock_clean(s::AbstractString)
     return strip(replace(notags, r"\s+" => " "))
 end
 
-# Cheap script guess for the content language, distinguishing the CJK scripts: Japanese kana ⇒ ja; else
-# Hangul ⇒ ko (DART); else Han-only ⇒ zh (CNINFO — Chinese has no kana). A caller-supplied section language
-# takes precedence (see `narratives(::StructuredDocument)`); this is the fallback when none is set.
+# Lightweight content-language detector for `lang=:auto`. It recognises, in all, EIGHTEEN languages:
+#   * by SCRIPT — Japanese :ja (kana), Korean :ko (hangul), Chinese :zh (Han ideographs), Russian :ru (Cyrillic);
+#   * by MARKER SCORING (Latin script, where script alone cannot tell languages apart) — English :en,
+#     Portuguese :pt, Spanish :es, French :fr, German :de, Italian :it, Dutch :nl, Swedish :sv, Danish :da,
+#     Norwegian :no, Finnish :fi, Polish :pl.
+# For a Latin-script string it counts high-frequency function-word / diacritic markers per language and takes
+# the argmax; with NO marker hit at all the language is left UNDETERMINED (:und) rather than falsely claimed
+# English. Anything outside the eighteen ⇒ :und — and a caller can always assert the language explicitly
+# (`lang=:xx`), which bypasses the detector entirely.
 # Match EXPLICIT kana/hangul/ideograph codepoint ranges, NOT \p{Hiragana}/\p{Katakana}/\p{Hangul}: PCRE
 # resolves those script classes via Script_Extensions, so the shared CJK punctuation 、。(U+3001/3002, used in
 # Chinese too) counts as Katakana AND Hangul — which would flag every Chinese sentence as Japanese. The kana
 # (U+3041–, U+30A1–) and Hangul-syllable (U+AC00–) blocks sit ABOVE the U+3000–303F punctuation block, so
 # explicit ranges see only real script letters. Order matters: Japanese has kana, Chinese has neither.
-_guess_lang(s::AbstractString) =
-    occursin(r"[ぁ-ゖァ-ヺー]", s) ? :ja :   # hiragana / katakana letters
-    occursin(r"[가-힣]", s)                    ? :ko :   # hangul syllables
-    occursin(r"[一-鿿㐀-䶿]", s)        ? :zh :   # CJK ideographs
-    :en
+const _LANG_MARKERS = (
+    (:en, (" the "," and "," of "," to "," in "," is "," for "," was "," with "," that "," on "," as "," by "," are ")),
+    (:pt, (" de "," que "," não "," do "," da "," os "," uma "," para "," com "," dos "," das "," é ","ção","ções","ão "," e ")),
+    (:es, (" de "," que "," la "," el "," los "," del "," para "," con "," una "," por "," se "," su ","ñ"," y ")),
+    (:fr, (" de "," la "," le "," et "," des "," les "," une "," pour "," est "," du "," à "," qui "," dans "," sur ")),
+    (:de, (" und "," der "," die "," das "," den "," von "," mit "," für "," ist "," im "," ein "," auf ","ß"," zu ")),
+    (:it, (" di "," il "," la "," che "," del "," per "," con "," una "," dei "," è "," gli "," nel "," non "," sono ")),
+    (:nl, (" de "," het "," een "," van "," en "," op "," voor "," met "," dat "," die "," zijn "," aan "," niet "," wordt ")),
+    (:sv, (" och "," att "," det "," som "," för "," med "," av "," är "," på "," till "," inte "," ett "," en ")),
+    (:da, (" og "," at "," det "," som "," for "," med "," af "," er "," på "," til "," ikke "," en ","æ","ø")),
+    (:no, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø")),
+    (:fi, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös ")),
+    (:pl, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub ")),
+)
+function _detect_lang(s::AbstractString)
+    occursin(r"[ぁ-ゖァ-ヺー]", s) && return :ja   # hiragana / katakana letters
+    occursin(r"[가-힣]", s)          && return :ko   # hangul syllables
+    occursin(r"[一-鿿㐀-䶿]", s)     && return :zh   # CJK ideographs
+    occursin(r"[а-яА-ЯёЁ]", s)       && return :ru   # Cyrillic
+    t = " " * lowercase(s) * " "
+    best, bestn = :und, 0
+    for (lang, marks) in _LANG_MARKERS
+        n = 0; for m in marks; n += count(m, t); end
+        n > bestn && ((best, bestn) = (lang, n))
+    end
+    return best
+end
+
+# Resolve one narrative row's language under the requested `mode`. Precedence: an explicit mode (`:en`/`:pt`/…)
+# wins; under `:auto` a meaningful source-declared language (XBRL `xml:lang` / Docling section) wins, else the
+# detector, else `:und`. `declared` is the source's own tag (`""`/`"und"` ⇒ none).
+_resolve_lang(mode::Symbol, text::AbstractString, declared::AbstractString = "") =
+    mode !== :auto ? mode :
+    (!isempty(declared) && declared != "und") ? Symbol(declared) : _detect_lang(text)
 
 # A context's period end + dimensions, from `_xbrl_contexts`' parsed contexts.
 function _narr_ctx(ctxs, ref::AbstractString)
@@ -161,7 +197,7 @@ end
 
 # Classic instance: text-block elements carry ESCAPED html (no literal '<'), no `unitRef`. Deduped by
 # (concept, context) — a filer tags the same block in several places (cf. the CSV-oracle duplicate rows).
-function _classic_narratives(content, cik, accession, ctxs, labels)
+function _classic_narratives(content, cik, accession, ctxs, labels; langmode::Symbol = :auto)
     out = Narrative[]; seen = Set{Tuple{String,String}}()
     for m in eachmatch(r"(?is)<([\w-]+:[\w.-]*TextBlock)\b([^>]*)>([^<]*)</\1>", content)
         concept = String(m.captures[1]); a = _attrs(m.captures[2]); ref = get(a, "contextRef", "")
@@ -170,7 +206,8 @@ function _classic_narratives(content, cik, accession, ctxs, labels)
         text = _textblock_clean(m.captures[3]); isempty(text) && continue
         pe, dims = _narr_ctx(ctxs, ref)
         push!(out, Narrative(; cik, accession, source = :xbrl, concept, section_title = _narr_title(concept, labels),
-                             text, lang = _guess_lang(text), period_end = pe, dimensions = dims, context_ref = ref))
+                             text, lang = _resolve_lang(langmode, text, get(a, "xml:lang", "")),
+                             period_end = pe, dimensions = dims, context_ref = ref))
     end
     return out
 end
@@ -178,7 +215,7 @@ end
 # Inline iXBRL: text-block facts are `<ix:nonNumeric name="…TextBlock" …>…</ix:nonNumeric>` (content may
 # carry rendered markup, which `_dei_clean` strips). NOTE: split-across-`ix:continuation` blocks capture
 # only the head for now — EDINET ships a classic instance (preferred), so this path is the inline fallback.
-function _ixbrl_narratives(content, cik, accession, ctxs, labels)
+function _ixbrl_narratives(content, cik, accession, ctxs, labels; langmode::Symbol = :auto)
     out = Narrative[]; seen = Set{Tuple{String,String}}()
     for m in eachmatch(r"(?is)<ix:nonNumeric\b([^>]*)>(.*?)</ix:nonNumeric>", content)
         a = _attrs(m.captures[1]); concept = get(a, "name", "")
@@ -188,21 +225,26 @@ function _ixbrl_narratives(content, cik, accession, ctxs, labels)
         text = _textblock_clean(m.captures[2]); isempty(text) && continue
         pe, dims = _narr_ctx(ctxs, ref)
         push!(out, Narrative(; cik, accession, source = :ixbrl, concept, section_title = _narr_title(concept, labels),
-                             text, lang = _guess_lang(text), period_end = pe, dimensions = dims, context_ref = ref))
+                             text, lang = _resolve_lang(langmode, text, get(a, "xml:lang", "")),
+                             period_end = pe, dimensions = dims, context_ref = ref))
     end
     return out
 end
 
 # Extract every text-block narrative from a filing (mirrors `_extract_facts`' kind dispatch).
-function _extract_narratives(f::Filing; labels::AbstractDict = Dict{String,String}())
+function _extract_narratives(f::Filing; labels::AbstractDict = Dict{String,String}(), langmode::Symbol = :auto)
     ctxs = _xbrl_contexts(f.content)
     cik, acc = f.entity.value, f.ref
-    return f.kind === :xbrl ? _classic_narratives(f.content, cik, acc, ctxs, labels) :
-                              _ixbrl_narratives(f.content, cik, acc, ctxs, labels)
+    return f.kind === :xbrl ? _classic_narratives(f.content, cik, acc, ctxs, labels; langmode) :
+                              _ixbrl_narratives(f.content, cik, acc, ctxs, labels; langmode)
 end
 
+# `lang` sets the CONTENT language of each row (the `lang` field): `:auto` (default) resolves it per row via
+# the detector (an explicit source `xml:lang` / section tag wins, then `_detect_lang`, then `:und`), while an
+# explicit `:en`/`:pt`/… forces every row to that language. `title_lang` is the separate label-language for
+# section TITLES on multilingual filings (EDINET/DART: `title_lang = :en` for English titles).
 function narratives(f::Filing; classify::Bool = false, labels::Bool = true,
-                    lang::Union{AbstractString,Nothing} = nothing)
+                    lang::Symbol = :auto, title_lang::Union{Symbol,Nothing} = nothing)
     # `classify` is reserved for populating each narrative's `canonical_title` (the normalised title — the
     # prose analogue of `facts`' statement classification); a no-op until that mapping lands.
     classify
@@ -210,11 +252,11 @@ function narratives(f::Filing; classify::Bool = false, labels::Bool = true,
         (!isempty(f.content) && isfile(f.content)) || throw(ArgumentError(
             "narratives(::Filing) for a :pdf filing needs the PDF source path in `f.content`; or call " *
             "narratives(structured_document(path)) / narratives(read_structured_document(json.path))."))
-        return narratives(structured_document(f.content))
+        return narratives(structured_document(f.content); lang)
     end
-    f.system isa SEC && return _sec_narratives(f)          # N4: SEC Item/Part sections
-    labdict = labels ? (try label_map(f; lang) catch; Dict{String,String}() end) : Dict{String,String}()
-    return _narrative_table(_extract_narratives(f; labels = labdict))
+    f.system isa SEC && return _sec_narratives(f; langmode = lang)   # N4: SEC Item/Part sections
+    labdict = labels ? (try label_map(f; lang = title_lang) catch; Dict{String,String}() end) : Dict{String,String}()
+    return _narrative_table(_extract_narratives(f; labels = labdict, langmode = lang))
 end
 
 # ── N4: SEC HTML producer — Item/Part sections → Narrative rows (source :html) ─
@@ -227,12 +269,12 @@ function _strip_running_footer(t::AbstractString)
     return strip(replace(t, r"\n{3,}" => "\n\n"))
 end
 
-function _sec_narratives(f::Filing; form::AbstractString = "10-K")
+function _sec_narratives(f::Filing; form::AbstractString = "10-K", langmode::Symbol = :auto)
     out = Narrative[]
     for s in sections(f; form)
         t = _strip_running_footer(s.text); isempty(t) && continue
         push!(out, Narrative(; accession = f.ref, source = :html, section_title = s.title,
-                             text = String(t), lang = _guess_lang(t), block_id = s.item))
+                             text = String(t), lang = _resolve_lang(langmode, t), block_id = s.item))
     end
     return _narrative_table(out)
 end
@@ -242,7 +284,7 @@ end
 # are empty (a PDF section has no XBRL identity); provenance is `page` + `block_id` (= section id). Works on
 # ANY StructuredDocument — freshly parsed (`structured_document`, needs Docling) or reloaded
 # (`read_structured_document`), so it is testable without the Docling stack.
-function narratives(sd::StructuredDocument)
+function narratives(sd::StructuredDocument; lang::Symbol = :auto)
     bysec = Dict{String,Vector{TextBlock}}()
     for b in sd.text_blocks
         push!(get!(bysec, something(b.section_id, ""), TextBlock[]), b)
@@ -258,8 +300,8 @@ function narratives(sd::StructuredDocument)
         text = strip(join((b.text for b in blocks), "\n")); isempty(text) && continue
         s = get(secmap, sid, nothing)
         title = (s !== nothing && !isempty(s.title)) ? s.title : (isempty(sid) ? "(untitled)" : sid)
-        # DocSection lang wins when meaningful; an empty or "und" (undetermined) Docling tag → guess by script.
-        lg    = (s !== nothing && !isempty(s.lang) && s.lang != "und") ? Symbol(s.lang) : _guess_lang(text)
+        # Under :auto a meaningful DocSection lang wins, else detect; an explicit `lang` forces it (see _resolve_lang).
+        lg    = _resolve_lang(lang, text, s !== nothing ? s.lang : "")
         page  = s !== nothing ? s.page_start : minimum(b.page for b in blocks)
         push!(out, Narrative(; accession = acc, source = :pdf, section_title = title, text = String(text),
                              lang = lg, page = page, block_id = sid))

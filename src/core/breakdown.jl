@@ -43,7 +43,7 @@ linkbase (which carries member labels). Returns one row per reported (member, pe
 When `axis` is omitted it is auto-detected from `concept`'s dimensioned facts — preferring an axis whose
 name contains "Segment", else the most-used axis. `labels=false` skips the (possibly networked) label
 fetch. `lang` picks the language of the member names for multilingual taxonomies (EDINET, DART): e.g.
-`lang="en"` for English rather than the native Japanese/Korean. Newest period first, largest value first.
+`lang=:en` for English rather than the native Japanese/Korean. Newest period first, largest value first.
 
 ```julia
 f = fetch_filing(320193, "0000320193-25-000079")
@@ -52,7 +52,7 @@ breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax";
 ```
 """
 function breakdown(f::Filing, concept::AbstractString; axis::Union{AbstractString,Nothing}=nothing,
-                   labels::Bool=true, lang::Union{AbstractString,Nothing}=nothing)
+                   labels::Bool=true, lang::Union{Symbol,Nothing}=nothing)
     ctxs = _xbrl_contexts(f.content)
     dimsof(r) = (c = get(ctxs, r.context_ref, nothing); c === nothing ? Dict{String,String}() : c.dims)
     cand = [r for r in facts(f) if r.concept == concept]
@@ -108,11 +108,11 @@ when no segment table is found (e.g. a filing with no segment disclosure). See `
 
 ```julia
 segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax")   # revenue by segment
-segments(f, "ifrs-full:Revenue"; lang = "en")                                # EDINET/DART, English names
+segments(f, "ifrs-full:Revenue"; lang = :en)                                 # EDINET/DART, English names
 ```
 """
 function segments(f::Filing, concept::AbstractString; labels::Bool=true,
-                  lang::Union{AbstractString,Nothing}=nothing)
+                  lang::Union{Symbol,Nothing}=nothing)
     # Dispatch on the filing's format (segments-pdf-plan). PDF-native filings carry no XBRL dimensions —
     # recover the segment note from the document's tables (`_segments_pdf`, Docling). iXBRL/HTML filings
     # try dimensions first; ESEF block-tags the note (no dimension), so fall back to the rendered HTML table.

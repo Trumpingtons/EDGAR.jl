@@ -109,9 +109,16 @@ function _ifrs_scale_currency(sd)
     text = join(texts, " ")
     scale = occursin(r"(?i)million|\bMio\.?\b|\bMillionen\b", text) ? 1e6 :
             occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€", text) ? 1e3 : 1.0
-    cur = occursin(r"(?i)US\$|\bUSD\b", text) ? "USD" :
-          occursin(r"(?i)HK\$|\bHKD\b", text) ? "HKD" : occursin(r"(?i)\bRMB\b|人民[币幣]", text) ? "CNY" :
-          occursin('£', text) ? "GBP" : (occursin('€', text) || occursin(r"(?i)\bEUR\b|\bTEUR\b", text)) ? "EUR" : "HKD"
+    cur = occursin(r"(?i)canadian dollar|\bCAD\b|\bC\$", text) ? "CAD" :
+          occursin(r"(?i)australian dollar|\bAUD\b|\bA\$", text) ? "AUD" :
+          occursin(r"(?i)singapore dollar|\bSGD\b|\bS\$", text) ? "SGD" :
+          occursin(r"(?i)US\$|\bUSD\b|\bU\.S\. dollar|united states dollar", text) ? "USD" :
+          occursin(r"(?i)HK\$|\bHKD\b|hong kong dollar", text) ? "HKD" :
+          occursin(r"(?i)\bRMB\b|人民[币幣]|renminbi|\byuan\b", text) ? "CNY" :
+          occursin(r"(?i)japanese yen|\bJPY\b|\byen\b|円", text) ? "JPY" :
+          occursin(r"(?i)swiss franc|\bCHF\b", text) ? "CHF" :
+          occursin(r"(?i)£|pound sterling|\bGBP\b", text) ? "GBP" :
+          (occursin('€', text) || occursin(r"(?i)\bEUR\b|\bTEUR\b|\beuro\b", text)) ? "EUR" : "XXX"
     return (scale, cur)
 end
 

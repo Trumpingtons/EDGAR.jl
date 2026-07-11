@@ -148,11 +148,11 @@ cannot be fetched. This is what `facts(f; labels=true)` uses to fill the `label`
 browser picker reads the label off the rendered row instead).
 
 `lang` selects a language for **multilingual** label linkbases (EDINET, DART), whose linkbase
-carries both Japanese and English labels per concept (`label_map(f; lang="en")` /
-`lang="ja"`); it matches by language prefix (`"en"` matches `"en-US"`). The default `nothing` keeps
+carries both Japanese and English labels per concept (`label_map(f; lang=:en)` /
+`lang=:ja`); it matches by language prefix (`:en` matches `"en-US"`). The default `nothing` keeps
 every label regardless of language, so monolingual SEC/ESEF filings are unaffected.
 """
-function label_map(f::Filing; lang::Union{AbstractString,Nothing}=nothing)
+function label_map(f::Filing; lang::Union{Symbol,Nothing}=nothing)
     # The filing's own (bundled/loose) labels override the standard-taxonomy labels, so an issuer's
     # preferred/renamed label wins; the standard labels fill concepts the filing doesn't label itself
     # (e.g. ESEF bundles only extension labels — the ifrs-full standard labels come from `_standard_labels`).
