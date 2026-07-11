@@ -78,6 +78,35 @@ mappings confirmed; DuckDB schema defined; Tesco round-tripped filesystem + repo
 policy "a wrong number is worse than none" (clean-fail over confidently-wrong); write the Phase-0.5
 filesystem artefacts (incl. the deferred FactRow CSV).
 
+## Phase 2R — Robustness hardening: "PDF facts weak & inconsistent"  *(evidence-driven; the core soft spot)*
+
+Motivating evidence (2026-07, Generic "ABC" runs — the unmodified path on **born-digital** English/Portuguese
+IFRS annual reports). Same code, three different failure stages:
+
+| Filer | Lang | Result | Broke at |
+|---|---|---|---|
+| Wesfarmers (AU) | en | **0 facts** | **Location** — `_IFRS_STMT_TITLES`/anchors require `"consolidated"` (en/de); bare *"Income statement"/"Balance sheet"* match nothing |
+| Vale (BR) | pt | **error "no consolidated statements found"** | **Location** — anchors are en/de only; Portuguese matches none (also: an *integrated* report may lack detailed statements) |
+| Loblaw (CA) | en | **16, balance sheet only** | **Table→facts** — located OK, but IS/CF tables did not map |
+
+Root causes, ranked by leverage: **(1) statement location over-fit** to `"consolidated"` + en/de wording
+(gates *everything*); (2) **table→facts fragile per layout**; (3) **line-item classification
+en-`ifrs-full`-label-only**; (4) **document scope** (integrated vs statements).
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2R.A | **Measurement harness** — fixtures of born-digital IFRS PDFs across languages (the 3 above + more per lang); a per-stage diagnostic (located? tables? rows classified? facts? Σ reconciles to stated total?) → a scorecard | ☐ | do FIRST; turns "weak" into a number, guards regressions |
+| 2R.B | **Generalize statement location** — drop the hard `"consolidated"`; match statement TYPE structurally + multilingually (the five statement names per **detected language** via `_detect_lang`, + structure cues: year-pair header + money column + a known total row like `Total assets`/`Total equity`); prefer toc titles with **fuzzy type match** ("Income statement"→`:is`) | ☐ | **highest leverage** — flips Wesfarmers 0→N, stops Vale erroring |
+| 2R.C | **Harden table→facts** — diagnose Loblaw IS/CF miss (period-header variance / note-ref column / multi-section table); add layout tolerance + a **reconciliation self-check** (Σ line items = the table's stated subtotal) that flags PARTIAL instead of silently returning 16 | ☐ | ties into the "wrong number worse than none" policy |
+| 2R.D | **Multilingual line-item classification** — a per-language IFRS label map (pt/de/fr/es/… → `ifrs-full`), selected by the detected label language; same pattern as `vocab_hgb` (DE) / `vocab_dcca` (DK). Portuguese first | ☐ | reuses the narratives `_detect_lang` |
+| 2R.E | **Local vision-LLM fallback (Tier-3)** — when Tier-2 (Docling tables + classification) returns nothing or fails the 2R.C reconciliation, render the **located** statement page(s) to image and read them with a **LOCAL** vision-LLM → structured `FactRow`s. Gated by 2R.C, so it fires only on hard cases | ☐ | **LOCAL-ONLY** (privacy/cost/reproducibility); cloud vision opt-in at most, never default — mirrors Phase 4's "local default, Claude opt-in". Amends the earlier "no vision-LLM" decision (local fallback now allowed) |
+| 2R.F | **Document scope** — distinguish "extractor failed" from "report has no detailed statements" (Vale integrated); prefer the statements doc when discovery finds both; label the thin case honestly | ☐ | discovery-side, not extraction |
+| 2R.G | **Oracle / acceptance gate** — validate PDF facts against the SAME filer's XBRL where both exist (an ESEF filer that also ships a PDF AR) + Yahoo. **Gate:** N born-digital PDFs × ≥4 languages each recover the 5 headline totals within tolerance | ☐ | the dual-format AFR oracle |
+
+**Sequence:** A → B → C → D → E → F/G. B is the single highest-leverage change; E (local vision-LLM) is the
+last-resort floor for layouts the structural path can't crack. **Guardrails:** no per-filer patches; keep the
+Tier-1 `toc`/`pdf.js` floor; one `StructuredDocument`→`FactRow`; vision-LLM fallback **local-only**.
+
 ## Phase 3 — The second family: sections, descriptive tables, figures
 ☐ To-do. The deferred half of 0.2 — live `Selection`/`SelectionTable`/figure derivations from the repo,
 feeding `extract_section`/`find_paragraphs`. Reuses the substrate Phase 0 built.
@@ -121,8 +150,10 @@ Pollis back-link.
 
 **Tiering (install weight, NOT priority).** **Tier-2 = Docling/MinerU + local LLM is the MAIN approach**
 (heavier, opt-in, standalone-only, full document); **Tier-1 = `pdf.jl` (Node + pdf.js) is the graceful
-FALLBACK** when the AI stack is absent. Both emit the same contracts. **No vision-LLM tier — dropped, not
-planned.** (Earlier "vision-LLM-primary" framing is fully dead.)
+FALLBACK** when the AI stack is absent. Both emit the same contracts. **A LOCAL vision-LLM is admitted only
+as a gated last-resort FALLBACK** (Tier-3, 2R.E) — for statements the structural path can't crack; local-only
+(privacy/cost/reproducibility), cloud vision stays out. (Earlier "vision-LLM-*primary*" framing is dead; a
+local vision-LLM as *fallback* is now in scope — amended 2026-07.)
 
 **Parser — settled, no longer a risk (2026-06-29).** Docling (no OCR) validated across EN (Tesco) + CN×3
 (Moutai/Vanke/Wuliangye) + KR (Samsung) + RU (Lukoil) + DE×2 (Fielmann IFRS, VW HGB): recovers text,
