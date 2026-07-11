@@ -6370,6 +6370,40 @@ prepare its consolidated accounts under \emph{IFRS} yet still lodge a digital re
 \AA RL/DCCA taxonomy --- the LEGO~Group does exactly this. The accounting basis is the \emph{substance}; the
 taxonomy is how a given repository asks for it.
 
+\subsection{Statement vocabulary}
+Because Danish filings are inline XBRL in \emph{both} repositories, a statement line already carries a
+machine-readable \emph{concept}, not merely a native-language label --- so unlike the PDF jurisdictions the
+vocabulary's role here is the Danish\,/\,\texttt{fsa:}\,/\,IFRS correspondence, the readable face of the
+\texttt{vocab\_dcca} map (\S\ref{sec:dk-standardisation}). The headline lines
+(Table~\ref{tab:dk-vocab}):
+
+\begin{table}[h]
+\centering
+\footnotesize
+\caption{Danish statement vocabulary: the headline line items, their DCCA (\texttt{fsa:}) concept, and the
+\texttt{ifrs-full} concept \texttt{vocab\_dcca} promotes them to.}
+\label{tab:dk-vocab}
+\begin{tabular}{@{}p{0.26\textwidth}p{0.46\textwidth}p{0.20\textwidth}@{}}
+\toprule
+\textbf{Danish} & \textbf{DCCA concept} & \textbf{IFRS} \\
+\midrule
+Nettoomsætning & \texttt{fsa:Revenue} & Revenue \\
+Bruttofortjeneste & \texttt{fsa:GrossProfitLoss} & Gross profit \\
+Resultat af primær drift & \texttt{fsa:ProfitLossFromOrdinaryOperatingActivities} & Operating profit \\
+Resultat før skat & \texttt{fsa:ProfitLossFromOrdinaryActivitiesBeforeTax} & Profit before tax \\
+\AA rets resultat & \texttt{fsa:ProfitLoss} & Profit for the year \\
+Aktiver & \texttt{fsa:Assets} & Assets \\
+Materielle anl\ae gsaktiver & \texttt{fsa:PropertyPlantAndEquipment} & Property, plant \& equipment \\
+Egenkapital & \texttt{fsa:Equity} & Equity \\
+Overf\o rt resultat & \texttt{fsa:RetainedEarnings} & Retained earnings \\
+Hensatte forpligtelser & \texttt{fsa:Provisions} & Provisions \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Each of these maps 1:1 in \texttt{vocab\_dcca}; the long tail of DCCA detail concepts is preserved
+verbatim but not yet translated.
+
 \subsection{Two iXBRL repositories}
 \label{sec:dk-repos}
 \begin{description}[leftmargin=1.4em,style=nextline,itemsep=3pt]
