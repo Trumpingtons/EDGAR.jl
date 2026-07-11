@@ -136,7 +136,13 @@ function toc(f::Filing)
                   "filing carries none. Use `toc(path)` with the downloaded PDF."))
         return _toc_pdf(f.content; cik, accession = acc)
     end
-    (f.kind === :xbrl || f.kind === :ixbrl) && return _toc_xbrl(f; cik, accession = acc)
+    if f.kind === :xbrl || f.kind === :ixbrl
+        t = _toc_xbrl(f; cik, accession = acc)
+        # An iXBRL instance is also HTML: when the presentation-linkbase outline is empty (a bare instance
+        # with no reachable linkbase — e.g. a Generic-opened ESEF/DCCA report), lift its own HTML headings.
+        (f.kind === :ixbrl && isempty(t)) && return _toc_html(f.content; cik, accession = acc, source = :ixbrl)
+        return t
+    end
     f.kind === :html && return _toc_html(f.content; cik, accession = acc, source = :html)
     throw(ArgumentError("toc(::Filing): unsupported filing kind $(repr(f.kind))"))
 end

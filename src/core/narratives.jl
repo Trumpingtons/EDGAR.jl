@@ -231,12 +231,41 @@ function _ixbrl_narratives(content, cik, accession, ctxs, labels; langmode::Symb
     return out
 end
 
+# Fallback for an iXBRL instance that carries no TextBlock/Explanatory concepts (a Generic-opened ESEF or
+# Danish-DCCA report, whose prose is plain HTML rather than tagged text-blocks): lift the document's own HTML.
+# Each heading opens a section; the text until the next heading is its content. Only used when the tagged path
+# finds nothing, so SEC/EDINET text-block filings are unaffected.
+function _ixbrl_html_narratives(content, cik, accession; langmode::Symbol = :auto)
+    out = Narrative[]
+    doc = try EzXML.parsehtml(content) catch; return out end
+    title = Ref(""); buf = IOBuffer(); ord = Ref(0)
+    function emit()
+        t = strip(replace(String(take!(buf)), r"\s+" => " "))
+        isempty(t) && return
+        ord[] += 1
+        push!(out, Narrative(; cik, accession, source = :ixbrl,
+              section_title = isempty(title[]) ? "(untitled)" : title[],
+              text = t, lang = _resolve_lang(langmode, t), block_id = string(ord[])))
+    end
+    function visit(n)
+        if EzXML.iselement(n) && occursin(r"^h[1-6]$", lowercase(EzXML.nodename(n)))
+            emit(); title[] = strip(EzXML.nodecontent(n)); return
+        end
+        EzXML.istext(n) && (print(buf, ' ', EzXML.nodecontent(n)); return)
+        for c in EzXML.eachnode(n); visit(c); end
+    end
+    visit(EzXML.root(doc)); emit()
+    return out
+end
+
 # Extract every text-block narrative from a filing (mirrors `_extract_facts`' kind dispatch).
 function _extract_narratives(f::Filing; labels::AbstractDict = Dict{String,String}(), langmode::Symbol = :auto)
     ctxs = _xbrl_contexts(f.content)
     cik, acc = f.entity.value, f.ref
-    return f.kind === :xbrl ? _classic_narratives(f.content, cik, acc, ctxs, labels; langmode) :
-                              _ixbrl_narratives(f.content, cik, acc, ctxs, labels; langmode)
+    f.kind === :xbrl && return _classic_narratives(f.content, cik, acc, ctxs, labels; langmode)
+    ns = _ixbrl_narratives(f.content, cik, acc, ctxs, labels; langmode)
+    isempty(ns) && (ns = _ixbrl_html_narratives(f.content, cik, acc; langmode))   # fallback: lift HTML prose
+    return ns
 end
 
 # `lang` sets the CONTENT language of each row (the `lang` field): `:auto` (default) resolves it per row via
