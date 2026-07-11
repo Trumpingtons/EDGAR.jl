@@ -1836,11 +1836,15 @@ identified verbatim, normalised, and grouped by theme:
     struct it is a \texttt{Symbol} (\texttt{:zh}\,/\,\texttt{:ja}\,/\,\texttt{:ko}\,/\,\texttt{:en}), following
     the \texttt{Symbol} convention of the other tag fields (\texttt{source}, a filing's \texttt{kind}); in the
     exported \texttt{NarrativeRow} it serialises to a plain \texttt{String}, exactly as \texttt{source} does.
-    It is taken from the source's own language tag when meaningful, otherwise guessed from the script
-    (Han-only\,$\to$\,\texttt{:zh}, kana\,$\to$\,\texttt{:ja}, Hangul\,$\to$\,\texttt{:ko}). This
-    \emph{content} language is distinct from the \texttt{lang} \emph{keyword} on \texttt{narratives(f;
-    lang="en")}, which is a \texttt{String} selecting the XBRL \emph{label} language (matched against
-    \texttt{xml:lang}) for the titles.
+    Under the default \texttt{lang=:auto} it is resolved per row: a source language tag wins (XBRL
+    \texttt{xml:lang} / the document section), else a lightweight detector covering \textbf{eighteen}
+    languages --- \texttt{:en}, \texttt{:pt}, \texttt{:es}, \texttt{:fr}, \texttt{:de}, \texttt{:it},
+    \texttt{:nl}, \texttt{:sv}, \texttt{:da}, \texttt{:no}, \texttt{:fi}, \texttt{:pl} by word markers, plus
+    \texttt{:ja}, \texttt{:ko}, \texttt{:zh}, \texttt{:ru} by script --- else \texttt{:und} (undetermined,
+    never a falsely-assumed \texttt{:en}). Passing \texttt{lang=:pt} (or any code) instead forces every row
+    to that language. This \emph{content} language is distinct from the separate \texttt{title\_lang} keyword,
+    which selects the XBRL \emph{label} language (matched against \texttt{xml:lang}) for section titles on
+    multilingual filings (EDINET/DART).
 \end{itemize}
 
 \subsection{\texttt{TocNode}}
@@ -3646,7 +3650,7 @@ julia> segments(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"
 
 
 \paragraph{Coverage.} Works wherever segments are dimensionally tagged. \textbf{Named members} name
-themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang="en"} for English rather
+themselves through the label linkbase: SEC, EDINET and DART (pass \texttt{lang=:en} for English rather
 than the native names), and Companies House (all FRC-module labels resolved). \textbf{Generic members} ---
 \textbf{India}'s \texttt{…Segment01Member} placeholders --- are named instead from their
 \texttt{DescriptionOfReportableSegment} \emph{text} fact, which \texttt{breakdown} reads automatically (the
@@ -3743,7 +3747,8 @@ shape, several producers (Table~\ref{tab:narrative-producers}).
 julia> narratives(f)                               # a Filing: XBRL/iXBRL text-blocks (or a :pdf filing)
 julia> narratives(sd)                              # a StructuredDocument (a Docling parse of a PDF)
 julia> narratives(read_structured_document(path))  # a persisted structured.json (no Docling needed)
-julia> narratives(f; lang = "en")                  # choose the label language for the titles
+julia> narratives(f; lang = :pt)                   # force the content language of every row (default :auto)
+julia> narratives(f; title_lang = :en)             # English section titles on EDINET/DART filings
 \end{lstlisting}
 
 \noindent Each row carries two title columns and a tag set --- \texttt{section\_title} (verbatim),
@@ -7032,7 +7037,7 @@ CSV-oracle validation follow once the key lands.
 julia> f = fetch_filing(EDINET(), "submission.zip")     # local submission ZIP, offline
 julia> rows = facts(f; classify = true, labels = true); # jppfs_cor / jpigp_cor facts, classified
 julia> select_statement(rows, "BalanceSheet")           # BS / IS / CF as usual
-julia> label_map(f; lang = "en")                        # English labels (lang="ja" for Japanese)
+julia> label_map(f; lang = :en)                        # English labels (lang=:ja for Japanese)
 \end{lstlisting}
 
 \begin{subappendices}
@@ -7219,8 +7224,8 @@ ticker (or a name) to its \texttt{corp\_code}, parsing that index in a single li
 \paragraph{Bilingual labels.} DART's label linkbase is \emph{split per language} ---
 \texttt{\ldots\_lab-ko.xml} (Korean) and \texttt{\ldots\_lab-en.xml} (English), each single-language ---
 unlike EDINET's one bilingual file. So \texttt{label\_map(f;\ lang)} (and \texttt{facts(f;\ labels=true,\
-lang)}) selects the file for the requested language: \texttt{lang="en"} yields English labels,
-\texttt{lang="ko"} Korean. On Samsung this gives 1{,}742 labels in each language (e.g.\
+lang)}) selects the file for the requested language: \texttt{lang=:en} yields English labels,
+\texttt{lang=:ko} Korean. On Samsung this gives 1{,}742 labels in each language (e.g.\
 \texttt{dart:OperatingIncomeLoss} \(\to\) ``Operating income(loss)'' / ``\krcjk{영업이익(손실)}{yeongeop iik (sonsil)}'').
 The \texttt{lang} keyword threads through the shared linkbase fetcher but is consulted only by systems
 with per-language label files (just DART today); every other system ignores it, so their behaviour is
@@ -7286,7 +7291,7 @@ julia> hs = discover(OpenDARTApi(); stock_code = "005930",       # Samsung; reso
 julia> f  = fetch_filing(first(hs));                             # the fnlttXbrl package
 julia> rows = facts(f; classify = true, labels = true);          # K-IFRS facts, classified
 julia> select_statement(rows, "BalanceSheet")                    # BS / IS / CF as usual
-julia> label_map(f; lang = "en")                                 # English labels (lang="ko" for Korean)
+julia> label_map(f; lang = :en)                                 # English labels (lang=:ko for Korean)
 \end{lstlisting}
 
 % ===========================================================================
@@ -9485,7 +9490,7 @@ the Common API (\S\ref{sec:api-analysis}).
 \paragraph{What each jurisdiction exposes.} Drill-down is only as good as the axes a filer \emph{tags}, and
 that varies by regime (Table~\ref{tab:analysis-axes}). Two patterns matter. \textbf{Named members} (SEC,
 IFRS/ESEF, EDINET, DART, Companies House) carry a real member concept (\texttt{aapl:AmericasSegmentMember})
-whose name resolves from the label linkbase --- for the CJK regimes, pass \texttt{lang="en"} for English
+whose name resolves from the label linkbase --- for the CJK regimes, pass \texttt{lang=:en} for English
 rather than the native names. \textbf{Generic members} (India) carry placeholder members
 (\texttt{…Segment01Member}) whose real names live in a separate \texttt{DescriptionOfReportableSegment}
 \emph{text} fact per member; \texttt{breakdown} reads that descriptor automatically, so India resolves to
@@ -9504,8 +9509,8 @@ illustrative, not exhaustive --- a filer tags what it discloses.}
 \midrule
 \textbf{SEC} & \texttt{us-gaap:StatementBusinessSegmentsAxis}, \texttt{srt:ProductOrServiceAxis}, \texttt{srt:ConsolidationItemsAxis} & named; English labels \\
 \textbf{ESEF} & \texttt{ifrs-full:SegmentsAxis} \emph{when tagged} --- often the segment note is block-tagged, so absent & named (issuer extension) \\
-\textbf{EDINET} & \texttt{jpcrp\_cor:OperatingSegmentsAxis} & named; 日本語 default, \texttt{lang="en"} for English \\
-\textbf{DART} & \texttt{ifrs-full:SegmentsAxis} & named; 한국어 default, \texttt{lang="en"} for English \\
+\textbf{EDINET} & \texttt{jpcrp\_cor:OperatingSegmentsAxis} & named; 日本語 default, \texttt{lang=:en} for English \\
+\textbf{DART} & \texttt{ifrs-full:SegmentsAxis} & named; 한국어 default, \texttt{lang=:en} for English \\
 \textbf{India} & \texttt{in-bse-fin:ReportableSegmentsAxis} (and the \texttt{in-capmkt} equivalent) & \emph{generic} members, named automatically from their \texttt{DescriptionOfReportableSegment} text fact \\
 \textbf{Companies House} & \texttt{uk-core:MaturitiesOrExpirationPeriodsDimension}, \texttt{uk-bus} officer/metadata axes; business segments rare & named; all FRC-module labels \\
 \bottomrule
@@ -9525,7 +9530,7 @@ julia> breakdown(f, "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax
 \end{lstlisting}
 
 \noindent The segment figures sum to Apple's total revenue --- the cube is internally consistent, which is
-itself checkable (see below). For a Japanese or Korean filer the same two calls work; add \texttt{lang="en"}
+itself checkable (see below). For a Japanese or Korean filer the same two calls work; add \texttt{lang=:en}
 to read ``Automotive'' / ``DRAM'' rather than \jpcjk{自動車}{} / DRAM.
 
 \paragraph{Siblings (to grow).} Dimensional drill-down is one analysis the data supports; others share the
@@ -9601,11 +9606,33 @@ Research credits, patent boxes and tax holidays appear in the note as reconcilin
 often the reason two peers in the same sector carry very different rates.
 
 \section{What Each Jurisdiction Exposes}
-How much of the above is \emph{tagged} versus buried in note prose varies by regime --- SEC filers tag the
-ASC~740 note richly, ESEF issuers often block-tag the IAS~12 note as a single lump, and the CJK regimes sit in
-between. This section will tabulate, per jurisdiction, which fiscal disclosures are fact-level and which need
-the narrative extraction of Ch.~\ref{ch:narratives} --- the same tagged-versus-prose contrast the drill-down
-chapter draws for segments.
+The \emph{headline} tax expense is a face-statement number everywhere, but the \emph{note} that makes it
+useful --- the rate reconciliation, deferred-tax detail, uncertain positions --- is only as recoverable as the
+regime's tagging (Table~\ref{tab:fiscal-jurisdictions}): fact-level where note concepts are tagged (SEC),
+block-tagged prose under ESEF, and pure document prose in the PDF-native regimes, where it needs the narrative
+extraction of Ch.~\ref{ch:narratives}. Note-level granularity varies within each row; the table gives the
+dominant mode.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Fiscal disclosure by jurisdiction: where the tax note lives, and whether it is recoverable as tagged
+facts or only as prose (``block-tagged'' = one XBRL tag wraps the whole note as a text block).}
+\label{tab:fiscal-jurisdictions}
+\begin{tabular}{@{}p{0.20\textwidth}p{0.40\textwidth}p{0.32\textwidth}@{}}
+\toprule
+\textbf{Jurisdiction} & \textbf{Tax disclosure} & \textbf{Extraction level} \\
+\midrule
+SEC (US) & ASC~740 note; cash taxes on the cash-flow statement & fact-level --- \texttt{us-gaap} tax concepts, richly tagged \\
+ESEF (EU) & IAS~12 note & headline tagged; note usually \emph{block-tagged} prose \\
+EDINET (JP) & IAS~12 / J-GAAP note & fact-level (\texttt{jpcrp}); Japanese labels (\texttt{title\_lang=:en}) \\
+DART (KR) & IAS~12 note & fact-level (\texttt{ifrs-full}); Korean labels \\
+India (NSE/BSE) & tax under the \texttt{in-*} taxonomies & fact-level (tagged) \\
+China, Hong Kong & IAS~12 / CAS note & \emph{PDF prose} --- via the document extractor \\
+Russia & RAS / IFRS tax note & mixed: CBR-XBRL tagged, else PDF prose \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{Worked example (to build).} For a single filer: pull the tax-note facts, compute the book and cash
 effective rates and their multi-year trend, and lay the statutory-to-effective reconciliation out as a table
@@ -9660,11 +9687,34 @@ filing gives the firm's \emph{own} account; the external watchlists that corrobo
 sanctions, regulator registers) are the non-regulatory complement of Ch.~\ref{sec:beyond-filing}.
 
 \section{What Each Jurisdiction Exposes}
-Legal disclosure standardizes poorly: the SEC's Item~103 / Item~105 structure has no exact analogue elsewhere,
-IFRS jurisdictions carry the IAS~37 and IAS~24 notes (usually block-tagged prose), and the CJK, Indian and
-Russian regimes each expose a different subset. This section will tabulate what is reliably extractable per
-jurisdiction, with the honest caveat that the legal half is prose-extraction quality-bound in a way the fiscal
-half is not.
+Legal disclosure standardizes poorly (Table~\ref{tab:legal-jurisdictions}): the SEC's Item~103 / Item~105
+structure has no exact analogue elsewhere, IFRS jurisdictions carry the IAS~37 (contingencies) and IAS~24
+(related parties) notes as usually block-tagged prose, and the PDF-native regimes expose only what their
+documents print. The honest caveat runs throughout: unlike the fiscal half, almost none of the legal half is
+fact-level --- it is prose, so its recovery is quality-bound by the narrative and section extraction of
+Ch.~\ref{ch:narratives}, and the entity/domicile map depends on a subsidiary exhibit that not every regime
+requires.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Legal disclosure by jurisdiction: the nearest analogues of legal proceedings, contingencies and the
+subsidiary map, and how they are recovered. Nearly everything here is \emph{prose}, not tagged facts.}
+\label{tab:legal-jurisdictions}
+\begin{tabular}{@{}p{0.16\textwidth}p{0.44\textwidth}p{0.32\textwidth}@{}}
+\toprule
+\textbf{Jurisdiction} & \textbf{Legal disclosures} & \textbf{Extraction level} \\
+\midrule
+SEC (US) & Item~103 (Legal Proceedings), Item~105 (Risk Factors), ASC~450 contingencies note, Exhibit~21 subsidiaries, 8-K events & prose sections (Ch.~\ref{ch:narratives}); contingency amounts partly tagged \\
+ESEF (EU) & IAS~37 contingencies, IAS~24 related parties; no Item-103 analogue & block-tagged prose; no subsidiary exhibit \\
+EDINET (JP) & business-risks and litigation text-blocks (\texttt{jpcrp}) & tagged text-blocks (Japanese) \\
+DART (KR) & IAS~37 / IAS~24 notes & prose / text-blocks (Korean) \\
+India (NSE/BSE) & board-report litigation, related-party notes & prose \\
+China, Hong Kong & IAS~37 / contingencies and connected-party notes & \emph{PDF prose} \\
+Russia & RAS/IFRS contingencies; disclosure-portal notices & mixed: PDF prose, some CBR-XBRL \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \paragraph{Worked example (to build).} For a single filer: extract the Legal Proceedings section and assemble a
 litigation register, then build the subsidiary graph from Exhibit~21 --- the legal one-pager and the entity map.
