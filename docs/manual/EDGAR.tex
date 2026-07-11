@@ -9083,6 +9083,7 @@ finding the document in the foreign repository is the part a Generic path cannot
 have already done.
 
 \section{Format, not jurisdiction}
+\label{sec:generic-format}
 
 Generic sniffs the document's format from its leading bytes and routes to the extractor that format already
 has (Table~\ref{tab:generic-formats}). The pivotal case is tagged \textbf{XBRL}: it is \emph{self-describing}
@@ -9112,6 +9113,7 @@ HTML & \texttt{toc} / \texttt{sections} & the heading / \emph{Item} structure \\
 \end{table}
 
 \section{A floor, not a ceiling}
+\label{sec:generic-floor}
 
 What Generic gives up, relative to a specialised path, is exactly the three things above: no \texttt{discover}
 (you bring the document), no standardisation of a national-namespace concept to a canonical one, no
@@ -9131,6 +9133,222 @@ of the graceful floor into a specialised ceiling. Generic is thus both the fallb
 \emph{starting point} for the next specialised chapter.
 
 \section{Examples from: Australia, Brazil and Canada}
+\label{sec:generic-examples}
+
+The three subsections that follow run the \emph{unmodified} Generic path of this chapter on a real annual
+report from each of three jurisdictions with no specialised system --- conveniently alphabetical: Australia,
+Brazil and Canada. The point is not to make any of them work \emph{well}; it is to drive the same
+format-dispatching core against a genuine foreign report and record, honestly, what each format yields and
+where it stops. Nothing here is adapted to a country --- that would defeat Generic's purpose --- so where an
+accessor returns little or nothing, that is documented as the status of the \emph{general} path, not patched
+away. Each example is a snapshot of one report on one run, not a jurisdiction-wide guarantee.
+
+\subsection{Australia}
+\label{sec:generic-australia}
+
+Australian companies report under \textbf{AASB} standards --- the Australian adoption of IFRS --- in English,
+so the vocabulary the Generic PDF path expects (the \texttt{ifrs-full} English label map,
+\S\ref{sec:generic-format}) is exactly the right one. Listed companies lodge their financial reports with
+\textbf{ASIC} and release them through the \textbf{ASX} announcements platform; the publicly available artifact
+is the \emph{PDF} annual report, not a tagged instance --- Australia has no public XBRL filing of listed annual
+accounts of the kind the SEC or ESEF mandate --- so the self-describing-XBRL best case
+(\S\ref{sec:generic-format}) never triggers here, and finding the document is the manual step Generic cannot do
+for you. We ran the unmodified path on Wesfarmers' 2024 annual report (ASX:~WES), an 8\,MB PDF taken from the
+company's investor pages:
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> f = fetch_filing(Generic(), "GEN-Wesfarmers-2024.pdf");  # you fetched it from ASX/IR; Generic just opens it
+julia> f.kind                                    # format sniffed from the leading bytes
+:pdf
+julia> length(toc(f))                            # the outline -- no Tier-2 stack needed
+82
+julia> [ (e.title, e.page) for e in toc(f) if occursin(r"statement|balance"i, e.title) ]
+        # ("Income statement", 132) ("Statement of comprehensive income", 133) ("Balance sheet", 134)
+        # ("Cash flow statement", 135) ("Statement of changes in equity", 136)
+
+# facts/narratives need the Docling Tier-2 PDF stack: start Julia with the tier-2 venv on the
+# JULIA_PYTHONCALL_EXE environment variable, then load PythonCall to activate the EDGAR.jl extension.
+julia> using PythonCall                          # loads the Docling extension
+julia> length(narratives(f))                     # the prose, extracted by Docling
+704
+julia> length(facts(f))                          # the statements... none classified from this layout
+0
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The unmodified Generic path on an Australian IFRS PDF (Wesfarmers 2024), as run above. ``Docling''
+marks the optional Tier-2 PDF stack; without it, \texttt{facts} and \texttt{narratives} raise a clear
+``requires Docling'' error while \texttt{toc} still works.}
+\label{tab:generic-australia}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:pdf} \\
+\texttt{toc} (outline) & works, no Docling & 82 entries; locates all five primary statements by page \\
+\texttt{narratives} (prose) & works, needs Docling & 704 English blocks \\
+\texttt{facts} (statements) & empty (0 rows) & Docling ran; the IFRS-PDF classifier lifted no line items \\
+XBRL / iXBRL path & not applicable & Australia releases PDF annual reports, not public XBRL \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The \emph{floor holds}. With no Tier-2 stack at all, \texttt{toc} returns the full 82-entry outline
+and locates every primary statement by page --- the income statement (p.~132), statement of comprehensive
+income (p.~133), balance sheet (p.~134), cash-flow statement (p.~135) and statement of changes in equity
+(p.~136). With the Docling extractor loaded, \texttt{narratives} lifts 704 English prose blocks. \texttt{facts},
+however, returns \emph{zero} rows: pointed at the very pages the outline identifies, the generic IFRS-PDF
+classifier recovered no statement line items from this layout. The honest reading is that the gap is \emph{table
+detection}, not vocabulary --- the labels are English IFRS and would map --- so you get the outline and the
+prose, but not, here, the numbers.
+
+\paragraph{What it says about Generic.} The graceful degradation is real --- \texttt{toc} always, prose with
+Docling --- and none of it is Australia-specific, which is the point: the way to improve this case is to
+strengthen the general PDF fact extractor, not to add a Wesfarmers or an Australian patch. Australia is
+``promoted'' out of Generic (\S\ref{sec:generic-floor}) only when a repository \texttt{discover} and a more
+capable PDF path arrive --- both jurisdiction-agnostic gains.
+
+\subsection{Brazil}
+\label{sec:generic-brazil}
+
+Brazilian public companies report under \textbf{CPC} standards --- Brazil's IFRS-converged framework --- in
+\emph{Portuguese}, and file with \textbf{CVM}, the market regulator, alongside releasing designed reports
+through \textbf{B3} and their investor pages. Language is the one variable that changes from the Australian
+case, and it is the one the format table warns is the widest gap (\S\ref{sec:generic-format}): the Generic PDF
+path classifies against the \emph{English} \texttt{ifrs-full} label map, which a Portuguese statement heading
+does not match. We ran the unmodified path on Vale's \emph{Relato Integrado 2024} (B3:~VALE3), a 128-page,
+19\,MB Portuguese annual report:
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> using PythonCall                          # Docling Tier-2, as in the Australia example
+julia> f = fetch_filing(Generic(), "GEN-Vale-AR-2024.pdf");   # Vale integrated annual report, in Portuguese
+julia> f.kind
+:pdf
+julia> length(toc(f))                            # a designed report -- the bookmark outline is read fine
+43
+julia> [ (e.title, e.page) for e in toc(f) ][1:5]
+        # ("Capa",1) ("Sumario",2) ("Introducao",3) ("Carta do presidente",4) ("Sobre a Vale",6)
+julia> n = narratives(f); length(n)             # the prose is recovered by Docling
+342
+julia> unique(r.lang for r in n)                 # ...but every block is tagged English (the text is Portuguese)
+["en"]
+julia> facts(f)                                  # the statements: non-English labels do not classify
+ERROR: ArgumentError: no consolidated statements found in "GEN-Vale-AR-2024.pdf"
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The unmodified Generic path on a Brazilian IFRS annual report (Vale \emph{Relato Integrado 2024}, in
+Portuguese), as run above. Contrast the Australian case (Table~\ref{tab:generic-australia}): the same core, one
+language away.}
+\label{tab:generic-brazil}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:pdf} \\
+\texttt{toc} (outline) & works & 43 entries (\emph{Capa}, \emph{Sumário}, \emph{Carta do presidente}\ldots) \\
+\texttt{narratives} (prose) & works, needs Docling & 342 blocks; but \texttt{lang} mis-tags them \texttt{en} (the text is Portuguese) \\
+\texttt{facts} (statements) & error & ``no consolidated statements found'' --- English \texttt{ifrs-full} labels do not match Portuguese \\
+XBRL / iXBRL path & not applicable & we brought a PDF; CVM's structured data is a separate artifact \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Now that this is a genuine annual report, the outline works exactly as in Australia --- \texttt{toc}
+reads Vale's 43-entry bookmark tree without trouble, which retires any thought that the outline is
+jurisdiction-bound. The failure is \emph{isolated to the numbers}. The generic PDF path matches statement
+labels against the English \texttt{ifrs-full} map, so Portuguese headings --- \emph{Balanço patrimonial},
+\emph{Demonstração do resultado} --- fall outside it and the extractor reports \emph{no consolidated statements
+found}; the language detector compounds this by mis-tagging the Portuguese prose as English (a systematic quirk
+--- it recurs on every Portuguese report we tried). What survives is \texttt{narratives}: Docling lifts the 342
+prose blocks whatever the language, so you still get the document's \emph{content} even when the statements do
+not resolve --- \emph{something, never nothing}.
+
+\paragraph{What it says about Generic.} The one real gap is the numbers, and its fix is general, not Brazilian:
+Portuguese statements want a CPC label map --- exactly the ``national vocabulary'' a specialised system adds
+(\S\ref{sec:generic-floor}). Adding a Portuguese label set is how Brazil would be \emph{promoted}: it turns the
+failed \texttt{facts} into a classified statement without touching the core.
+
+\paragraph{Timing.} With Docling isolated, the document parse took \textbf{122~s} for this 128-page, 19\,MB
+report (the first extractor call pays it; \texttt{facts} then reused it in 3\,s, and \texttt{toc}, needing no
+Docling, returned in 1.5\,s). Read it as an order-of-magnitude guide --- a couple of minutes of parse for a
+report of this size, scaling with page count.
+
+\subsection{Canada}
+\label{sec:generic-canada}
+
+Canadian public companies report under \textbf{IFRS} in English (and French), and file through \textbf{SEDAR+},
+the national repository run by the Canadian Securities Administrators. Like Australia the language is English,
+so this is the case where the Generic PDF path has every advantage --- and it is the one that finally exercises
+\texttt{facts}. We ran the unmodified path on Loblaw's \emph{2024 Annual Report} (TSX:~L), a 160-page, 6.5\,MB
+English report:
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> using PythonCall
+julia> f = fetch_filing(Generic(), "GEN-Loblaw-AR-2024.pdf");   # Loblaw 2024 Annual Report, English
+julia> length(toc(f))                            # full outline -- and it finds the statements by page
+129
+julia> [ e.title for e in toc(f) if occursin("Consolidated Statements", e.title) ]
+        # "Condensed Consolidated Statements of Earnings" (p94) ... "Balance Sheets" (p97) ... "Cash Flows" (p98)
+julia> length(narratives(f))                     # prose, correctly tagged English this time
+225
+julia> fa = facts(f); length(fa)                 # the statements DO classify -- but only the balance sheet
+16
+julia> fa[3]                                     # right concept and magnitude... wrong currency
+(statement="BalanceSheet", concept="ifrs-full:Assets", label="Total assets", value=4.088e10, unit="HKD", ...)
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The unmodified Generic path on a Canadian IFRS annual report (Loblaw \emph{2024 Annual Report},
+English), as run above. This is the only one of the three where \texttt{facts} returns rows --- and it still
+carries a currency bug.}
+\label{tab:generic-canada}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.22\textwidth}p{0.38\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:pdf} \\
+\texttt{toc} (outline) & works & 129 entries; locates the statements at pp.~94--98 \\
+\texttt{narratives} (prose) & works, needs Docling & 225 blocks; correctly tagged \texttt{en} \\
+\texttt{facts} (statements) & partial, \emph{buggy} & 16 balance-sheet rows, right magnitudes --- but currency mis-labelled \texttt{HKD} (should be \texttt{CAD}); income statement and cash flow not classified \\
+XBRL / iXBRL path & not applicable & we brought a PDF; SEDAR+ is document-based \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Canada is where \texttt{facts} at last fires --- and shows both its promise and its fragility. The
+extractor pulled 16 balance-sheet rows onto the right \texttt{ifrs-full} concepts (\texttt{Assets},
+\texttt{CurrentAssets}, \texttt{Equity}\ldots) with the \emph{correct magnitudes} --- Loblaw's real
+\$40.9\,bn total assets and \$11.3\,bn equity --- yet stamped every one \texttt{HKD} instead of \texttt{CAD},
+and classified only the balance sheet, not the income statement or cash flow. So the same English IFRS PDF path
+that returned \emph{zero} on Wesfarmers returns \emph{sixteen} here: fact extraction from a PDF is real but
+\emph{layout-dependent and unreliable}, and its currency inference is, on this evidence, not to be trusted. The
+outline and the prose, by contrast, were solid on all three reports.
+
+\paragraph{What it says about Generic.} Every weakness here is general: a more robust PDF table extractor and a
+sounder currency/units inference would help \emph{any} filer, in any country. None of it is a Canadian patch,
+and the honest status is the useful one --- \texttt{toc} and \texttt{narratives} are dependable across
+jurisdictions; PDF \texttt{facts} are best treated as a lead to verify, not a figure to trust.
+
+\paragraph{A note on Word-origin PDFs.} Not every ``PDF'' is a designed publication. A large share of filings
+are word-processor documents \emph{exported} to PDF, and they behave differently: printed from Word via
+\texttt{Microsoft: Print To PDF}, they carry no bookmark tree and no tag structure, so \texttt{toc} correctly
+returns \emph{nothing} (there is no outline to read) --- as WEG's Portuguese \emph{Demonstrações Financeiras}
+did in our tests, an independent read of the file confirming zero bookmarks. \texttt{narratives} still recovers
+the text, so the floor holds, but the outline does not exist to be found. Word is thus a real upstream
+\emph{source} of the PDFs Generic receives, and its fingerprint (no bookmarks, often no tags) is worth
+recognising. One caveat at the format seam: a \emph{native} Word \texttt{.docx} is a ZIP container, so the
+format sniffer (\S\ref{sec:generic-format}) currently rejects it as a report package --- Word is reached only
+once it has been exported to PDF.
 
 
 \section{Writing systems and local variations}
