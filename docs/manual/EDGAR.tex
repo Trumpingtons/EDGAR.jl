@@ -9357,14 +9357,15 @@ once it has been exported to PDF.
 \subsection{Denmark}
 \label{sec:generic-denmark}
 
-Denmark is the counter-example on \emph{format}. Danish listed companies file their annual financial report
-under \textbf{ESEF} --- the EU's mandated inline-XBRL format on the IFRS taxonomy --- for which
-\texttt{EDGAR.jl} has a specialised system (Ch.~\ref{sys:esef}); here we point the \emph{Generic} core at one
-to see what the tagged path alone recovers. (The LEGO Group, being privately held, is \emph{not} an ESEF filer
---- it files a Danish-taxonomy digital report to the business register --- so we use \textbf{Novo
-Nordisk~A/S}, OMX:~NOVO-B, a listed ESEF filer.) An ESEF report ships as a ZIP package, which the format
-sniffer (\S\ref{sec:generic-format}) deliberately rejects --- so, as its error message instructs, we unzip and
-pass the inline-XBRL \texttt{.xhtml} instance directly:
+Denmark is the counter-example on \emph{format}, and it lets us test the tagged path against \emph{two}
+different taxonomies. A listed issuer, \textbf{Novo Nordisk~A/S} (OMX:~NOVO-B), files under \textbf{ESEF} ---
+the EU's mandated inline-XBRL format on the \emph{IFRS} taxonomy, for which \texttt{EDGAR.jl} has a specialised
+system (Ch.~\ref{sys:esef}). The privately-held \textbf{LEGO Group}, not being an ESEF filer, instead lodges a
+digital annual report with the business register on Denmark's \emph{national} (DCCA) taxonomy. Both are inline
+XBRL; here we point the \emph{Generic} core at each and see what the tagged path alone recovers. An ESEF report
+ships as a ZIP package, which the format sniffer (\S\ref{sec:generic-format}) deliberately rejects --- so, as
+its error message instructs, we unzip and pass the inline-XBRL \texttt{.xhtml} instance directly. First, Novo
+Nordisk's ESEF report:
 
 \begin{lstlisting}
 julia> using EDGAR
@@ -9411,11 +9412,37 @@ instance has no bookmark tree) and no prose. A tagged foreign filing is thus han
 as by a bespoke adapter --- the specialised ESEF system (Ch.~\ref{sys:esef}) adds discovery, national
 standardisation and quirk-fixes on top, but the \emph{numbers} are already here.
 
+\paragraph{A second taxonomy: LEGO from the business register.} The contrast sharpens off the IFRS taxonomy.
+LEGO System~A/S (a LEGO Group company) lodges its digital annual report with the Danish Business Authority
+(Erhvervsstyrelsen), retrievable from the public \texttt{distribution.virk.dk} register as inline XBRL on the
+DCCA taxonomy --- the \texttt{fsa:} namespace, \emph{not} \texttt{ifrs-full}. The same Generic core, unchanged:
+
+\begin{lstlisting}
+julia> f = fetch_filing(Generic(), "GEN-LEGO-DK-2025.xhtml");   # Danish-register iXBRL, national taxonomy
+julia> f.kind
+:ixbrl
+julia> fa = facts(f); length(fa)                 # facts still classify -- self-describing, no Docling
+227
+julia> unique(r.unit for r in fa)                # correct currency, read from the instance
+["DKK", "pure"]
+julia> (fa[1].concept, fa[1].value, fa[1].unit)  # ...but the concept is the NATIONAL one, not ifrs-full
+("fsa:Revenue", 6.1963e10, "DKK")
+\end{lstlisting}
+
+\noindent Self-describing XBRL delivers even off the IFRS taxonomy: 227 facts, correct \texttt{DKK}, no Docling
+--- but every concept is a raw Danish \texttt{fsa:} term (\texttt{fsa:Revenue},
+\texttt{fsa:ProfitLossFromOrdinaryOperatingActivities}) rather than the canonical \texttt{ifrs-full:Revenue}
+Novo Nordisk yielded. That last step --- mapping \texttt{fsa:Revenue} onto a standard concept --- is exactly
+the \emph{national standardisation} a specialised system supplies (\S\ref{sec:generic-floor}), and it is the
+one thing Generic leaves undone here. The numbers are all present; only their \emph{vocabulary} is national.
+
 \medskip
 \noindent \textbf{Across the four.} For \emph{PDF} reports (Australia, Brazil, Canada) \texttt{toc} and
 \texttt{narratives} are the reliable floor, while \texttt{facts} are weak and layout-dependent (0, error, or
-partial-with-a-currency-bug). For a \emph{tagged} filing (Denmark) the pattern inverts: \texttt{facts} are
-clean and correctly denominated, \texttt{toc} and \texttt{narratives} empty. Format, not jurisdiction, decides
+partial-with-a-currency-bug). For \emph{tagged} filings (Denmark) the pattern inverts: \texttt{facts} are clean
+and correctly denominated, \texttt{toc} and \texttt{narratives} empty --- and whether those facts arrive
+canonical (\texttt{ifrs-full}, from ESEF) or in a national vocabulary (\texttt{fsa:}, from the Danish register)
+is the \emph{taxonomy's} doing, the one gap a specialised system closes. Format, not jurisdiction, decides
 which half of a document you recover --- exactly the design claim of this chapter (\S\ref{sec:generic-format}).
 
 \section{Writing systems and local variations}
