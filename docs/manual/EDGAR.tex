@@ -35,6 +35,11 @@
 % render blank), so it needs a dedicated face. \rusfont is a Cyrillic-capable text font; \rus{…} routes to it.
 \newfontfamily\rusfont{Times New Roman}  % macOS system serif with Cyrillic; swap to Noto Serif / DejaVu Serif on Linux/CI
 \newcommand{\rus}[1]{{\rusfont #1}}
+% Status-marker glyphs (U+2717 ✗ MISMATCH, U+25D1 ◑ documented) are absent from Latin Modern Mono, so the
+% validation-panel marks are set in a symbol-bearing monospace font. Menlo (macOS) carries both; on
+% Linux/Windows/CI swap to DejaVu Sans Mono (free, cross-platform, verified to cover both glyphs).
+\newfontfamily\symbolfont{Menlo}
+\newcommand{\statmark}[1]{{\symbolfont #1}}
 
 \usepackage{amsmath}   % \text, \lvert/\rvert, aligned display math (Heineken excise identity; event-study formulae)
 \usepackage[margin=1in]{geometry}
@@ -3977,8 +3982,8 @@ legitimately diverges.}
 \toprule
 \textbf{\texttt{scheme}} & \textbf{Effect} \\
 \midrule
-\texttt{:none} (default) & Strict/exact: every mismatch counts (a documented gap shows \texttt{✗ MISMATCH}). \\
-\texttt{:morningstar} & Apply the standardisation registry: documented gaps print \texttt{◑ documented} with their reason and are \emph{not} counted. \\
+\texttt{:none} (default) & Strict/exact: every mismatch counts (a documented gap shows \texttt{\statmark{✗} MISMATCH}). \\
+\texttt{:morningstar} & Apply the standardisation registry: documented gaps print \texttt{\statmark{◑} documented} with their reason and are \emph{not} counted. \\
 \texttt{:sternstewart} & The Stern Stewart EVA standardisation scheme (reserved; registry currently empty). \\
 \texttt{:auto} & Resolve to the provider's \texttt{default\_scheme} (\texttt{:morningstar} for both). \\
 \bottomrule
@@ -4038,7 +4043,9 @@ figure actually is.}
 \paragraph{Validating the extraction.} Extract a filer with \texttt{EDGAR}, then cross-check its
 headline totals against Yahoo:
 
-\begin{lstlisting}
+% escapeinside lets the ◑ status glyph below render via \statmark (listings' literate cannot match a
+% UTF-8 glyph under XeLaTeX); the (* *) delimiters do not occur in this listing's Julia code
+\begin{lstlisting}[escapeinside={(*}{*)}]
 using EDGAR    # validate/report live in EDGAR; YFinance is a package dependency
 
 # 1. EDGAR side -- Apple's latest 10-K, classified (the figures under test).
@@ -4049,7 +4056,7 @@ select_statement(facts(f; classify = true), "BalanceSheet")     # eyeball EDGAR'
 v = validate(:sec, "320193", "AAPL")                # CIK or LEI + the Yahoo ticker; provider = :yahoo
 filter(r -> !r.match && r.reference !== nothing, v) # empty => all agree within 0.1%
 report()                                            # the built-in multi-firm panel (strict; scheme = :none)
-report(; scheme = :morningstar)                     # documented standardisation gaps -> "◑ documented"
+report(; scheme = :morningstar)                     # documented standardisation gaps -> "(*\statmark{◑}*) documented"
 \end{lstlisting}
 
 \paragraph{Why a \texttt{ticker}?} A \texttt{Filing} knows the filer's \texttt{EntityId} (CIK or LEI),
@@ -4159,7 +4166,7 @@ panel. Its \emph{total} \texttt{ifrs-full:Equity} $=1{,}858.5$~Mio~€ matches Y
 \emph{not} an extraction defect --- \texttt{EDGAR.jl} reads both the total and the owners-of-parent line
 correctly; it is the identical standardisation as Volkswagen's equity delta (above), stripped of the NCI
 noise that muddies VW's case. It is registered as a documented \texttt{:morningstar} scheme entry
-(\S\ref{sec:oracle-api}), so \texttt{report(; scheme = :morningstar)} flags it \texttt{◑ documented} with
+(\S\ref{sec:oracle-api}), so \texttt{report(; scheme = :morningstar)} flags it \texttt{\statmark{◑} documented} with
 its reason rather than counting it a mismatch; under the strict default (\texttt{scheme = :none}) it shows
 as a mismatch, as every standardisation gap does.
 
@@ -4478,8 +4485,8 @@ operating/financing reformulation, \S\ref{sec:schemes-penmannissim}). The mechan
 \paragraph{Documenting and adjusting.} A scheme entry has two roles, and \texttt{SCHEME\_REGISTRY} --- a
 \texttt{Dict} keyed by scheme --- carries both. It \emph{documents}: for each \texttt{(issuer, metric)} pair
 it records the reason the scheme's figure legitimately departs from the as-filed one, so \texttt{report},
-run under a scheme, flags a registered pair \texttt{◑~documented} (printed with its reason) and does \emph{not}
-count it, while an unregistered divergence still shows \texttt{✗~MISMATCH}. And it \emph{adjusts}: the same
+run under a scheme, flags a registered pair \texttt{\statmark{◑}~documented} (printed with its reason) and does \emph{not}
+count it, while an unregistered divergence still shows \texttt{\statmark{✗}~MISMATCH}. And it \emph{adjusts}: the same
 entry carries the transformation that produces that figure, so a scheme applied to an as-filed number yields
 the standardised or economic one --- net-of-excise revenue under Morningstar, economic NOPAT under
 Stern~Stewart. The two roles are one object seen twice: the reason an adjusted figure differs, and the
@@ -4584,7 +4591,7 @@ Selecting \texttt{scheme = :penmannissim} reads a figure on this reformulated ba
 net operating assets in place of the as-filed profit and equity totals. The entries under
 \texttt{SCHEME\_REGISTRY[:penmannissim]} carry both the reason a reformulated figure departs from the as-filed
 one and the reclassification that produces it, so \texttt{report(; scheme = :penmannissim)} flags a documented
-pair \texttt{◑~documented} and still catches any new, unregistered delta with \texttt{✗~MISMATCH}.
+pair \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
 
 \section{CFROI}
 \label{sec:schemes-cfroi}
@@ -4626,7 +4633,7 @@ Selecting \texttt{scheme = :cfroi} reads a figure on this basis --- gross, infla
 investment in place of the as-filed profit and asset totals. The entries under
 \texttt{SCHEME\_REGISTRY[:cfroi]} carry both the reason a CFROI figure departs from the as-filed one and the
 adjustment that produces it, so \texttt{report(; scheme = :cfroi)} flags a documented pair
-\texttt{◑~documented} and still catches any new, unregistered delta with \texttt{✗~MISMATCH}.
+\texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
 
 \section{Compustat}
 \label{sec:schemes-compustat}
@@ -4666,8 +4673,8 @@ accounting-anomaly results.
 As a \emph{scheme}, Compustat is the set of \texttt{(issuer, metric)} entries under
 \texttt{SCHEME\_REGISTRY[:compustat]} --- the divergences the S\&P standardisation produces, each annotated
 with the template rule that opens it. Running \texttt{report(; scheme = :compustat)} reads each figure against
-the Compustat template: a registered pair prints \texttt{◑~documented} with its reason and is not counted,
-while a new, undocumented delta still shows \texttt{✗~MISMATCH}. It joins Morningstar as the second
+the Compustat template: a registered pair prints \texttt{\statmark{◑}~documented} with its reason and is not counted,
+while a new, undocumented delta still shows \texttt{\statmark{✗}~MISMATCH}. It joins Morningstar as the second
 \emph{standardisation} on the axis --- the same mechanism, a different provider's template --- and is the
 natural basis to select when reconciling \texttt{EDGAR.jl}'s figures against Compustat-sourced data in
 research work.
@@ -4696,8 +4703,8 @@ Siano (2022; Ch.~\ref{ch:references}), whose comparison spans Compustat and Worl
 As a \emph{scheme}, Worldscope is the set of \texttt{(issuer, metric)} entries under
 \texttt{SCHEME\_REGISTRY[:worldscope]}, each annotated with the standardisation rule that opens the gap.
 Running \texttt{report(; scheme = :worldscope)} reads each figure against the Worldscope template: a registered
-pair prints \texttt{◑~documented} with its reason and is not counted, while a new, undocumented delta still
-shows \texttt{✗~MISMATCH}. With Morningstar and Compustat it completes the standardisation face --- three
+pair prints \texttt{\statmark{◑}~documented} with its reason and is not counted, while a new, undocumented delta still
+shows \texttt{\statmark{✗}~MISMATCH}. With Morningstar and Compustat it completes the standardisation face --- three
 provider templates under one mechanism --- and is the basis to select when reconciling \texttt{EDGAR.jl}'s
 cross-jurisdiction figures against Worldscope-sourced international data.
 
