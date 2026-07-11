@@ -4461,7 +4461,7 @@ the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
 self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while the data sources
 (\S\ref{sec:validation-sources}) catch a value that is internally consistent but wrong against the world.
 
-\chapter{Accounting-Adjustment Schemes}
+\chapter{Accounting-Adjustment Schemes and Topics}
 \label{sec:schemes}
 
 A company's reported figures are not the last word. ``Revenue'' is gross for one filer and net of excise for
@@ -4470,7 +4470,9 @@ all-in. A \textbf{scheme} is a named methodology for reconciling such figures to
 filers, data providers and periods compare like with like --- and for \emph{adjusting} accounting numbers
 onto an \emph{economic} basis. It is a first-class, pluggable axis in \texttt{EDGAR.jl}: the \texttt{scheme}
 keyword threads through the validation oracle (\S\ref{sec:oracle-api}), and the sections below give each
-scheme its own treatment, with room for more over time.
+scheme its own treatment, with room for more over time. Beneath the schemes sit the individual adjustment
+\emph{topics} (\S\ref{sec:schemes-topics}) --- the primitives a scheme bundles --- so the chapter runs from the
+named methodologies down to the single recasts they are built from.
 
 \section{Overview}
 \label{sec:schemes-overview}
@@ -4510,6 +4512,14 @@ filer onto a common provider template so that companies, data providers and peri
 as-filed statements give (Stern~Stewart's EVA, \S\ref{sec:schemes-sternstewart}; the Penman--Nissim
 operating/financing reformulation, \S\ref{sec:schemes-penmannissim}). The mechanism is identical either way
 (below); the two faces differ only in \emph{intent} --- comparability versus economic truth.
+
+\paragraph{Schemes and topics.} A scheme is a \emph{bundle}; its parts are \emph{topics}
+(\S\ref{sec:schemes-topics}) --- single, self-contained adjustments such as capitalising R\&D or an operating
+lease. Stern~Stewart's EVA is a bundle of exactly these, and the Topics section treats each on its own, so a
+primitive can be applied \`a~la~carte or composed into a custom scheme (\S\ref{sec:schemes-custom}). Every
+topic obeys a hard \emph{public-information rule} --- computable from the primary statements and notes alone
+--- which is what keeps an adjustment reproducible from the filing rather than dependent on an issuer's internal
+records.
 
 \paragraph{Documenting and adjusting.} A scheme entry has two roles, and \texttt{SCHEME\_REGISTRY} --- a
 \texttt{Dict} keyed by scheme --- carries both. It \emph{documents}: for each \texttt{(issuer, metric)} pair
@@ -4749,6 +4759,147 @@ investment in place of the as-filed profit and asset totals. The entries under
 \texttt{SCHEME\_REGISTRY[:holt]} carry both the reason a CFROI figure departs from the as-filed one and the
 adjustment that produces it, so \texttt{report(; scheme = :holt)} flags a documented pair
 \texttt{\statmark{◑}~documented} and still catches any new, unregistered delta with \texttt{\statmark{✗}~MISMATCH}.
+
+\section{Topics}
+\label{sec:schemes-topics}
+
+Where a \emph{scheme} is a named \emph{bundle} of adjustments (\S\ref{sec:schemes-standardisation},
+\S\ref{sec:schemes-rederivation}), a \textbf{topic} is one of the adjustment \emph{primitives} such a bundle is
+built from --- a single, self-contained recast of one accounting item onto an economic basis. Stern~Stewart's
+EVA \emph{is} R\&D-capitalisation, lease-capitalisation and the provision and deferred-tax add-backs, bundled
+and named (\S\ref{sec:schemes-sternstewart}); HOLT Value composes many of the same primitives
+(\S\ref{sec:schemes-holt}). Isolated as topics, the primitives can be applied \`a~la~carte --- one adjustment,
+without committing to a whole methodology --- and are the raw material of a custom scheme
+(\S\ref{sec:schemes-custom}).
+
+\paragraph{Public-information rule.} A topic is admitted here only if it can be computed from \emph{public}
+disclosure alone --- the four primary statements (balance sheet, income statement, cash-flow statement and
+statement of changes in equity) and the regulatory notes --- possibly with one explicit, stated assumption (an
+amortisable life, a discount rate). Every subsection carries an \textbf{Inputs (public)} line naming which
+statement or note supplies each figure, so the claim is auditable. The rule draws a hard boundary: adjustments
+needing information a filing does not contain are \emph{excluded} --- the fair-value step-ups of purchase-price
+allocation, the market revaluation of cross-holdings, and (the reason there is no
+IFRS\,$\leftrightarrow$\,US-GAAP topic) the measurement differences only an issuer's internal records could
+bridge. What survives is exactly what a third party can reproduce from the filing. Sources are the foundational
+method paper where one exists and the governing accounting standard otherwise; the one exception, flagged in
+place, is the normalisation of one-time items, which is disclosed but too judgemental to attribute to a single
+rule.
+
+\subsection{Capitalise R\&D}
+\label{sec:topics-rnd}
+Under IAS~38 and US~GAAP (ASC~730) most research spending is expensed as incurred --- development may be
+capitalised under IFRS once tightly defined criteria are met, but the bulk is charged to the year. That treats
+a long-lived investment as a period cost, understating both operating profit (the whole year's R\&D is
+expensed) and capital (the accumulated research asset never appears). The adjustment (Lev and Sougiannis, 1996;
+Ch.~\ref{ch:references}) capitalises it: pick an amortisable life $n$ for the industry, treat the current
+year's R\&D as a capital expenditure, and amortise the prior $n$ years' R\&D to build a \emph{research asset}.
+Operating income rises by the current expense and falls by the year's amortisation of the accumulated asset;
+capital rises by the unamortised balance.
+
+\paragraph{Inputs (public).} R\&D expense for the current and prior $n$ years --- disclosed on the income
+statement or in the notes (IAS~38; ASC~730), drawn from this and past filings --- plus the amortisable life $n$
+as the one stated assumption.
+
+\subsection{Capitalise operating leases}
+\label{sec:topics-leases}
+An operating lease is a debt-financed use of an asset that, under the superseded IAS~17 and ASC~840, stayed off
+balance sheet: the rental was an operating expense and neither asset nor obligation was recognised. The
+constructive-capitalisation adjustment (Imhoff, Lipe and Wright, 1991; Ch.~\ref{ch:references}) restores them
+--- discount the disclosed future minimum lease payments at the firm's pre-tax cost of debt to a present value,
+add it as both a right-of-use asset and a debt-like liability, and split the rental into imputed interest and
+depreciation, which lifts operating income and moves the financing portion out of it.
+
+\paragraph{Inputs (public).} The schedule of future minimum operating-lease payments (the lease-commitments
+note) and a discount rate inferable from the filing. \emph{Scope:} IFRS~16 (2019) and ASC~842 now bring most
+leases on-balance-sheet, so the topic bears chiefly on pre-2019 data and on leases those standards still exempt
+(short-term, low-value).
+
+\subsection{Normalise one-time items}
+\label{sec:topics-normalise}
+Reported earnings blend the recurring operating run-rate with non-recurring items --- restructuring charges,
+asset impairments and write-downs, gains and losses on disposals, litigation settlements, insurance
+recoveries, one-off tax items. Normalising strips these out to leave \emph{core} earnings that better represent
+the ongoing business and compare across firms and periods, so a year carrying a large restructuring charge can
+be read against a clean one. The amounts are objective and disclosed; what is judgemental is \emph{which} items
+are genuinely one-off --- a firm that restructures every year is not incurring a one-time cost --- and it is
+that irreducible judgement, not any missing data, that leaves this topic without a single governing source.
+
+\paragraph{Inputs (public).} The non-recurring lines themselves --- separately presented on the face of the
+income statement, or itemised in the restructuring, impairment and disposal notes.
+
+\subsection{Stock-based compensation}
+\label{sec:topics-sbc}
+Share-based pay is a real expense --- IFRS~2 and ASC~718 require its grant-date fair value to be charged to
+income --- but it is non-cash, and ``adjusted'' earnings often add it back as though it were free while the
+shares it issues dilute existing holders. The adjustment keeps the expense (it is a genuine cost of employment)
+and, for per-share and equity-value work, counts the dilution the awards create rather than netting it against
+buybacks --- preventing the double flattery of adding the charge back \emph{and} ignoring the share count it
+grows.
+
+\paragraph{Inputs (public).} Stock-based-compensation expense and the outstanding award counts (options and
+restricted units) --- disclosed in the share-based-payment note and the cash-flow statement (IFRS~2; ASC~718).
+
+\subsection{Provisions and allowances}
+\label{sec:topics-provisions}
+Provisions (IAS~37) and valuation allowances --- for bad debts, warranties, restructuring and the like --- are
+precautionary charges booked before the cash goes out, reducing both profit and equity for losses not yet
+realised. Where a scheme reads capital on an economic basis (as EVA does, \S\ref{sec:schemes-sternstewart}) the
+add-back reverses the reserve into capital, since the money is still at work in the business, and treats the
+year's \emph{change} in the reserve as the operating charge rather than the conservative full provision.
+
+\paragraph{Inputs (public).} Opening and closing reserve balances and their movements --- disclosed in the
+provisions and allowance-for-doubtful-accounts notes (IAS~37) and reconciled on the balance sheet.
+
+\subsection{Pensions}
+\label{sec:topics-pensions}
+Defined-benefit pension accounting (IAS~19, ASC~715) nets several economically different flows into one number
+and reports a smoothed funded status. The adjustment separates them: the \emph{service cost} is an operating
+expense, while the interest cost and the return on plan assets are financing/investing items that belong out of
+operating income; and the plan's \emph{funded status} --- its surplus or deficit --- is recognised as an asset
+or a debt-like obligation, since an underfunded plan is a claim on the firm ranking alongside its borrowings.
+
+\paragraph{Inputs (public).} The pension note's cost-component breakdown (service cost, interest cost, expected
+return) and the funded-status reconciliation (IAS~19; ASC~715).
+
+\subsection{Deferred taxes to cash taxes}
+\label{sec:topics-deferredtax}
+The income-statement tax charge (IAS~12, ASC~740) mixes tax actually paid with \emph{deferred} tax --- an
+accrual for timing differences that may not reverse for years, if ever (a firm that keeps investing rolls its
+deferred-tax liability forward indefinitely). Reading profitability and cash return on a cash-tax basis
+replaces the reported charge with cash taxes --- the reported tax expense less the year's increase in the net
+deferred-tax liability --- so only tax that changes hands is counted.
+
+\paragraph{Inputs (public).} The reported tax expense (income statement) and the movement in deferred-tax
+assets and liabilities --- from the balance sheet and the tax note (IAS~12; ASC~740).
+
+\subsection{LIFO reserve to FIFO}
+\label{sec:topics-lifo}
+US~GAAP permits last-in-first-out inventory (ASC~330); IFRS bans it. Under LIFO, in a period of rising prices
+the balance sheet carries inventory at stale, understated costs while the income statement charges newer,
+higher costs to profit. The adjustment restores a first-in-first-out basis: add the disclosed \emph{LIFO
+reserve} --- the gap between LIFO and current-cost inventory --- back to inventory (and to equity, net of tax),
+and adjust cost of sales by the year's change in the reserve. It \emph{applies only to US filers on LIFO};
+there is nothing to do for an IFRS filer.
+
+\paragraph{Inputs (public).} The LIFO reserve and its year-on-year change --- a required disclosure in the
+inventory note of a LIFO filer (ASC~330).
+
+\subsection{Non-controlling interest}
+\label{sec:topics-nci}
+When a parent consolidates a less-than-wholly-owned subsidiary (IFRS~10, IAS~27) it reports 100\,\% of the
+subsidiary's assets, revenue and profit, then hands back the outside owners' share as \emph{non-controlling
+interest} --- a line in equity and a deduction from net income. Analysis must keep the two consistent:
+enterprise-level measures use the fully consolidated figures, but equity-holder measures (earnings per share,
+return on \emph{common} equity, equity value) strip the NCI out, so the return is measured on the parent's own
+claim rather than the whole consolidated entity.
+
+\paragraph{Inputs (public).} The non-controlling-interest lines --- in equity on the balance sheet and the
+statement of changes in equity, and as the profit attribution below net income (IFRS~10; IAS~27).
+
+\medskip
+\noindent The nine topics above are a working seed, not a closed list: any adjustment that clears the
+public-information rule can be added the same way --- a self-contained recast with its inputs named --- and
+composed into a scheme (\S\ref{sec:schemes-custom}).
 
 \section{Custom Schemes}
 \label{sec:schemes-custom}
@@ -9857,6 +10008,31 @@ CC\,BY\,4.0 --- the citation below is that attribution.
 Database: A Firm-Level Collection of the Universe of Financial Statements,'' \emph{Scientific Data}, 12.
 DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: HuggingFace
 \texttt{irlspbru/RFSD}; Zenodo DOI~\texttt{10.5281/zenodo.14622208}; CC\,BY\,4.0.
+\par
+
+\textsc{Financial Accounting Standards Board} (FASB): \emph{Accounting Standards Codification}, Norwalk, CT.
+The authoritative US~GAAP topics cited by the adjustment topics (\S\ref{sec:schemes-topics}): ASC~330
+(Inventory; the LIFO reserve), ASC~715 (Compensation---Retirement Benefits), ASC~718
+(Compensation---Stock Compensation), ASC~730 (Research and Development), ASC~740 (Income Taxes), ASC~842
+(Leases). Not open access; the topic number is the citation.
+\par
+
+\textsc{International Accounting Standards Board} (IASB): \emph{IFRS Accounting Standards}, IFRS Foundation,
+London. The IAS/IFRS standards cited by the adjustment topics (\S\ref{sec:schemes-topics}): IAS~12 (Income
+Taxes), IAS~17 and IFRS~16 (Leases), IAS~19 (Employee Benefits), IAS~27 and IFRS~10 (Consolidated Financial
+Statements), IAS~37 (Provisions, Contingent Liabilities and Contingent Assets), IAS~38 (Intangible Assets),
+IFRS~2 (Share-based Payment). Not open access; the standard number is the citation.
+\par
+
+\textsc{Imhoff, E.~A., R.~C. Lipe, \textsc{and} D.~W. Wright} (1991): ``Operating Leases: Impact of
+Constructive Capitalization,'' \emph{Accounting Horizons}, 5(1), 51--63. The constructive-capitalisation
+method --- discounting disclosed minimum lease payments to a balance-sheet asset and obligation --- behind the
+operating-lease topic (\S\ref{sec:topics-leases}).
+\par
+
+\textsc{Lev, B., \textsc{and} T.~Sougiannis} (1996): ``The Capitalization, Amortization, and Value-Relevance of
+R\&D,'' \emph{Journal of Accounting and Economics}, 21, 107--138. The method for capitalising and amortising
+R\&D from disclosed research expense behind the R\&D topic (\S\ref{sec:topics-rnd}).
 \par
 
 \textsc{Lyle, M.~R., E.~J. Riedl, \textsc{and} B.~Siano} (2022): ``Lost in Standardization: Effects of
