@@ -9132,16 +9132,19 @@ repository, a label map for its taxonomy, and fixes for its quirks --- each inde
 of the graceful floor into a specialised ceiling. Generic is thus both the fallback for the long tail and the
 \emph{starting point} for the next specialised chapter.
 
-\section{Examples from: Australia, Brazil and Canada}
+\section{Examples from ABCD}
 \label{sec:generic-examples}
 
-The three subsections that follow run the \emph{unmodified} Generic path of this chapter on a real annual
-report from each of three jurisdictions with no specialised system --- conveniently alphabetical: Australia,
-Brazil and Canada. The point is not to make any of them work \emph{well}; it is to drive the same
-format-dispatching core against a genuine foreign report and record, honestly, what each format yields and
-where it stops. Nothing here is adapted to a country --- that would defeat Generic's purpose --- so where an
-accessor returns little or nothing, that is documented as the status of the \emph{general} path, not patched
-away. Each example is a snapshot of one report on one run, not a jurisdiction-wide guarantee.
+The subsections that follow run the \emph{unmodified} Generic path of this chapter on a real filing from four
+jurisdictions --- conveniently alphabetical: \textbf{A}ustralia, \textbf{B}razil, \textbf{C}anada and
+\textbf{D}enmark. The first three have no specialised system and arrive as \emph{PDF} annual reports; Denmark
+is included to show the other half of the format story --- a tagged \emph{iXBRL} filing, the self-describing
+best case the format table promises (\S\ref{sec:generic-format}). The point is not to make any of them work
+\emph{well}; it is to drive the same format-dispatching core against a genuine foreign filing and record,
+honestly, what each format yields and where it stops. Nothing here is adapted to a country --- that would
+defeat Generic's purpose --- so where an accessor returns little or nothing, that is documented as the status
+of the \emph{general} path, not patched away. Each example is a snapshot of one filing on one run, not a
+jurisdiction-wide guarantee.
 
 \subsection{Australia}
 \label{sec:generic-australia}
@@ -9350,6 +9353,70 @@ recognising. One caveat at the format seam: a \emph{native} Word \texttt{.docx} 
 format sniffer (\S\ref{sec:generic-format}) currently rejects it as a report package --- Word is reached only
 once it has been exported to PDF.
 
+
+\subsection{Denmark}
+\label{sec:generic-denmark}
+
+Denmark is the counter-example on \emph{format}. Danish listed companies file their annual financial report
+under \textbf{ESEF} --- the EU's mandated inline-XBRL format on the IFRS taxonomy --- for which
+\texttt{EDGAR.jl} has a specialised system (Ch.~\ref{sys:esef}); here we point the \emph{Generic} core at one
+to see what the tagged path alone recovers. (The LEGO Group, being privately held, is \emph{not} an ESEF filer
+--- it files a Danish-taxonomy digital report to the business register --- so we use \textbf{Novo
+Nordisk~A/S}, OMX:~NOVO-B, a listed ESEF filer.) An ESEF report ships as a ZIP package, which the format
+sniffer (\S\ref{sec:generic-format}) deliberately rejects --- so, as its error message instructs, we unzip and
+pass the inline-XBRL \texttt{.xhtml} instance directly:
+
+\begin{lstlisting}
+julia> using EDGAR
+julia> f = fetch_filing(Generic(), "NOVO-2025-03-31-en.xhtml");   # the ESEF iXBRL instance, unzipped
+julia> f.kind                                    # sniffed as inline XBRL, not PDF
+:ixbrl
+julia> length(toc(f)), length(narratives(f))     # no PDF outline, no prose from a bare instance
+(0, 0)
+julia> fa = facts(f); length(fa)                 # the statements classify -- self-describing XBRL, no Docling
+216
+julia> unique(r.unit for r in fa)                # ...currency read straight from the instance
+["DKK", "DKK/shares"]
+julia> (fa[1].concept, fa[1].value, fa[1].unit)
+("ifrs-full:Revenue", 7.8087e10, "DKK")
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The unmodified Generic path on a Danish ESEF filing (Novo Nordisk, inline XBRL), as run above. The
+mirror image of the PDF cases: clean facts, no outline or prose.}
+\label{tab:generic-denmark}
+\begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
+\toprule
+\textbf{Step} & \textbf{Result} & \textbf{Detail} \\
+\midrule
+\texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:ixbrl} (a ZIP package is rejected --- pass the unzipped instance) \\
+\texttt{toc} (outline) & empty (0) & an inline-XBRL instance has no PDF bookmark tree \\
+\texttt{narratives} (prose) & empty (0) & the prose path is PDF-oriented; nothing from a bare instance \\
+\texttt{facts} (statements) & works & 216 rows on \texttt{ifrs-full} + issuer-extension concepts, correct \texttt{DKK} currency \\
+XBRL / iXBRL path & \emph{this is it} & self-describing --- classified by the filing's own linkbase, no Docling \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Denmark is the format table's promise made good. Because inline XBRL is \emph{self-describing} --- the
+instance carries its own concepts, units and presentation --- the Generic core classified 216 facts onto the
+right \texttt{ifrs-full} concepts \emph{and} the issuer's own extensions
+(\texttt{NOV:SellingExpenseAndDistributionCosts}), in the correct currency (\texttt{DKK}) read straight from
+the instance --- none of the currency guesswork that mis-stamped Loblaw's numbers \texttt{HKD}
+(\S\ref{sec:generic-canada}), and no Docling at all. It is the exact opposite trade from the PDF reports: there
+you get the outline and the prose but weak or no facts; here you get clean facts but no outline (an iXBRL
+instance has no bookmark tree) and no prose. A tagged foreign filing is thus handled about as well by Generic
+as by a bespoke adapter --- the specialised ESEF system (Ch.~\ref{sys:esef}) adds discovery, national
+standardisation and quirk-fixes on top, but the \emph{numbers} are already here.
+
+\medskip
+\noindent \textbf{Across the four.} For \emph{PDF} reports (Australia, Brazil, Canada) \texttt{toc} and
+\texttt{narratives} are the reliable floor, while \texttt{facts} are weak and layout-dependent (0, error, or
+partial-with-a-currency-bug). For a \emph{tagged} filing (Denmark) the pattern inverts: \texttt{facts} are
+clean and correctly denominated, \texttt{toc} and \texttt{narratives} empty. Format, not jurisdiction, decides
+which half of a document you recover --- exactly the design claim of this chapter (\S\ref{sec:generic-format}).
 
 \section{Writing systems and local variations}
 
