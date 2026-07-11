@@ -1533,6 +1533,7 @@ leaves the regulated perimeter for the unstructured non-regulatory sources of th
 (\S\ref{sec:beyond-filing}), where there is no taxonomy to lean on at all.
 
 \chapter{Events: Announcements, News and Alerts}
+\label{ch:events}
 
 A company's \emph{events} are the dated, discrete developments that move its value \emph{between} the
 scheduled financial statements --- a dividend, an acquisition, a profit warning, a change of control or of
@@ -9225,14 +9226,139 @@ of these stays framed here and deep in its own package.
 \chapter{Market Signals: Decoding Your Business Ecosystem}
 
 \chapter{Ratings and Internal Credit Scoring}
+\label{ch:ratings}
 
 \section{External Credit Ratings}
 \section{User Ratings}
 \section{Internal Credit Scoring}
 
-\chapter{Fiscal and Legal Context}
+\chapter{Fiscal Context}
+\label{ch:fiscal}
+
+The tax position a company discloses is one of the most \emph{structured} --- and most revealing --- parts of a
+filing. Unlike the legal context that follows (Ch.~\ref{ch:legal}), the fiscal picture is largely \emph{tagged}:
+the effective-rate reconciliation, the cash taxes paid and the deferred-tax balances are XBRL facts, so they
+yield to the same fact-level access as the statements themselves (\S\ref{sec:api-analysis}). This chapter
+frames the fiscal analyses that data makes cheap --- the burden a firm actually bears, \emph{where} it bears it,
+and the tax assets and risks it carries --- and, like the rest of this part, stays deliberately light: concepts,
+the per-jurisdiction disclosure each analysis leans on, and how to drive it, with each analysis deserving its
+own package on top. The public-information discipline of the Topics chapter (\S\ref{sec:schemes-topics}) holds
+here too: everything below is computable from the primary statements and the tax note, and where it is not ---
+statutory-rate tables, tax-authority rulings --- the boundary is named. As a business report the fiscal context
+is a \emph{feed}: its rates and risks flow into credit scoring (Ch.~\ref{ch:ratings}) and its cash-tax and
+incentive figures into valuation (Ch.~\ref{ch:valuation}).
+
+\section{Effective and Cash Tax Rates}
+The headline is the gap between what a firm \emph{books} as tax and what it \emph{pays}. The book effective rate
+comes from the tax note and income statement; cash taxes come from a dedicated line in the cash-flow statement;
+the difference is the deferred-tax accrual the corresponding topic isolates (\S\ref{sec:topics-deferredtax}).
+Tracked over several years, a persistently low cash rate against a normal book rate is the signature of durable
+timing benefits or aggressive planning.
+
+\section{The Statutory-to-Effective Rate Reconciliation}
+The reconciliation from the home \emph{statutory} rate to the \emph{effective} rate --- required under IAS~12
+and ASC~740 (Ch.~\ref{ch:references}) --- is the single richest fiscal artifact. Line by line it exposes the
+foreign-rate differential, permanent differences, tax credits and one-off items, so the \emph{shape} of a firm's
+tax planning reads straight off it. Structuring that reconciliation into rows, comparable across firms and
+years, is the deliverable.
+
+\section{Geographic Profit Mix and Where Tax Is Paid}
+\label{sec:fiscal-geography}
+Filers split pre-tax income into \emph{domestic} and \emph{foreign}, and the reconciliation's foreign-rate line
+quantifies how much the mix moves the total rate --- together a first-order profit-shifting signal. Where a
+filer publishes \emph{country-by-country} figures, the picture sharpens to the jurisdiction. This section reads
+naturally against the entity/domicile map assembled in the Legal chapter (\S\ref{sec:legal-structure}): profit
+booked where few people work is the classic flag.
+
+\section{Deferred Taxes, Loss Carryforwards and Valuation Allowances}
+Deferred-tax assets carry the firm's stock of future tax shields --- above all \emph{net operating loss}
+carryforwards, with their expiry schedule --- while a \emph{valuation allowance} marks the portion management
+doubts it can use. The allowance is itself a signal: building it flags expected losses; releasing it is an
+earnings event. All of it is disclosed in the tax note (\S\ref{sec:topics-deferredtax}).
+
+\section{Uncertain Tax Positions}
+\label{sec:fiscal-utp}
+Firms reserve for tax positions they may lose on dispute --- the uncertain-tax-position reserve of ASC~740 and
+IAS~12 (Ch.~\ref{ch:references}). It is quantified, litigation-like tax risk, and its year-on-year movement is
+disclosed, which makes it the fiscal chapter's bridge to the contingencies of the Legal chapter
+(\S\ref{sec:legal-contingencies}).
+
+\section{Tax Incentives}
+Research credits, patent boxes and tax holidays appear in the note as reconciling items or narrative; their
+\emph{expiry} is a forward signal that the effective rate is set to rise. These are jurisdiction-specific, and
+often the reason two peers in the same sector carry very different rates.
+
+\section{What Each Jurisdiction Exposes}
+How much of the above is \emph{tagged} versus buried in note prose varies by regime --- SEC filers tag the
+ASC~740 note richly, ESEF issuers often block-tag the IAS~12 note as a single lump, and the CJK regimes sit in
+between. This section will tabulate, per jurisdiction, which fiscal disclosures are fact-level and which need
+the narrative extraction of Ch.~\ref{ch:narratives} --- the same tagged-versus-prose contrast the drill-down
+chapter draws for segments.
+
+\paragraph{Worked example (to build).} For a single filer: pull the tax-note facts, compute the book and cash
+effective rates and their multi-year trend, and lay the statutory-to-effective reconciliation out as a table
+--- the fiscal one-pager.
+
+\chapter{Legal Context}
+\label{ch:legal}
+
+Where the fiscal context is tagged, the legal context is mostly \emph{prose}. Legal proceedings, risk factors
+and contingencies are narrative sections and note disclosures, not XBRL facts, so this chapter leans on the
+section- and paragraph-extraction of the Narratives chapter (Ch.~\ref{ch:narratives}) and the event stream of
+the Events chapter (Ch.~\ref{ch:events}) rather than the fact APIs. The value is \emph{structuring} disclosed
+legal context --- a litigation register, a contingency schedule, an entity graph --- not adjudicating it. Two
+cautions run throughout: legal disclosure is far less standardized than fiscal and varies sharply by regime,
+and much of the richest material --- court dockets, sanctions lists, regulator registers --- lives \emph{outside}
+the filing, in the non-regulatory sources of Ch.~\ref{sec:beyond-filing}. Like the fiscal context it is a feed:
+the litigation register and regulatory flags into credit scoring (Ch.~\ref{ch:ratings}), the quantified
+contingencies into valuation (Ch.~\ref{ch:valuation}).
+
+\section{Legal Proceedings: A Litigation Register}
+\label{sec:legal-proceedings}
+The Legal Proceedings disclosure (SEC Regulation~S-K Item~103, Ch.~\ref{ch:references}) and the
+commitments-and-contingencies note (IAS~37 / ASC~450) describe a firm's material lawsuits in prose. The
+deliverable is to turn that prose into a \emph{register}: matter, counterparty, stage, the
+probable/reasonably-possible/remote classification the standards require, and any disclosed range or provision
+--- rows a reader can scan and track across filings.
+
+\section{Contingent Liabilities and Provisions}
+\label{sec:legal-contingencies}
+A contingency crosses into a recognised \emph{provision} once IAS~37's threshold --- a probable outflow that can
+be estimated --- is met; below it, the exposure is disclosed but not booked. Separating the two, and quantifying
+legal, environmental and warranty exposures, is the analysis, and it ties directly to the provisions topic
+(\S\ref{sec:topics-provisions}) and to the fiscal chapter's uncertain tax positions (\S\ref{sec:fiscal-utp}).
+
+\section{Corporate and Legal Structure}
+\label{sec:legal-structure}
+Legal form, jurisdiction of incorporation, \emph{dual-class} control arrangements (the wedge between voting and
+economic ownership) and related-party transactions (IAS~24, Ch.~\ref{ch:references}) frame who really controls
+and benefits from the firm. The Exhibit~21 list of subsidiaries (SEC Regulation~S-K Item~601(b)(21)), with its
+per-regime equivalents, resolves to an \emph{entity/domicile graph} --- the bridge object the fiscal chapter
+reads for tax domicile (\S\ref{sec:fiscal-geography}).
+
+\section{Debt Covenants and Material Contracts}
+Credit agreements and indentures impose legal \emph{covenants} --- leverage and coverage tests, restricted
+payments, cross-default --- disclosed in the debt notes and the material-contract exhibit list. Surfacing the
+covenants and the headroom against them is a direct input to default risk (Ch.~\ref{ch:ratings}).
+
+\section{Regulatory Exposure}
+Investigations, consent decrees and sanctions, export-control and anti-corruption exposure surface in the Risk
+Factors (SEC Regulation~S-K Item~105, Ch.~\ref{ch:references}) and in 8-K events (Ch.~\ref{ch:events}). The
+filing gives the firm's \emph{own} account; the external watchlists that corroborate or extend it (OFAC, EU
+sanctions, regulator registers) are the non-regulatory complement of Ch.~\ref{sec:beyond-filing}.
+
+\section{What Each Jurisdiction Exposes}
+Legal disclosure standardizes poorly: the SEC's Item~103 / Item~105 structure has no exact analogue elsewhere,
+IFRS jurisdictions carry the IAS~37 and IAS~24 notes (usually block-tagged prose), and the CJK, Indian and
+Russian regimes each expose a different subset. This section will tabulate what is reliably extractable per
+jurisdiction, with the honest caveat that the legal half is prose-extraction quality-bound in a way the fiscal
+half is not.
+
+\paragraph{Worked example (to build).} For a single filer: extract the Legal Proceedings section and assemble a
+litigation register, then build the subsidiary graph from Exhibit~21 --- the legal one-pager and the entity map.
 
 \chapter{Valuation Methods}
+\label{ch:valuation}
 
 \section{Economic Profits Approach}
 Economic Profit Model or the Value-Based Management (VBM) approach to valuation.
@@ -10011,17 +10137,19 @@ DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: Hug
 \par
 
 \textsc{Financial Accounting Standards Board} (FASB): \emph{Accounting Standards Codification}, Norwalk, CT.
-The authoritative US~GAAP topics cited by the adjustment topics (\S\ref{sec:schemes-topics}): ASC~330
-(Inventory; the LIFO reserve), ASC~715 (Compensation---Retirement Benefits), ASC~718
-(Compensation---Stock Compensation), ASC~730 (Research and Development), ASC~740 (Income Taxes), ASC~842
-(Leases). Not open access; the topic number is the citation.
+The authoritative US~GAAP topics cited across the schemes, topics and fiscal/legal chapters
+(\S\ref{sec:schemes-topics}, Ch.~\ref{ch:fiscal}, Ch.~\ref{ch:legal}): ASC~330 (Inventory; the LIFO reserve),
+ASC~450 (Contingencies), ASC~715 (Compensation---Retirement Benefits), ASC~718 (Compensation---Stock
+Compensation), ASC~730 (Research and Development), ASC~740 (Income Taxes), ASC~842 (Leases). Not open access;
+the topic number is the citation.
 \par
 
 \textsc{International Accounting Standards Board} (IASB): \emph{IFRS Accounting Standards}, IFRS Foundation,
-London. The IAS/IFRS standards cited by the adjustment topics (\S\ref{sec:schemes-topics}): IAS~12 (Income
-Taxes), IAS~17 and IFRS~16 (Leases), IAS~19 (Employee Benefits), IAS~27 and IFRS~10 (Consolidated Financial
-Statements), IAS~37 (Provisions, Contingent Liabilities and Contingent Assets), IAS~38 (Intangible Assets),
-IFRS~2 (Share-based Payment). Not open access; the standard number is the citation.
+London. The IAS/IFRS standards cited across the schemes, topics and fiscal/legal chapters (\S\ref{sec:schemes-topics},
+Ch.~\ref{ch:fiscal}, Ch.~\ref{ch:legal}): IAS~12 (Income Taxes), IAS~17 and IFRS~16 (Leases), IAS~19 (Employee
+Benefits), IAS~24 (Related Party Disclosures), IAS~27 and IFRS~10 (Consolidated Financial Statements), IAS~37
+(Provisions, Contingent Liabilities and Contingent Assets), IAS~38 (Intangible Assets), IFRS~2 (Share-based
+Payment). Not open access; the standard number is the citation.
 \par
 
 \textsc{Imhoff, E.~A., R.~C. Lipe, \textsc{and} D.~W. Wright} (1991): ``Operating Leases: Impact of
@@ -10078,6 +10206,11 @@ Compustat template of $>$300 annual / $\sim$100 quarterly standardised data item
 Definitions'') specifies each item's inclusion and exclusion rules, the public spec of what a Compustat figure
 represents (\S\ref{sec:schemes-compustat}). The proprietary analyst data-collection manual governing
 filing-by-filing judgement calls is not published.
+\par
+
+\textsc{U.S. Securities and Exchange Commission}: \emph{Regulation S-K} (17~CFR~229). The disclosure items
+behind the legal-context analyses (Ch.~\ref{ch:legal}): Item~103 (Legal Proceedings), Item~105 (Risk Factors),
+Item~601(b)(21) (Subsidiaries of the Registrant, filed as Exhibit~21).
 \par
 
 \endgroup
