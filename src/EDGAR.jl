@@ -23,6 +23,7 @@ include("core/util.jl")                     # 🟢 small cross-cutting helpers
 include("core/text.jl")                     # 🟢 html_to_text, fuzzy match, extract_section
 include("core/filing_system.jl")            # 🟢 FilingSystem seam: abstract type + SEC + EntityId
 include("core/types.jl")                    # 🟢 Filing, Fact, Selection, FactRow
+include("core/languages.jl")                 # 🟢 presentation-language registry (single source of truth for the supported set + per-component coverage); detection markers re-homed here, consumed by narratives._LANG_MARKERS (docs/dev/language-support.md)
 include("core/discovery.jl")                # 🟢 discovery seam: FilingSource + FilingHandle + fetch_filing(handle)
 include("filing_systems/sec/cross_reference.jl") # 🔵 SEC FORM 10-K cross-reference-index item extraction (GE-class)
 include("filing_systems/sec/forty_f.jl")    # 🔵 40-F AIF-exhibit discovery (aif_html)
@@ -109,6 +110,8 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        structured_document, StructuredDocument, persist_document, write_structured_document,
        read_structured_document, to_repository, classify_tables!, derive_facts!,
        classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,
+       LanguageProfile, SUPPORTED_LANGS, supported_languages, language_profile, language_covers,
+       register_language!, language_coverage, is_supported_language, normalize_language,
        parse_amount, amount_locale, infer_columns, parse_period_end, period_dates,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, check_calculations, breakdown, segments, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,

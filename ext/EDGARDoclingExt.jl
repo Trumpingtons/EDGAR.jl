@@ -70,6 +70,7 @@ function EDGAR.structured_document(path::AbstractString;
         with_images::Bool = true, progress::Bool = false)
 
     isfile(path) || throw(ArgumentError("file not found: $(repr(path))"))
+    language === nothing || EDGAR._validate_presentation_lang(language; context = "structured_document")
     bm  = pyimport("docling.datamodel.base_models")
     po  = pyimport("docling.datamodel.pipeline_options")
     dc  = pyimport("docling.document_converter")

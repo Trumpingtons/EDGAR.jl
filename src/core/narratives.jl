@@ -152,20 +152,11 @@ end
 # Chinese too) counts as Katakana AND Hangul — which would flag every Chinese sentence as Japanese. The kana
 # (U+3041–, U+30A1–) and Hangul-syllable (U+AC00–) blocks sit ABOVE the U+3000–303F punctuation block, so
 # explicit ranges see only real script letters. Order matters: Japanese has kana, Chinese has neither.
-const _LANG_MARKERS = (
-    (:en, (" the "," and "," of "," to "," in "," is "," for "," was "," with "," that "," on "," as "," by "," are ")),
-    (:pt, (" de "," que "," não "," do "," da "," os "," uma "," para "," com "," dos "," das "," é ","ção","ções","ão "," e ")),
-    (:es, (" de "," que "," la "," el "," los "," del "," para "," con "," una "," por "," se "," su ","ñ"," y ")),
-    (:fr, (" de "," la "," le "," et "," des "," les "," une "," pour "," est "," du "," à "," qui "," dans "," sur ")),
-    (:de, (" und "," der "," die "," das "," den "," von "," mit "," für "," ist "," im "," ein "," auf ","ß"," zu ")),
-    (:it, (" di "," il "," la "," che "," del "," per "," con "," una "," dei "," è "," gli "," nel "," non "," sono ")),
-    (:nl, (" de "," het "," een "," van "," en "," op "," voor "," met "," dat "," die "," zijn "," aan "," niet "," wordt ")),
-    (:sv, (" och "," att "," det "," som "," för "," med "," av "," är "," på "," till "," inte "," ett "," en ")),
-    (:da, (" og "," at "," det "," som "," for "," med "," af "," er "," på "," til "," ikke "," en ","æ","ø")),
-    (:no, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø")),
-    (:fi, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös ")),
-    (:pl, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub ")),
-)
+# The per-language marker sets are RE-HOMED to the language registry (src/core/languages.jl); this is now a
+# VIEW over it, preserving the original order (so `_detect_lang`'s argmax tie-break is unchanged). Adding a
+# language's markers is done there, via its `LanguageProfile`, not here. The four script-detected languages
+# (ja/ko/zh/ru) carry no markers and are handled by the codepoint-range checks in `_detect_lang` below.
+const _LANG_MARKERS = Tuple((Symbol(p.code), Tuple(p.markers)) for p in SUPPORTED_LANGS if !isempty(p.markers))
 function _detect_lang(s::AbstractString)
     occursin(r"[ぁ-ゖァ-ヺー]", s) && return :ja   # hiragana / katakana letters
     occursin(r"[가-힣]", s)          && return :ko   # hangul syllables
@@ -274,6 +265,7 @@ end
 # section TITLES on multilingual filings (EDINET/DART: `title_lang = :en` for English titles).
 function narratives(f::Filing; classify::Bool = false, labels::Bool = true,
                     lang::Symbol = :auto, title_lang::Union{Symbol,Nothing} = nothing)
+    _validate_presentation_lang(lang; context = "narratives")
     # `classify` is reserved for populating each narrative's `canonical_title` (the normalised title — the
     # prose analogue of `facts`' statement classification); a no-op until that mapping lands.
     classify
@@ -314,6 +306,7 @@ end
 # ANY StructuredDocument — freshly parsed (`structured_document`, needs Docling) or reloaded
 # (`read_structured_document`), so it is testable without the Docling stack.
 function narratives(sd::StructuredDocument; lang::Symbol = :auto)
+    _validate_presentation_lang(lang; context = "narratives")
     bysec = Dict{String,Vector{TextBlock}}()
     for b in sd.text_blocks
         push!(get!(bysec, something(b.section_id, ""), TextBlock[]), b)
