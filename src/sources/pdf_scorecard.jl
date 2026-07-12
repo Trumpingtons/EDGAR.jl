@@ -43,6 +43,7 @@ A scorecard fixture: a born-digital financial-report PDF and what we expect the 
 - `located` — whether the report is EXPECTED to contain locatable primary statements. `false` marks a 2R.F
               case (an integrated/summary report with NO detailed statements, e.g. Vale) where "not located"
               is the CORRECT outcome, not a failure.
+- `ticker`  — the Yahoo symbol, for the 2R.G aggregate-accuracy report (`accuracy`). Empty = skip in accuracy.
 """
 Base.@kwdef struct Fixture
     id::String
@@ -50,6 +51,7 @@ Base.@kwdef struct Fixture
     lang::String
     expect::Set{String} = Set{String}()
     located::Bool = true
+    ticker::String = ""
 end
 
 const _ALL3 = Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
@@ -60,18 +62,18 @@ const _ALL3 = Set(["BalanceSheet", "IncomeStatement", "CashFlow"])
 # fixtures (see [[validate-on-new-filers]]).
 const FIXTURES = Fixture[
     # -- the 2026-07 failure cases (docs/dev/pdf-extractor-plan.md §2R) --
-    Fixture(id = "Wesfarmers", file = "GEN-Wesfarmers-2024.pdf", lang = "en", expect = _ALL3),
+    Fixture(id = "Wesfarmers", file = "GEN-Wesfarmers-2024.pdf", lang = "en", expect = _ALL3, ticker = "WES.AX"),
     # Vale's "annual report" is an INTEGRATED report — it explicitly points elsewhere for the consolidated
     # statements (none in this PDF). "not located" is CORRECT here; the real fix is 2R.F (discovery-side).
     Fixture(id = "Vale",       file = "GEN-Vale-AR-2024.pdf",     lang = "pt", located = false),
-    Fixture(id = "Loblaw",     file = "GEN-Loblaw-AR-2024.pdf",   lang = "en", expect = _ALL3),
+    Fixture(id = "Loblaw",     file = "GEN-Loblaw-AR-2024.pdf",   lang = "en", expect = _ALL3, ticker = "L.TO"),
     # -- Romance-language filers WITH statements (2R.B location targets; labels are 2R.D, so facts may lag) --
-    Fixture(id = "WEG",        file = "GEN-WEG-DF-2024.pdf",       lang = "pt", expect = _ALL3),
-    Fixture(id = "TotalEner.", file = "FR-TotalEnergiesFR2023.pdf", lang = "fr", expect = _ALL3),
-    Fixture(id = "Enel",       file = "IT-EnelFR2023.pdf",         lang = "it", expect = _ALL3),
+    Fixture(id = "WEG",        file = "GEN-WEG-DF-2024.pdf",       lang = "pt", expect = _ALL3, ticker = "WEGE3.SA"),
+    Fixture(id = "TotalEner.", file = "FR-TotalEnergiesFR2023.pdf", lang = "fr", expect = _ALL3, ticker = "TTE.PA"),
+    Fixture(id = "Enel",       file = "IT-EnelFR2023.pdf",         lang = "it", expect = _ALL3, ticker = "ENEL.MI"),
     # -- known-good anchors (should already pass; regression guards for the fixes) --
-    Fixture(id = "Fielmann",   file = "DE-FielmannFR2023.pdf",    lang = "de", expect = _ALL3),
-    Fixture(id = "Tencent",    file = "HK-Tencent-SEHK-AR2024.pdf", lang = "en", expect = _ALL3),
+    Fixture(id = "Fielmann",   file = "DE-FielmannFR2023.pdf",    lang = "de", expect = _ALL3, ticker = "FIE.DE"),
+    Fixture(id = "Tencent",    file = "HK-Tencent-SEHK-AR2024.pdf", lang = "en", expect = _ALL3, ticker = "0700.HK"),
 ]
 
 # ---- the reconciliation self-check (2R.A slice of 2R.C) -------------------------------------------------
@@ -121,9 +123,14 @@ function score_one(fx::Fixture)
     rng = try EDGAR._ifrs_statement_pages(doc) catch e; return merge(base, (error = "locate: $(_msg(e))",)) end
     base = merge(base, (located = rng,))
     # A 2R.F fixture (want_loc = false, e.g. an integrated report) is SUPPOSED to have no statements: not
-    # located is the correct outcome, and locating something would be the surprise.
-    rng === nothing && return merge(base, (missing_types = Set{String}(),
-        error = fx.located ? "not located" : "", reconcile = :na))
+    # located is the correct outcome. When it IS expected to locate, use the has-statements signal to tell a
+    # thin report ("no detailed stmts") from a real locator gap ("unlocated, sig≥2 → statements are here").
+    if rng === nothing
+        sig = try EDGAR._ifrs_stmt_signal(doc) catch; 0 end
+        return merge(base, (missing_types = Set{String}(),
+            error = fx.located ? (sig >= 2 ? "unlocated (sig=$sig, gap)" : "no detailed stmts") : "",
+            reconcile = :na))
+    end
 
     # stage 3 — parse just those pages into tables (Docling).
     juris, lang = EDGAR._ifrs_doc_juris(doc)
@@ -191,6 +198,49 @@ function report(fixtures::AbstractVector{Fixture} = FIXTURES)
     println(repeat("-", 78))
     @printf("clean (all expected types + BS foots + no error): %d/%d\n\n", ok, length(rows))
     return rows
+end
+
+# ---- 2R.G — aggregate headline-total accuracy of the GENERIC PDF path vs an independent provider ---------
+# The deterministic PDF fallback is judged STATISTICALLY over a sample, NOT tuned per filer (the plan's "no
+# per-filer patches"): report how many of the five headline totals land within `tol` of the provider's figure
+# across the fixtures, and treat misses as DATA. A filer that also files structured data (e.g. an ESEF filer
+# with an iXBRL twin) should use its jurisdiction path for exact numbers — this gauges only how good the
+# no-tuning generic fallback is in aggregate, for the long tail where no structured alternative exists.
+"""
+    accuracy(fixtures = FIXTURES; provider = :yahoo, tol = 0.01) -> NamedTuple
+
+Run the generic PDF path over every fixture carrying a `ticker` and compare its five headline totals
+(Assets, Equity, Revenue, NetIncome, OperCashFlow) to `provider` (Yahoo, via the shared fundamentals oracle).
+Prints a per-fixture ✓/✗/– grid and the aggregate hit-rate. An HONEST aggregate gauge of the deterministic
+fallback — misses are expected and are NOT per-filer bugs to hand-patch. Needs network + a User-Agent.
+"""
+function accuracy(fixtures::AbstractVector{Fixture} = FIXTURES; provider::Symbol = :yahoo, tol::Float64 = 0.01)
+    metrics = ["Assets", "Equity", "Revenue", "NetIncome", "OperCashFlow"]
+    @printf("\n==== 2R.G — generic-PDF headline accuracy vs %s (tol %g%%) ====\n", provider, 100tol)
+    @printf("%-11s %-4s  %s\n", "fixture", "lang", join(rpad.(metrics, 11), " "))
+    println(repeat("-", 78))
+    hit = 0; cmp = 0
+    for fx in fixtures
+        isempty(fx.ticker) && continue
+        rows = try EDGAR.validate(:germany, joinpath(STASH, fx.file), fx.ticker; provider = provider)
+               catch e; @printf("%-11s %-4s  (error: %s)\n", first(fx.id, 11), fx.lang, first(sprint(showerror, e), 40)); continue end
+        bym = Dict(String(r.metric) => r for r in rows)
+        cells = String[]
+        for m in metrics
+            r = get(bym, m, nothing)
+            if r === nothing || r.edgar === nothing || r.reference === nothing
+                push!(cells, rpad("–", 11))                    # provider or EDGAR has no value → not counted
+            else
+                cmp += 1; okm = r.rel_diff <= tol; okm && (hit += 1)
+                push!(cells, rpad(okm ? "✓" : @sprintf("✗%.1f%%", 100r.rel_diff), 11))
+            end
+        end
+        @printf("%-11s %-4s  %s\n", first(fx.id, 11), fx.lang, join(cells, " "))
+    end
+    println(repeat("-", 78))
+    @printf("headline totals within %g%%: %d/%d (%.0f%%)  — generic fallback, misses expected\n\n",
+            100tol, hit, cmp, 100hit / max(cmp, 1))
+    return (hit = hit, compared = cmp)
 end
 
 end # module

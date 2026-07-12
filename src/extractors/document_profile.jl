@@ -30,6 +30,7 @@ const TABLE_CLASSES = TableClass[
         r"\w*bilanz\b"i, r"\bbilan\b"i,   # \w* so the German COMPOUND "Konzernbilanz"/"Einzelbilanz" matches (not "Bilanzsumme"/"Bilanzierung", which have no boundary after "bilanz")
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
         r"balanço patrimonial"i,   # pt (Brazil/Portugal)
+        r"balance de situación"i,   # es — traditional Spanish PGC term (Inditex), alongside the IFRS "estado de situación financiera"
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표",
         r"отч[её]т о финансовом положении"i, r"бухгалтерский баланс"i]),
     TableClass("income_statement", "statement", "Income statement / profit or loss / comprehensive income", [

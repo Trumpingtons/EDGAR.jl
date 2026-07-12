@@ -3522,6 +3522,43 @@ translations, when added, live in \texttt{translations} (the source tables are n
 \end{tabular}
 \end{table}
 
+\subsection{Measuring the PDF fact path: \texttt{accuracy}}
+\label{sec:pdf-accuracy}
+
+The PDF fact path (\texttt{extract\_ifrs\_pdf} and its siblings) is \emph{deterministic} and
+\emph{jurisdiction-general} --- one structural pipeline, no per-filer tuning. Its natural question is therefore
+statistical: \emph{across many filers and languages, how often does it recover the right number?} Two internal
+gauges answer it. Where a filer publishes \emph{both} a PDF report and its iXBRL twin, the exact,
+value-anchored cross-format check scores them against each other (\S\ref{sec:validation-crossformat}). Where no
+twin exists --- the long tail the generic path is \emph{for} (German \textit{Bundesanzeiger}, private or
+PDF-only filers) --- \texttt{accuracy} gives an \textbf{aggregate} gauge against an external provider.
+
+\texttt{accuracy} lives in the load-on-demand harness \texttt{src/sources/pdf\_scorecard.jl} (the same
+\texttt{PdfScorecard} module whose \texttt{report()} prints the per-stage extraction scorecard --- located
+$\to$ tables $\to$ facts $\to$ balance-sheet cross-foot --- over a fixture set). It runs the generic path over
+every fixture and compares its five headline totals (Assets, Equity, Revenue, Net income, Operating cash flow)
+to Yahoo Finance (via the shared oracle, \S\ref{sec:oracle-api}), printing a per-fixture $\checkmark$/$\times$
+grid and the aggregate hit-rate:
+
+\begin{lstlisting}
+julia> using EDGAR, PythonCall
+julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "pdf_scorecard.jl"));
+julia> using .PdfScorecard
+julia> PdfScorecard.accuracy()          # five headline totals vs Yahoo, aggregated across fixtures
+==== 2R.G - generic-PDF headline accuracy vs yahoo (tol 1%) ====
+fixture     lang  Assets      Equity      Revenue     NetIncome   OperCashFlow
+------------------------------------------------------------------------------
+TotalEner.  fr    OK          OK          OK          x0.6%       OK
+...
+headline totals within 1%: .../...  - generic fallback, misses expected
+\end{lstlisting}
+
+It is an \emph{honest, statistical} gauge: the deterministic fallback is judged over a \emph{sample}, and
+misses are reported as data --- \textbf{not} hand-patched per filer (that would defeat the point of a generic
+extractor). A filer that also files structured data --- an ESEF issuer with an iXBRL twin --- should read its
+exact figures through the jurisdiction path (Chapter~\ref{sys:esef}), not the PDF fallback; \texttt{accuracy}
+only measures how good the no-tuning generic path is where that alternative is absent.
+
 \section{Financial Data (XBRL)}
 \label{sec:api-xbrl}
 
@@ -9313,11 +9350,13 @@ capable PDF path arrive --- both jurisdiction-agnostic gains.
 
 Brazilian public companies report under \textbf{CPC} standards --- Brazil's IFRS-converged framework --- in
 \emph{Portuguese}, and file with \textbf{CVM}, the market regulator, alongside releasing designed reports
-through \textbf{B3} and their investor pages. Language is the one variable that changes from the Australian
-case, and it is the one the format table warns is the widest gap (\S\ref{sec:generic-format}): the Generic PDF
-path classifies against the \emph{English} \texttt{ifrs-full} label map, which a Portuguese statement heading
-does not match. We ran the unmodified path on Vale's \emph{Relato Integrado 2024} (B3:~VALE3), a 128-page,
-19\,MB Portuguese annual report:
+through \textbf{B3} and their investor pages. The Generic PDF path now covers Portuguese directly: it locates
+and classifies the Portuguese statement headings (\emph{Balanço patrimonial}, \emph{Demonstração do resultado},
+\emph{Demonstração dos fluxos de caixa}) and maps Portuguese line-item labels onto \texttt{ifrs-full} concepts
+(\emph{Total do Passivo} $\to$ \texttt{ifrs-full:Liabilities}, and so on) --- the same multilingual
+heading-and-label machinery it uses for French and Italian. Language is no longer the gap. What a bare
+\texttt{facts} call cannot conjure, though, is a statement the \emph{document does not contain}: we ran the path
+on Vale's \emph{Relato Integrado 2024} (B3:~VALE3), a 128-page, 19\,MB \emph{integrated} report:
 
 \begin{lstlisting}
 julia> using EDGAR
@@ -9327,22 +9366,23 @@ julia> f.kind
 :pdf
 julia> length(toc(f))                            # a designed report -- the bookmark outline is read fine
 43
-julia> [ (e.title, e.page) for e in toc(f) ][1:5]
-        # ("Capa",1) ("Sumario",2) ("Introducao",3) ("Carta do presidente",4) ("Sobre a Vale",6)
+julia> [ (e.title, e.page) for e in toc(f) ][1:4]
+        # ("Capa",1) ("Sumário",2) ("Introdução",3) ("Carta do presidente",4) ...
 julia> n = narratives(f); length(n)             # the prose is recovered by Docling
 342
-julia> unique(r.lang for r in n)                 # ...but every block is tagged English (the text is Portuguese)
-["en"]
-julia> facts(f)                                  # the statements: non-English labels do not classify
-ERROR: ArgumentError: no consolidated statements found in "GEN-Vale-AR-2024.pdf"
+julia> unique(r.lang for r in n)                 # prose is language-tagged -- Portuguese detected
+["pt", "und", "en"]
+julia> facts(f)                                  # an integrated report -- it carries no detailed statements
+[ Info: no detailed primary statements in "GEN-Vale-AR-2024.pdf" (a summary/integrated report)
+FactRow[]
 \end{lstlisting}
 
 \begin{table}[h]
 \centering
 \small
-\caption{The unmodified Generic path on a Brazilian IFRS annual report (Vale \emph{Relato Integrado 2024}, in
-Portuguese), as run above. Contrast the Australian case (Table~\ref{tab:generic-australia}): the same core, one
-language away.}
+\caption{The Generic path on Vale's \emph{Relato Integrado 2024} (in Portuguese), as run above. Portuguese is
+now handled end-to-end; the empty \texttt{facts} is a \emph{document-scope} outcome --- an integrated report
+carries no detailed statements --- not a language limitation (contrast Table~\ref{tab:generic-australia}).}
 \label{tab:generic-brazil}
 \begin{tabular}{@{}p{0.30\textwidth}p{0.20\textwidth}p{0.40\textwidth}@{}}
 \toprule
@@ -9350,27 +9390,30 @@ language away.}
 \midrule
 \texttt{fetch\_filing} + format sniff & works & recognised as \texttt{:pdf} \\
 \texttt{toc} (outline) & works & 43 entries (\emph{Capa}, \emph{Sumário}, \emph{Carta do presidente}\ldots) \\
-\texttt{narratives} (prose) & works, needs Docling & 342 blocks; but \texttt{lang} mis-tags them \texttt{en} (the text is Portuguese) \\
-\texttt{facts} (statements) & error & ``no consolidated statements found'' --- English \texttt{ifrs-full} labels do not match Portuguese \\
+\texttt{narratives} (prose) & works, needs Docling & 342 blocks; \texttt{lang} correctly tags Portuguese (\texttt{pt}) \\
+\texttt{facts} (statements) & empty (honest) & no detailed statements in \emph{this} report; the path says so and returns \texttt{FactRow[]} rather than erroring \\
 XBRL / iXBRL path & not applicable & we brought a PDF; CVM's structured data is a separate artifact \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent Now that this is a genuine annual report, the outline works exactly as in Australia --- \texttt{toc}
-reads Vale's 43-entry bookmark tree without trouble, which retires any thought that the outline is
-jurisdiction-bound. The failure is \emph{isolated to the numbers}. The generic PDF path matches statement
-labels against the English \texttt{ifrs-full} map, so Portuguese headings --- \emph{Balanço patrimonial},
-\emph{Demonstração do resultado} --- fall outside it and the extractor reports \emph{no consolidated statements
-found}; the language detector compounds this by mis-tagging the Portuguese prose as English (a systematic quirk
---- it recurs on every Portuguese report we tried). What survives is \texttt{narratives}: Docling lifts the 342
-prose blocks whatever the language, so you still get the document's \emph{content} even when the statements do
-not resolve --- \emph{something, never nothing}.
+\noindent The outline works exactly as in Australia --- \texttt{toc} reads Vale's 43-entry bookmark tree
+without trouble --- and \texttt{narratives} lifts all 342 prose blocks, now correctly tagging the Portuguese
+text \texttt{pt} (the earlier release mis-tagged it \texttt{en}; the language detector is real 18-language
+detection today, not script-only). What is different from a first reading is \texttt{facts}: it returns
+\emph{empty}, and the reason is \emph{document scope}, not language. Vale's \emph{Relato Integrado} is an
+integrated (strategy-and-sustainability) report; the audited financial statements are published as a separate
+artifact through CVM and the investor site, so there simply are no primary statements in \emph{this} PDF to
+extract. The path recognises that --- almost no statement-type headings are present --- and returns
+\texttt{FactRow[]} with an informational note, rather than erroring or, worse, inventing numbers
+(\S\ref{sec:pdf-accuracy} explains how the generic path is judged for accuracy).
 
-\paragraph{What it says about Generic.} The one real gap is the numbers, and its fix is general, not Brazilian:
-Portuguese statements want a CPC label map --- exactly the ``national vocabulary'' a specialised system adds
-(\S\ref{sec:generic-floor}). Adding a Portuguese label set is how Brazil would be \emph{promoted}: it turns the
-failed \texttt{facts} into a classified statement without touching the core.
+\paragraph{What it says about Generic.} Portuguese is no longer the gap: the multilingual heading-and-label
+machinery (shared with French and Italian) classifies Brazilian CPC/IFRS statements and maps their labels ---
+\emph{Total do Passivo} resolves to \texttt{ifrs-full:Liabilities} --- so a Brazilian \emph{financial-statements}
+PDF extracts on the same core, no Brazil-specific code. What Generic cannot do is manufacture a statement a
+document does not contain; distinguishing ``no statements here'' from ``extraction failed'' is a first-class
+outcome, not a silent empty.
 
 \paragraph{Timing.} With Docling isolated, the document parse took \textbf{122~s} for this 128-page, 19\,MB
 report (the first extractor call pays it; \texttt{facts} then reused it in 3\,s, and \texttt{toc}, needing no

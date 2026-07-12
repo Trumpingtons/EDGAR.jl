@@ -13,6 +13,7 @@
 function _ifrs_norm(s::AbstractString)
     t = lowercase(strip(String(s)))
     t = replace(t, r"[*†‡]" => "")
+    t = replace(t, r"[’‘`´]" => "'")   # typographic apostrophes → ASCII (fr "chiffre d'affaires", it "utile dell'esercizio")
     # Drop a leading enumerator — German statements number their lines ("1. Konzernumsatz", "A. Langfristige
     # Vermögenswerte", "II. Firmenwerte"). Strip a leading arabic/roman/letter item marker + separator so the
     # label matches on its text.
@@ -110,6 +111,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
          occursin(r"^totale patrimonio ?netto ?e ?passivit[àa]$"i, t)) && return C("ifrs-full:EquityAndLiabilities", :credit)
         (occursin(r"^patrim[ôo]nio l[íi]quido$"i, t) || occursin(r"^total (?:des )?capitaux propres$"i, t) ||
          occursin(r"^totale patrimonio ?netto$"i, t))                && return C("ifrs-full:Equity", :credit)
+        # Spanish (Inditex): Docling glues words in ALL-CAPS totals ("TOTALPASIVOYPATRIMONIONETO",
+        # "PATRIMONIONETO"), so allow optional space between words. Test owners'-of-parent before whole equity.
+        occursin(r"^total\s*activo$"i, t)                            && return C("ifrs-full:Assets", :debit)  # es
+        occursin(r"^total\s*pasivo\s*y\s*patrimonio\s*neto$"i, t)    && return C("ifrs-full:EquityAndLiabilities", :credit)
+        occursin(r"^patrimonio\s*neto atribuido a la dominante"i, t) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
+        occursin(r"^patrimonio\s*neto$"i, t)                         && return C("ifrs-full:Equity", :credit)
 
     elseif statement == "IncomeStatement"
         (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
@@ -163,6 +170,14 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"^utile(?:/\(perdita\))? dell'esercizio"i, t) || occursin(r"résultat net de l'ensemble consolidé"i, t) ||
          occursin(r"^(?:lucro|prejuízo) líquido(?: do exercício| consolidado)?$"i, t)) &&
             return C("ifrs-full:ProfitLoss", :credit)
+        # Spanish (Inditex): "Ventas"/"Importe neto de la cifra de negocios"; EBIT "Resultados de explotación";
+        # "Resultados antes de impuestos"; net "Resultado neto del ejercicio" / "…atribuido a la dominante".
+        # Docling glues ALL-CAPS lines, so allow optional spaces; no `$` where a "(EBIT)"/"(BAI)" suffix trails.
+        (t == "ventas" || occursin(r"importe neto de la cifra de negocios"i, t)) && return C("ifrs-full:Revenue", :credit)  # es
+        occursin(r"^resultados?\s*de\s*explotación"i, t)         && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        occursin(r"^resultados?\s*antes\s*de\s*impuestos"i, t)   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        occursin(r"^resultado\s*neto\s*atribuido\s*a\s*la\s*dominante"i, t) && return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
+        occursin(r"^resultado\s*neto\s*del\s*ejercicio"i, t)     && return C("ifrs-full:ProfitLoss", :credit)
 
     elseif statement == "CashFlow"
         # "net cash from/used in", "cash generated from", or "cash flow(s) from/used in/provided by" + the
@@ -194,13 +209,13 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         # investimento/de financiamento". Net change: it "Incremento/(Decremento) disponibilità liquide",
         # fr "Augmentation (diminution) de la trésorerie", pt "(Redução)/aumento (…) de caixa".
         (occursin(r"cash flow da attività operativa"i, t) || occursin(r"flux de trésorerie d.exploitation"i, t) ||
-         occursin(r"fluxo de caixa.*atividades? operaci"i, t))  && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)
+         occursin(r"fluxo de caixa.*atividades? operaci"i, t) || occursin(r"flujos.*actividades de explotación"i, t))  && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)
         (occursin(r"cash flow da attività di investimento"i, t) || occursin(r"flux de trésorerie d.investissement"i, t) ||
-         occursin(r"fluxo de caixa.*atividades? de investimento"i, t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+         occursin(r"fluxo de caixa.*atividades? de investimento"i, t) || occursin(r"flujos.*actividades de inversión"i, t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
         (occursin(r"cash flow da attività di finanziamento"i, t) || occursin(r"flux de trésorerie de financement"i, t) ||
-         occursin(r"fluxo de caixa.*atividades? de financiamento"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+         occursin(r"fluxo de caixa.*atividades? de financiamento"i, t) || occursin(r"flujos.*actividades de financiación"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
         (occursin(r"incremento.*decremento.*disponibilità liquide"i, t) || occursin(r"augmentation.*diminution.*trésorerie"i, t) ||
-         occursin(r"(?:redução|aumento).*(?:caixa|equivalentes)"i, t))  && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+         occursin(r"(?:redução|aumento).*(?:caixa|equivalentes)"i, t) || occursin(r"variación neta de efectivo"i, t))  && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
     end
     return nothing
 end

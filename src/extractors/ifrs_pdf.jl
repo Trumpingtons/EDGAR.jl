@@ -74,26 +74,10 @@ function _ifrs_period(sd)
     return (mo, dy, uy)
 end
 
-const _IFRS_MONTHS = Dict("january"=>1,"february"=>2,"march"=>3,"april"=>4,"may"=>5,"june"=>6,"july"=>7,
-                           "august"=>8,"september"=>9,"october"=>10,"november"=>11,"december"=>12,
-                           # German full + abbreviated month names
-                           "januar"=>1,"jan"=>1,"februar"=>2,"feb"=>2,"mär"=>3,"märz"=>3,"mar"=>3,"apr"=>4,
-                           "mai"=>5,"jun"=>6,"juni"=>6,"jul"=>7,"juli"=>7,"aug"=>8,"sep"=>9,"sept"=>9,
-                           "oct"=>10,"okt"=>10,"oktober"=>10,"nov"=>11,"dec"=>12,"dez"=>12,"dezember"=>12,
-                           # Romance FULL names only (pt/fr/it/es) — no new ambiguous 3-letter forms (would
-                           # collide with English "set"/"out"/"ago"); the year-end date carries the full month.
-                           "janeiro"=>1,"janvier"=>1,"gennaio"=>1,"enero"=>1,
-                           "fevereiro"=>2,"février"=>2,"fevrier"=>2,"febbraio"=>2,"febrero"=>2,
-                           "março"=>3,"marco"=>3,"mars"=>3,"marzo"=>3,
-                           "abril"=>4,"avril"=>4,"aprile"=>4,
-                           "maio"=>5,"maggio"=>5,"mayo"=>5,
-                           "junho"=>6,"juin"=>6,"giugno"=>6,"junio"=>6,
-                           "julho"=>7,"juillet"=>7,"luglio"=>7,"julio"=>7,
-                           "agosto"=>8,"août"=>8,"aout"=>8,
-                           "setembro"=>9,"septembre"=>9,"settembre"=>9,"septiembre"=>9,
-                           "outubro"=>10,"octobre"=>10,"ottobre"=>10,"octubre"=>10,
-                           "novembro"=>11,"novembre"=>11,"noviembre"=>11,
-                           "dezembro"=>12,"décembre"=>12,"decembre"=>12,"dicembre"=>12,"diciembre"=>12)
+# Month names are RE-HOMED to the language registry (src/core/languages.jl), per language; this is a VIEW that
+# merges them (shared names like "mai"/"marzo"/"agosto" carry the same value in every profile, so the merge is
+# lossless). Add a language's months there, on its `LanguageProfile`, not here.
+const _IFRS_MONTHS = Dict(language_month_pairs())
 monthabbr_to_num(s) = get(_IFRS_MONTHS, lowercase(String(s)), 12)
 # Month-name alternation for the date regexes, built from the dict (longest first so "december" beats "dec").
 const _MON = join(sort(collect(keys(_IFRS_MONTHS)); by = length, rev = true), "|")
@@ -116,8 +100,10 @@ function _ifrs_unit(texts)
     # EITHER order — the English edition writes "millions of €" (magnitude first, symbol after), the German one
     # "Mio. €" / "Millionen"; thousands are "TEUR" / "T€" / "thousands of €". A stray prose "EUR"/"USD" is not a
     # unit expression, so it can't trigger a false EUR. Prefer millions over thousands within one pool.
-    eur_m = any(occursin(r"(?i)(EUR|€)\s*'?\s*(m\b|million)|million[s]?\s+(of\s+)?(EUR|€|euro)|\bMio\.?\s*€|\bMillionen\b", s) for s in texts)
-    eur_k = any(occursin(r"(?i)\bTEUR\b|T€|(EUR|€)\s*'?\s*(thousand|000)\b|thousand[s]?\s+(of\s+)?(EUR|€|euro)|\bTsd\.?\s*€", s) for s in texts)
+    # magnitude-first + symbol-after in several languages: en "millions of €", de "Mio. €"/"Millionen", es
+    # "millones de euros", pt "milhões de euros", it "milioni di euro", fr "millions d'euros".
+    eur_m = any(occursin(r"(?i)(EUR|€)\s*'?\s*(m\b|million)|million[s]?\s+(of\s+)?(EUR|€|euro)|\bMio\.?\s*€|\bMillionen\b|mill(?:ón|ones)\s+de\s+euros?|milh(?:ão|ões)\s+de\s+euros?|milioni\s+di\s+euro", s) for s in texts)
+    eur_k = any(occursin(r"(?i)\bTEUR\b|T€|(EUR|€)\s*'?\s*(thousand|000)\b|thousand[s]?\s+(of\s+)?(EUR|€|euro)|\bTsd\.?\s*€|mil(?:es|hares)\s+de\s+euros?", s) for s in texts)
     (eur_m || eur_k) && return (eur_m ? 1e6 : 1e3, "EUR")
     conv = nothing                                             # a "#"-marked supplementary/convenience unit
     for s in texts
@@ -218,7 +204,7 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
     #     — excluded by its header ("Textziffer im Anhang" / "Ziffer" / "Anhang"), since the values can't tell it
     #     apart from a real column.
     _ispctcol(c) = count(r -> occursin('%', get(grid, (r, c), "")), 0:nr-1) >= 2
-    _isnotecol(c) = occursin(r"(?i)textziffer|\bziffer\b|\banhang\b|anmerkung|\bnote", join([get(grid, (r, c), "") for r in 0:min(2, nr-1)], " "))
+    _isnotecol(c) = occursin(r"(?i)textziffer|\bziffer\b|\banhang\b|anmerkung|\bnotes?\b|\bnotas?\b", join([get(grid, (r, c), "") for r in 0:min(2, nr-1)], " "))
     valcols = [c for c in 0:nc-1 if !_ispctcol(c) && !_isnotecol(c) &&
                                     count(r -> _ifrs_ismoney(get(grid, (r, c), ""), loc), 0:nr-1) >= 2]
     isempty(valcols) && return Fact[]
@@ -338,16 +324,8 @@ function _ifrs_table_facts(tbl, stmt::AbstractString, instant::Bool, pends::Vect
 end
 
 # Consolidated-statements page range, TOC-first (the AR outline's statement bookmarks), heading-scan fallback.
-# A German consolidated-statement heading marks the group in one of three shapes across filers, all built by
-# `_dekonz(stem)`:
-#   • PREFIX  "Konzern-<stmt>"                         — Siemens
-#   • SUFFIX  "<stmt> des/der … Konzerns"              — Volkswagen ("… des Volkswagen Konzerns")
-#   • GRUPPE  "<stmt> <Company>-Gruppe"                — BASF ("… BASF-Gruppe")
-# The des/der in the Konzern suffix excludes the segment breakdown "<stmt> NACH Konzernbereichen"; the Gruppe
-# form is kept TIGHT (one company word then "-Gruppe", no gap) so a prose "… in der Kapitalflussrechnung …"
-# near a stray "Gruppe" cannot match.
-_dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]{0,25}konzerns?\\b|" *
-                "\\b(?:$stem)\\s+[\\wäöüÄÖÜ]{1,20}-?gruppe\\b"
+# `_dekonz` (the German Konzern prefix/suffix/Gruppe shape) is defined in core/languages.jl, alongside the
+# re-homed per-language statement patterns; the uses below resolve to it.
 # --- Multilingual primary-statement HEADINGS (2R.B) ---------------------------------------------------
 # The statement-location scan and the presentation-language sniff share ONE source of truth: the primary-
 # statement heading names per language, keyed by type (:is P&L / comprehensive income, :bs balance sheet,
@@ -359,47 +337,15 @@ _dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]
 # Short ambiguous names (fr "bilan", es "balance") stay PINNED to their consolidé/situación qualifier so they
 # can't match prose. German is structurally different (Konzern prefix/suffix/Gruppe) and stays on `_dekonz`
 # below. Line-item LABEL translation (pt/fr/… → ifrs-full) is a SEPARATE concern (2R.D). See §2R.B.
-const _STMT_LANGS = [
-    ("en", "HK", Dict(       # `statements?` — NA filers pluralize ("Statements of Earnings", "Balance Sheets").
-        # "consolidated" is OPTIONAL: Australian/UK filers (Wesfarmers) title the primary set bare ("Income
-        # statement", "Balance sheet"). The primary-CLUSTER (all 4 types tight) + notes-boundary in
-        # `_ifrs_statement_pages` outrank the scattered bare echoes in the notes/MD&A. (2R.B, Wesfarmers.)
-        :is => "(?:consolidated )?(?:income statements?|statements? of (?:profit or loss|comprehensive income|earnings|income|operations))",
-        :bs => "(?:consolidated )?(?:balance sheets?|statements? of financial position)",
-        :cf => "(?:consolidated )?(?:cash flow statements?|statements? of cash flows?)",
-        :eq => "(?:consolidated )?statements? of changes in equity")),
-    ("pt", "BR", Dict(       # Brazil/Portugal — decimal-comma (see amount_locale "BR"/"PT")
-        :is => "demonstraç(?:ão|ões) d[eo]s? resultados?(?: abrangentes?)?",
-        :bs => "balanç(?:o|os) patrimoni(?:al|ais)",
-        :cf => "demonstraç(?:ão|ões) d[eo]s? fluxos? de caixa",
-        :eq => "demonstraç(?:ão|ões) das mutações do patrim[ôo]nio líquido")),
-    ("fr", "FR", Dict(       # France — space-thousands, decimal-comma (:eu_space)
-        :is => "compte(?:s)? de résultat|état(?:s)? (?:consolidé(?:s)? )?du résultat(?: global| net)?|résultat global",
-        :bs => "bilan(?:s)? consolidé(?:s)?|état(?:s)? (?:consolidé(?:s)? )?de (?:la )?situation financière",
-        :cf => "tableau(?:x)? (?:consolidé(?:s)? )?des? flux de trésorerie|état(?:s)? des flux de trésorerie",
-        :eq => "(?:tableau|état)(?:x|s)? (?:de(?:s)? )?variation(?:s)? des capitaux propres")),
-    ("it", "IT", Dict(
-        :is => "conto economico(?: complessivo)?",
-        :bs => "stato patrimoniale|situazione patrimoniale[-\\s]*finanziaria",
-        :cf => "rendiconto finanziario",
-        :eq => "prospetto delle variazioni di patrimonio netto|variazioni del patrimonio netto")),
-    ("es", "ES", Dict(
-        :is => "cuenta(?:s)? de (?:pérdidas y ganancias|resultados)|estado(?:s)? de resultados|estado(?:s)? del resultado(?: global| integral)?",
-        :bs => "estado(?:s)? de situación (?:financiera|patrimonial)|balance(?:s)? de situación",
-        :cf => "estado(?:s)? de flujos de efectivo",
-        :eq => "estado(?:s)? de cambios en el patrimonio(?: neto)?")),
-]
-# German consolidated-statement stems, wrapped by `_dekonz` into the Konzern prefix/suffix/Gruppe shapes.
-const _DE_STEMS = Dict(
-    :is => "gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung",
-    :bs => "bilanz",
-    :cf => "kapitalflussrechnung",
-    :eq => "eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")
-# The union heading-body for one statement type across ALL languages (Romance/English verbatim; German via
-# _dekonz, plus the "Entwicklung des Konzern-Eigenkapitals" special form for :eq).
-_stmt_body(ty::Symbol) = join(vcat([d[ty] for (_, _, d) in _STMT_LANGS],
-        ty === :eq ? ["entwicklung des konzern[-\\s]*eigenkapitals", _dekonz(_DE_STEMS[ty])] : [_dekonz(_DE_STEMS[ty])]),
-    "|")
+# The per-language statement patterns (+ default jurisdiction) are RE-HOMED to the language registry
+# (core/languages.jl); this is a VIEW over it — one entry per language with non-empty `stmt_patterns` (en, pt,
+# es, fr, de, it). German is a normal entry there (its bodies pre-expanded through `_dekonz`), so there is no
+# separate `_DE_STEMS` any more. Add a language's statement patterns there, on its `LanguageProfile`.
+const _STMT_LANGS = [(p.code, p.jurisdiction, p.stmt_patterns) for p in SUPPORTED_LANGS if !isempty(p.stmt_patterns)]
+# The union heading-body for one statement type across ALL languages, from the registry bodies (already
+# includes German's Konzern shapes and the "Entwicklung des Konzern-Eigenkapitals" :eq form). Alternation order
+# is immaterial for the `occursin`/`eachmatch` uses in the locator.
+_stmt_body(ty::Symbol) = join([d[ty] for (_, _, d) in _STMT_LANGS], "|")
 const _IFRS_STMT_ORDER = (:is, :bs, :cf, :eq)
 # The four primary-statement TYPES, each a union regex across languages — used by the heading-scan fallback
 # to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray mention.
@@ -473,17 +419,29 @@ function _ifrs_toc_range(doc; margin::Int = 8)
     return (lo, min(hi + margin, npg))
 end
 
-function _ifrs_statement_pages(doc; window::Int = 14)
-    npg = length(doc.pages)
-    # Per-page statement types, EXCLUDING contents/index pages: a German "Inhalt" (or a filing index) lists every
-    # statement name on ONE page (3+ distinct types), whereas a real primary statement page shows one statement
-    # (a P&L + its comprehensive-income sibling still count as one type). Reused by the TOC validation + scan.
+# Per-page primary-statement types from the spaced-text scan, EXCLUDING contents/index pages: a German "Inhalt"
+# (or a filing index) lists every statement name on ONE page (3+ distinct types), whereas a real primary
+# statement page shows one statement (a P&L + its comprehensive-income sibling still count as one type). Shared
+# by the locator, the TOC validation, and the has-statements signal (2R.F).
+function _ifrs_pgtypes(doc)
     pgtypes = Dict{Int,Set{Symbol}}()
     for pg in doc.pages
         s = Set{Symbol}(); txt = _ifrs_spacedtext(pg)          # SPACED (not tight): the suffix/Gruppe forms
         for (ty, rx) in _IFRS_STMT_TYPES; occursin(rx, txt) && push!(s, ty); end   # need whitespace to match
         (isempty(s) || length(s) >= 3) || (pgtypes[Int(pg.page)] = s)
     end
+    return pgtypes
+end
+
+# How many DISTINCT primary-statement types the document shows on its statement pages — the discriminator (2R.F)
+# between a THIN report (an integrated/summary report that carries none of the detailed statements — Vale points
+# to its website/CVM for them → ~0) and a real statement set (BS/IS/CF co-occur → ≥3). Lets a caller tell "this
+# document has no detailed statements" from "the statements are here but the locator missed them".
+_ifrs_stmt_signal(doc) = length(reduce(union, values(_ifrs_pgtypes(doc)); init = Set{Symbol}()))
+
+function _ifrs_statement_pages(doc; window::Int = 14)
+    npg = length(doc.pages)
+    pgtypes = _ifrs_pgtypes(doc)
     _ntypes(lo, hi) = length(reduce(union, (get(pgtypes, p, Set{Symbol}()) for p in lo:hi); init = Set{Symbol}()))
     # Strategy 1 — the printed TOC, VALIDATED: trust its range only when the mapped pages really hold the
     # statements (≥3 types). This is the reliable path for multi-section reports whose outline points at a
@@ -532,12 +490,12 @@ AS REPORTED — an unlabeled section total (e.g. Tencent's Revenue total under a
 by carrying down the section header, not by computing it from other lines — so the balance-sheet cross-foot and
 the benchmark check values the extractor did not itself derive. English analogue of [`extract_cas_pdf`](@ref).
 """
-# Per-language sniff regex (all four statement types unioned) → the doc's presentation language. German via
-# _dekonz; Romance/English verbatim. Drives the number LOCALE: a Brazilian/French/Italian report is decimal-
-# comma (not the en dot-decimal default), and a mis-locale silently corrupts every extracted value.
-const _LANG_SNIFF = vcat(
-    [(lang, juris, Regex("(?i)" * join(collect(values(d)), "|"))) for (lang, juris, d) in _STMT_LANGS if lang != "en"],
-    [("de", "DE", Regex("(?i)" * join([_dekonz(s) for s in values(_DE_STEMS)], "|")))])
+# Per-language sniff regex (all four statement types unioned) → the doc's presentation language. Built from the
+# same registry statement patterns (German included — its bodies are pre-expanded through `_dekonz`). Drives the
+# number LOCALE: a Brazilian/French/Italian report is decimal-comma (not the en dot-decimal default), and a
+# mis-locale silently corrupts every extracted value. English is excluded (it is the default fallback).
+const _LANG_SNIFF =
+    [(lang, juris, Regex("(?i)" * join(collect(values(d)), "|"))) for (lang, juris, d) in _STMT_LANGS if lang != "en"]
 
 # Sniff the presentation language from the primary-statement headings so the number locale is right (a German
 # report carries "Konzern-Bilanz"; a Brazilian one "Balanço Patrimonial"; a French one "Bilan consolidé").
@@ -556,7 +514,19 @@ end
 function extract_ifrs_pdf(path::AbstractString)
     doc = _pdf_words(path)
     rng = _ifrs_statement_pages(doc)
-    rng === nothing && throw(ArgumentError("no consolidated statements found in $(repr(basename(path)))"))
+    if rng === nothing
+        # 2R.F — tell "this document has no detailed statements" from "the statements are here but I missed
+        # them". A THIN report (integrated/summary, e.g. Vale — which points to its website/CVM for the
+        # accounts) shows almost no statement-type headings; return no facts, honestly. When 2+ statement
+        # types ARE present, the locator genuinely failed → surface it as a coverage gap, not a silent empty.
+        if _ifrs_stmt_signal(doc) >= 2
+            throw(ArgumentError("primary statements appear present but could not be located in " *
+                                "$(repr(basename(path))) — likely an extractor coverage gap"))
+        end
+        @info "extract_ifrs_pdf: no detailed primary statements in $(repr(basename(path))) " *
+              "(looks like a summary/integrated report) — returning no facts"
+        return FactRow[]
+    end
     juris, lang = _ifrs_doc_juris(doc)
     sd = structured_document(path; pages = rng, jurisdiction = juris, language = lang)
     return _ifrs_facts_from_sd(sd; accession = basename(path), url = path)
