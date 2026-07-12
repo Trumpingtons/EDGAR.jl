@@ -29,6 +29,7 @@ const TABLE_CLASSES = TableClass[
         r"statements? of assets (?:and|&) liabilities"i, r"statements? of net assets"i,   # registered funds (sing./plur.)
         r"\w*bilanz\b"i, r"\bbilan\b"i,   # \w* so the German COMPOUND "Konzernbilanz"/"Einzelbilanz" matches (not "Bilanzsumme"/"Bilanzierung", which have no boundary after "bilanz")
         r"situation financière"i, r"estado de situación financiera"i, r"stato patrimoniale"i,
+        r"balanço patrimonial"i,   # pt (Brazil/Portugal)
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표",
         r"отч[её]т о финансовом положении"i, r"бухгалтерский баланс"i]),
     TableClass("income_statement", "statement", "Income statement / profit or loss / comprehensive income", [
@@ -38,11 +39,13 @@ const TABLE_CLASSES = TableClass[
         r"gewinn-?\s*und\s*verlustrechnung"i, r"\bGuV\b",
         r"compte de résultat"i, r"cuenta de (?:pérdidas y ganancias|resultados)"i,
         r"conto economico"i, r"(?:utile|reddito|redditività) complessiv[ao]"i,   # IT: P&L + comprehensive income (utile complessivo)
+        r"demonstraç(?:ão|ões) d[eo]s? resultados?"i,   # pt "Demonstração do Resultado (do Exercício)"
         r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서",
         r"отч[её]т о (?:прибыл|совокупном доходе|финансовых результатах)"i, r"о прибыли или убытке"i]),
     TableClass("cash_flow", "statement", "Cash-flow statement", [
         r"cash ?flows?"i, r"statements? of cash flows?"i, r"kapitalflussrechnung"i,
         r"(?:flux|variation) de (?:la )?trésorerie"i, r"estado de flujos de efectivo"i, r"rendiconto finanziario"i,
+        r"demonstraç(?:ão|ões) d[eo]s? fluxos? de caixa"i,   # pt
         r"现金流量表", r"キャッシュ・?フロー計算書", r"현금흐름표",
         r"отч[её]т о движении денежных средств"i]),
     TableClass("equity_changes", "statement", "Statement of changes in equity", [

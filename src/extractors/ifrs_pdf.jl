@@ -170,8 +170,10 @@ end
 # A monetary VALUE cell (a grouped-thousands separator or a parenthesised negative). Locale-aware: the German
 # (`:eu_dot`) reports write "47.996" (dot thousands) / "8,50" (comma decimal), so the number parse must use the
 # document's locale — parsing "47.996" as en would read it as 47.996, not 47 996.
-_ifrs_ismoney(s, loc::Symbol = :en) = (occursin(',', s) || occursin('(', s) || occursin(r"\d\.\d", s)) &&
-                    (p = parse_amount(strip(String(s)); locale = loc); p !== nothing && !p.nil)
+_ifrs_ismoney(s, loc::Symbol = :en) = (t = strip(String(s));
+                    (occursin(',', t) || occursin('(', t) || occursin(r"\d\.\d", t) ||
+                     (loc == :eu_space && occursin(r"\d[\s\x{a0}\x{202f}]\d", t))) &&   # FR/RU space-thousands "184 125" (incl. NBSP/narrow-NBSP) carries no comma/dot
+                    (p = parse_amount(t; locale = loc); p !== nothing && !p.nil))
 
 # A VALUE cell in an ALREADY-CONFIRMED value column: a plain number is enough, no thousands separator needed —
 # BASF's small 2023 net income ("379", "225") carries none. Looser than `_ifrs_ismoney` (which gates column
@@ -591,6 +593,14 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         p === nothing && continue
         push!(get!(pagetitles, Int(p), String[]), s.title)
     end
+    # Short text PARAGRAPHS by page — some filers (WEG) render the statement NAME ("Balanço Patrimonial …")
+    # as a bold paragraph, not a Docling section heading, so it never reaches `pagetitles`. Keep only heading-
+    # length blocks (≤ 80 chars) so a note sentence mentioning "balance sheet" can't misclassify a table.
+    pageblocks = Dict{Int,Vector{String}}()
+    for b in sd.text_blocks
+        (b.kind == "paragraph" && length(b.text) <= 80) || continue
+        push!(get!(pageblocks, Int(b.page), String[]), b.text)
+    end
 
     # Is there a SEPARATE income statement — a "profit or loss" / "income statement" table that is NOT the
     # combined comprehensive-income one? If so, a standalone "statement of comprehensive income" is a DUPLICATE
@@ -619,15 +629,18 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         cap = something(tbl.caption, "")
         sectit = get(sectitle, something(tbl.section_id, ""), "")
         pgtit = join(get(pagetitles, Int(tbl.page_start), String[]), " ")
+        pgblk = join(get(pageblocks, Int(tbl.page_start), String[]), " | ")
         cls = classify_table_class(cap)
         cls === nothing && (cls = classify_table_class(sectit))
         cls === nothing && (cls = classify_table_class(pgtit))
-        # An account-form Bilanz side often carries no statement title — only a leading "Aktiva"/"Passiva"
-        # cell (BASF's Passiva page heading is just the running header "BASF-Gruppe"; Volkswagen prints
-        # "Passiva" on the row BELOW the unit/year header) — so classify it from that marker when nothing else
-        # matched. Scan the first two rows, and require the marker to START a cell (not appear mid-prose).
-        cls === nothing && any(occursin(r"(?i)^\s*(aktiva|passiva)\b", strip(c.text)) for c in tbl.cells if c.row <= 1) &&
-            (cls = "balance_sheet")
+        cls === nothing && (cls = classify_table_class(pgblk))   # statement name as a paragraph (WEG)
+        # An account-form balance sheet often carries no statement title — only a leading "Aktiva"/"Passiva"
+        # (DE) or "Ativo"/"Passivo" (PT) / "Attività"/"Passività" (IT) heading cell (BASF's Passiva page heading
+        # is just the running header; Volkswagen prints "Passiva" below the unit/year header; WEG's "Ativo"/
+        # "Passivo" sit a few rows in, under the Controladora/Consolidado column headers) — so classify from that
+        # marker when nothing else matched. Require the marker to START a cell (not appear mid-prose).
+        cls === nothing && any(occursin(r"(?i)^\s*(aktiva|passiva|ativo|passivo|attivit[àa]|passivit[àa])\b", strip(c.text))
+                               for c in tbl.cells if c.row <= 3) && (cls = "balance_sheet")
         title = strip(string(cap, " ", sectit, " ", pgtit))
         stmt = cls == "balance_sheet" ? "BalanceSheet" : cls == "income_statement" ? "IncomeStatement" :
                cls == "cash_flow" ? "CashFlow" : nothing
