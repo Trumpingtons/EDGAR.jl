@@ -1773,6 +1773,67 @@ end
     @test length(EDGAR._nse_result_handles(recs, "RELIANCE"; consolidated = nothing, audited = nothing)) == 3
 end
 
+@testset "Discovery: prefer_statements document-scope ranking (offline, 2R.F)" begin
+    # The generic document-scope pass: for one (entity, period_end), keep the best-scoped document — a
+    # dedicated :statements doc beats all, an :annual report beats a thin :integrated/:summary report, and
+    # unclassified (default :report) handles are all neutral so a source is passed through untouched.
+    ent  = EntityId(:cninfo, "000001,gssz0000001")
+    ent2 = EntityId(:cik, "0000320193")
+    mk(dt, y; e = ent) = FilingHandle(; system = China(), entity = e, ref = string(dt, y),
+                                      url = "u", period_end = Date(y, 12, 31), doc_type = dt)
+
+    # A dedicated statements doc wins outright; the other three scopes for the same period drop out.
+    won = prefer_statements([mk(:statements, 2024), mk(:annual, 2024), mk(:summary, 2024), mk(:integrated, 2024)])
+    @test length(won) == 1 && won[1].doc_type == :statements
+
+    @test [h.doc_type for h in prefer_statements([mk(:annual, 2024), mk(:summary, 2024)])] == [:annual]
+    @test [h.doc_type for h in prefer_statements([mk(:integrated, 2024), mk(:annual, 2024)])] == [:annual]
+
+    # A thin report with no better sibling survives (honestly thin), rather than being silently dropped.
+    @test length(prefer_statements([mk(:summary, 2024)])) == 1
+    @test isempty(prefer_statements(FilingHandle[]))
+
+    # Unclassified source (default :report): all neutral → returned unchanged, order and identity preserved.
+    reps = [mk(:report, 2024), mk(:report, 2023)]
+    @test prefer_statements(reps) == reps
+
+    # Grouping is per (entity, period_end): distinct years don't collapse, and newest-first order is kept.
+    twoyr = prefer_statements([mk(:annual, 2024), mk(:summary, 2024), mk(:annual, 2023), mk(:summary, 2023)])
+    @test [h.period_end for h in twoyr] == [Date(2024, 12, 31), Date(2023, 12, 31)]
+    @test issorted(twoyr; by = h -> h.period_end, rev = true)
+
+    # Distinct entities don't mix: ent keeps its :annual, ent2 (summary-only) keeps its :summary.
+    mixed = prefer_statements([mk(:summary, 2024), mk(:summary, 2024; e = ent2), mk(:annual, 2024)])
+    @test Set((h.entity, h.doc_type) for h in mixed) == Set([(ent, :annual), (ent2, :summary)])
+end
+
+@testset "China: CNINFO annual-report handle parsing (C1, offline)" begin
+    # The pure records→handles parser (no network): drops the English/cancelled variants, tags the report
+    # SUMMARY (摘要) `:summary` vs the full 年度报告 `:annual`, and prefer_statements keeps the full
+    # statements-bearing report per fiscal year. Year parsed off the title → 31-Dec period end; identity is
+    # the packed :cninfo code+orgId; url is the PDF on the static host. Newest first.
+    recs = [
+        (announcementTitle = "2024年年度报告",          adjunctUrl = "a/2024full.PDF",   announcementId = "1001"),
+        (announcementTitle = "2024年年度报告摘要",      adjunctUrl = "a/2024sum.PDF",    announcementId = "1002"),
+        (announcementTitle = "2024年年度报告（英文版）", adjunctUrl = "a/2024en.PDF",     announcementId = "1003"),
+        (announcementTitle = "2023年年度报告",          adjunctUrl = "a/2023full.PDF",   announcementId = "1004"),
+        (announcementTitle = "2023年年度报告摘要",      adjunctUrl = "a/2023sum.PDF",    announcementId = "1005"),
+        (announcementTitle = "关于2022年年度报告更正取消的公告", adjunctUrl = "a/2022x.PDF", announcementId = "1006"),
+    ]
+    hs = EDGAR._cninfo_annual_handles(recs, "000001", "gssz0000001")
+
+    @test all(h -> h.system isa China, hs)
+    @test all(h -> h.entity == EntityId(:cninfo, "000001,gssz0000001"), hs)
+    @test all(h -> h.country == "CN", hs)
+
+    # One full report per year — summary, English and cancelled variants all gone — newest first.
+    @test [h.period_end for h in hs] == [Date(2024, 12, 31), Date(2023, 12, 31)]
+    @test all(h -> h.doc_type == :annual, hs)
+    @test issorted(hs; by = h -> h.period_end, rev = true)
+    @test hs[1].ref == "1001" && endswith(hs[1].url, "a/2024full.PDF")
+    @test !any(h -> occursin("sum", h.url) || occursin("en", h.url) || occursin("2022x", h.url), hs)
+end
+
 @testset "India: full statement classification (I3, offline)" begin
     # India classifies by NAMESPACE (in-bse-fin) through TWO wired pieces: the dedicated vocab_indas
     # key-anchor concepts (merged registry) AND the BSE Financial Results presentation linkbase bundled in

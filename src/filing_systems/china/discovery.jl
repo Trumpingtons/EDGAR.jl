@@ -74,27 +74,31 @@ function cninfo_org(query::AbstractString)
 end
 
 # Turn a parsed `hisAnnouncement` announcements array into FilingHandles. PURE (no network) — testable
-# offline against a saved query JSON. Keeps the full annual report, dropping the paired summary, English and
-# cancelled variants (matched on the title tokens in the filters just below). The fiscal year is parsed from
-# the title — the four digits preceding the report-title token — into a 31-Dec period end
-# (Chinese fiscal years end 31 December). Identity is the packed `:cninfo` code+orgId; url is the PDF on the
-# static host. Newest first.
+# offline against a saved query JSON. Drops the English and cancelled variants (a language duplicate / an
+# invalid filing, matched on the title tokens below), then tags the report SCOPE and lets `prefer_statements`
+# keep the best per year: the report SUMMARY (摘要) carries none of the detailed statements — a thin sibling
+# of the full 年度报告 for the same fiscal year — so it is tagged `:summary` and drops out whenever the full
+# report is present (and is still surfaced, honestly thin, for a filer who published only a summary). The
+# fiscal year is parsed from the title — the four digits preceding the report-title token — into a 31-Dec
+# period end (Chinese fiscal years end 31 December). Identity is the packed `:cninfo` code+orgId; url is the
+# PDF on the static host. Newest first.
 function _cninfo_annual_handles(records, sec::AbstractString, org::AbstractString)
     ent = EntityId(:cninfo, string(sec, ",", org))
     handles = FilingHandle[]
     for r in records
         title = _cninfo_str(r, :announcementTitle)
         occursin("年度报告", title) || continue
-        (occursin("摘要", title) || occursin("英文", title) || occursin("取消", title)) && continue
+        (occursin("英文", title) || occursin("取消", title)) && continue   # language duplicate / cancelled: not a scope choice
         adj = _cninfo_str(r, :adjunctUrl); isempty(adj) && continue
+        dt = occursin("摘要", title) ? :summary : :annual    # summary (thin) vs the full statements-bearing report
         m = match(r"(\d{4})年?年度报告", title)
         pend = m === nothing ? nothing : Date(parse(Int, m.captures[1]), 12, 31)
         ref = _cninfo_str(r, :announcementId); isempty(ref) && (ref = basename(adj))
-        push!(handles, FilingHandle(; system = China(), entity = ent, ref = ref,
-              url = string(_CNINFO_STATIC, "/", adj), period_end = pend, country = "CN"))
+        push!(handles, FilingHandle(; system = China(), entity = ent, ref = ref, url = string(_CNINFO_STATIC, "/", adj),
+              period_end = pend, country = "CN", doc_type = dt))
     end
     sort!(handles; by = h -> something(h.period_end, Date(0)), rev = true)
-    return handles
+    return prefer_statements(handles)
 end
 
 """

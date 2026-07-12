@@ -102,7 +102,7 @@ include("sources/fundamentals_alphavantage.jl") # 🟢   └─ :alphavantage pr
 
 export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDARTApi, dart_corp_code, dart_index_ttl!, India, NSEFilings, IntegratedFilings, China, CNINFOFilings, cninfo_org, HKEX, HKEXFilings, hkex_stock, Russia, RFSDFilings, rfsd_download, set_rfsd_local, set_rfsd_cache_dir, ras_label, rfsd_flags, CBRBankFilings, cbr_bank_directory, cbr_line, Generic, EntityId,
        FilingSource, FilingHandle, FilingsXBRLOrg, CompaniesHouseApi, CompaniesHouseBulk, NSM, nsm_categories, discover,
-       company_search, CompanyHit,
+       prefer_statements, company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, extract_hgb_pdf, hgb_concept, born_digital, extract_fund_portfolio, extract_reit_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
        Narrative, narratives,
