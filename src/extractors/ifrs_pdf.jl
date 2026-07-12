@@ -25,6 +25,18 @@ function _ifrs_period(sd)
         (m === nothing || length(s) > 12) && continue
         push!(yrs, parse(Int, m.captures[1]))
     end
+    if isempty(yrs)
+        # Locales that head statement columns with a DATE, not a bare year: Brazilian "31/12/24", European
+        # "31.12.2024", or the long "31 de dezembro de 2024" (pt/es) / "31 décembre 2024" (fr) forms.
+        pool = join(vcat([s.title for s in sd.sections], [c.text for t in sd.tables for c in t.cells]), " ")
+        for mm in eachmatch(r"\b\d{1,2}[./]\d{1,2}[./](\d{2})(\d{2})?\b", pool)
+            y = mm.captures[2] === nothing ? 2000 + parse(Int, mm.captures[1]) : parse(Int, mm.captures[1] * mm.captures[2])
+            (2000 <= y <= 2099) && push!(yrs, y)
+        end
+        for mm in eachmatch(Regex("(?i)(?:$_MON)\\s+(?:de\\s+|del\\s+)?(20\\d{2})"), pool)
+            push!(yrs, parse(Int, mm.captures[1]))
+        end
+    end
     isempty(yrs) && return nothing
     uy = sort!(unique(yrs); rev = true)
     # Year-end month/day. Search section headings, captions, blocks AND table cells — a bank states the
@@ -34,23 +46,31 @@ function _ifrs_period(sd)
     # (3) else any date. Steps 1–2 keep a stray prose date (a pension "31 May", a "1 January" opening) out.
     # English full names + German full names and abbreviations ("30. Sep. 2023", "31. Dezember 2024") — the
     # German editions state the year-end with an abbreviated month and a dot after the day.
-    MON = "Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|Mar(?:ch)?|Mär(?:z)?|Apr(?:il)?|May|Mai|Jun[ei]?|Jul[iy]?|" *
-          "Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Okt(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Dez(?:ember)?"
+    MON = _MON
     text = join(vcat([s.title for s in sd.sections], [something(t.caption, "") for t in sd.tables],
                      [b.text for b in sd.text_blocks], [c.text for t in sd.tables for c in t.cells]), " ")
     # Accept BOTH orders — "31 December" (day-month, HK/UK) and "December 31" (month-day, US-style, e.g.
-    # PetroChina). Priority: a fiscal-period phrase; then a month-END date (a real year-end, never a "1 January"
-    # / "January 1" opening line); then any date. `a1` tells whether the month was captured first.
+    # PetroChina) — plus the pt/es "31 de dezembro" long form (optional "de") and the Brazilian/European
+    # NUMERIC "31/12/24" / "31.12.2024" year-end header. Priority: a fiscal-period phrase; then a month-END
+    # date (a real year-end, never a "1 January" / "January 1" opening); then any date. The name tiers come
+    # before the numeric one so an English/German month NAME wins; numerics catch the locales that print none.
     fc = "(?:year|period)?\\s*(?:ended|ending|as at|as of)\\s+"
     m = nothing
-    for rx in ["(?i)$fc(\\d{1,2})\\.?\\s+($MON)", "(?i)$fc($MON)\\s+(\\d{1,2})",
-               "(?i)(28|29|30|31)\\.?\\s+($MON)", "(?i)($MON)\\s+(28|29|30|31)\\b",
-               "(?i)(\\d{1,2})\\.?\\s+($MON)", "(?i)($MON)\\s+(\\d{1,2})\\b"]
+    for rx in ["(?i)$fc(\\d{1,2})\\.?\\s+(?:de\\s+)?($MON)", "(?i)$fc($MON)\\s+(\\d{1,2})",
+               "(?i)(28|29|30|31)\\.?\\s+(?:de\\s+)?($MON)", "(?i)($MON)\\s+(28|29|30|31)\\b",
+               "(28|29|30|31)[./](0?[1-9]|1[0-2])[./]\\d{2,4}",
+               "(?i)(\\d{1,2})\\.?\\s+(?:de\\s+)?($MON)", "(?i)($MON)\\s+(\\d{1,2})\\b"]
         m = match(Regex(rx), text); m === nothing || break
     end
-    a1 = m !== nothing && occursin(r"[A-Za-z]", String(m.captures[1]))    # month captured first (month-day order)?
-    mo = m === nothing ? 12 : monthabbr_to_num(m.captures[a1 ? 1 : 2])
-    dy = m === nothing ? 31 : parse(Int, m.captures[a1 ? 2 : 1])
+    if m === nothing
+        mo, dy = 12, 31
+    elseif occursin(r"^\d+$", String(m.captures[1])) && occursin(r"^\d+$", String(m.captures[2]))
+        dy, mo = parse(Int, m.captures[1]), parse(Int, m.captures[2])   # numeric "31/12" → day, month
+    else
+        a1 = occursin(r"[A-Za-z]", String(m.captures[1]))               # month captured first (month-day order)?
+        mo = monthabbr_to_num(m.captures[a1 ? 1 : 2])
+        dy = parse(Int, m.captures[a1 ? 2 : 1])
+    end
     return (mo, dy, uy)
 end
 
@@ -59,8 +79,24 @@ const _IFRS_MONTHS = Dict("january"=>1,"february"=>2,"march"=>3,"april"=>4,"may"
                            # German full + abbreviated month names
                            "januar"=>1,"jan"=>1,"februar"=>2,"feb"=>2,"mär"=>3,"märz"=>3,"mar"=>3,"apr"=>4,
                            "mai"=>5,"jun"=>6,"juni"=>6,"jul"=>7,"juli"=>7,"aug"=>8,"sep"=>9,"sept"=>9,
-                           "oct"=>10,"okt"=>10,"oktober"=>10,"nov"=>11,"dec"=>12,"dez"=>12,"dezember"=>12)
+                           "oct"=>10,"okt"=>10,"oktober"=>10,"nov"=>11,"dec"=>12,"dez"=>12,"dezember"=>12,
+                           # Romance FULL names only (pt/fr/it/es) — no new ambiguous 3-letter forms (would
+                           # collide with English "set"/"out"/"ago"); the year-end date carries the full month.
+                           "janeiro"=>1,"janvier"=>1,"gennaio"=>1,"enero"=>1,
+                           "fevereiro"=>2,"février"=>2,"fevrier"=>2,"febbraio"=>2,"febrero"=>2,
+                           "março"=>3,"marco"=>3,"mars"=>3,"marzo"=>3,
+                           "abril"=>4,"avril"=>4,"aprile"=>4,
+                           "maio"=>5,"maggio"=>5,"mayo"=>5,
+                           "junho"=>6,"juin"=>6,"giugno"=>6,"junio"=>6,
+                           "julho"=>7,"juillet"=>7,"luglio"=>7,"julio"=>7,
+                           "agosto"=>8,"août"=>8,"aout"=>8,
+                           "setembro"=>9,"septembre"=>9,"settembre"=>9,"septiembre"=>9,
+                           "outubro"=>10,"octobre"=>10,"ottobre"=>10,"octubre"=>10,
+                           "novembro"=>11,"novembre"=>11,"noviembre"=>11,
+                           "dezembro"=>12,"décembre"=>12,"decembre"=>12,"dicembre"=>12,"diciembre"=>12)
 monthabbr_to_num(s) = get(_IFRS_MONTHS, lowercase(String(s)), 12)
+# Month-name alternation for the date regexes, built from the dict (longest first so "december" beats "dec").
+const _MON = join(sort(collect(keys(_IFRS_MONTHS)); by = length, rev = true), "|")
 
 # The unit TOKEN → (scale, currency) from a pool of header/label strings, or `nothing` if none carries one.
 # The unit lives in a header CELL ("RMB'Million", "HK$'000", "HK$ million", "HK$'m", the UK form "2025 £m" /
@@ -310,21 +346,64 @@ end
 # near a stray "Gruppe" cannot match.
 _dekonz(stem) = "konzern[-\\s]*(?:$stem)|\\b(?:$stem)\\s+(?:des|der)\\s+[\\w\\s]{0,25}konzerns?\\b|" *
                 "\\b(?:$stem)\\s+[\\wäöüÄÖÜ]{1,20}-?gruppe\\b"
-const _IFRS_STMT_TITLES = [r"(?i)consolidated (?:income )?statement of (?:financial position|profit or loss|comprehensive income|cash flows|changes in equity)",
-                            r"(?i)consolidated income statement", r"(?i)consolidated balance sheet",
-                            # German consolidated set — the "Konzern-" prefix OR the "… des Konzerns" suffix
-                            # (vs the single-entity HGB parent, whose statements carry the bare names).
-                            Regex("(?i)" * _dekonz("bilanz")), Regex("(?i)" * _dekonz("gewinn[-\\s]*und[-\\s]*verlustrechnung")),
-                            Regex("(?i)" * _dekonz("kapitalflussrechnung")), Regex("(?i)" * _dekonz("gesamtergebnisrechnung"))]
-# The four primary-statement TYPES, each keyed by its consolidated heading — used by the heading-scan fallback
-# to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray first mention.
-const _IFRS_STMT_TYPES = [
-    (:is, Regex("(?i)consolidated (?:income statement|statement of (?:profit or loss|comprehensive income))|" *
-                _dekonz("gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung"))),
-    (:bs, Regex("(?i)consolidated (?:balance sheet|statement of financial position)|" * _dekonz("bilanz"))),
-    (:cf, Regex("(?i)consolidated (?:cash flow statement|statement of cash flows)|" * _dekonz("kapitalflussrechnung"))),
-    (:eq, Regex("(?i)consolidated statement of changes in equity|entwicklung des konzern[-\\s]*eigenkapitals|" *
-                _dekonz("eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")))]
+# --- Multilingual primary-statement HEADINGS (2R.B) ---------------------------------------------------
+# The statement-location scan and the presentation-language sniff share ONE source of truth: the primary-
+# statement heading names per language, keyed by type (:is P&L / comprehensive income, :bs balance sheet,
+# :cf cash flow, :eq changes in equity). English keeps "consolidated" REQUIRED (the bare names — "balance
+# sheet", "income statement" — echo in the parent-company set, MD&A and note headings). The Romance
+# languages (pt/fr/it/es) make it OPTIONAL: Enel/WEG statement headings don't repeat "consolidado/consolidato",
+# so the primary-CLUSTER + TOC validation in `_ifrs_statement_pages` disambiguates the echoes instead of the
+# keyword — the plan's "match the statement TYPE structurally + multilingually, drop the hard 'consolidated'".
+# Short ambiguous names (fr "bilan", es "balance") stay PINNED to their consolidé/situación qualifier so they
+# can't match prose. German is structurally different (Konzern prefix/suffix/Gruppe) and stays on `_dekonz`
+# below. Line-item LABEL translation (pt/fr/… → ifrs-full) is a SEPARATE concern (2R.D). See §2R.B.
+const _STMT_LANGS = [
+    ("en", "HK", Dict(       # `statements?` — NA filers pluralize ("Statements of Earnings", "Balance Sheets").
+        # "consolidated" is OPTIONAL: Australian/UK filers (Wesfarmers) title the primary set bare ("Income
+        # statement", "Balance sheet"). The primary-CLUSTER (all 4 types tight) + notes-boundary in
+        # `_ifrs_statement_pages` outrank the scattered bare echoes in the notes/MD&A. (2R.B, Wesfarmers.)
+        :is => "(?:consolidated )?(?:income statements?|statements? of (?:profit or loss|comprehensive income|earnings|income|operations))",
+        :bs => "(?:consolidated )?(?:balance sheets?|statements? of financial position)",
+        :cf => "(?:consolidated )?(?:cash flow statements?|statements? of cash flows?)",
+        :eq => "(?:consolidated )?statements? of changes in equity")),
+    ("pt", "BR", Dict(       # Brazil/Portugal — decimal-comma (see amount_locale "BR"/"PT")
+        :is => "demonstraç(?:ão|ões) d[eo]s? resultados?(?: abrangentes?)?",
+        :bs => "balanç(?:o|os) patrimoni(?:al|ais)",
+        :cf => "demonstraç(?:ão|ões) d[eo]s? fluxos? de caixa",
+        :eq => "demonstraç(?:ão|ões) das mutações do patrim[ôo]nio líquido")),
+    ("fr", "FR", Dict(       # France — space-thousands, decimal-comma (:eu_space)
+        :is => "compte(?:s)? de résultat|état(?:s)? (?:consolidé(?:s)? )?du résultat(?: global| net)?|résultat global",
+        :bs => "bilan(?:s)? consolidé(?:s)?|état(?:s)? (?:consolidé(?:s)? )?de (?:la )?situation financière",
+        :cf => "tableau(?:x)? (?:consolidé(?:s)? )?des? flux de trésorerie|état(?:s)? des flux de trésorerie",
+        :eq => "(?:tableau|état)(?:x|s)? (?:de(?:s)? )?variation(?:s)? des capitaux propres")),
+    ("it", "IT", Dict(
+        :is => "conto economico(?: complessivo)?",
+        :bs => "stato patrimoniale|situazione patrimoniale[-\\s]*finanziaria",
+        :cf => "rendiconto finanziario",
+        :eq => "prospetto delle variazioni di patrimonio netto|variazioni del patrimonio netto")),
+    ("es", "ES", Dict(
+        :is => "cuenta(?:s)? de (?:pérdidas y ganancias|resultados)|estado(?:s)? de resultados|estado(?:s)? del resultado(?: global| integral)?",
+        :bs => "estado(?:s)? de situación (?:financiera|patrimonial)|balance(?:s)? de situación",
+        :cf => "estado(?:s)? de flujos de efectivo",
+        :eq => "estado(?:s)? de cambios en el patrimonio(?: neto)?")),
+]
+# German consolidated-statement stems, wrapped by `_dekonz` into the Konzern prefix/suffix/Gruppe shapes.
+const _DE_STEMS = Dict(
+    :is => "gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung",
+    :bs => "bilanz",
+    :cf => "kapitalflussrechnung",
+    :eq => "eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")
+# The union heading-body for one statement type across ALL languages (Romance/English verbatim; German via
+# _dekonz, plus the "Entwicklung des Konzern-Eigenkapitals" special form for :eq).
+_stmt_body(ty::Symbol) = join(vcat([d[ty] for (_, _, d) in _STMT_LANGS],
+        ty === :eq ? ["entwicklung des konzern[-\\s]*eigenkapitals", _dekonz(_DE_STEMS[ty])] : [_dekonz(_DE_STEMS[ty])]),
+    "|")
+const _IFRS_STMT_ORDER = (:is, :bs, :cf, :eq)
+# The four primary-statement TYPES, each a union regex across languages — used by the heading-scan fallback
+# to locate the statement CLUSTER (the window where the most distinct types co-occur), not a stray mention.
+const _IFRS_STMT_TYPES = [(ty, Regex("(?i)" * _stmt_body(ty))) for ty in _IFRS_STMT_ORDER]
+# The PDF-outline bookmark titles that mark a primary statement — the same multilingual bodies.
+const _IFRS_STMT_TITLES = [r for (_, r) in _IFRS_STMT_TYPES]
 
 # Reading-order text of a page with words SPACE-joined (unlike `_cas_pagetext`, which joins tight for CJK) —
 # needed to read a table-of-contents line "64 Konzernbilanz …" where the page number and title are separate
@@ -346,9 +425,9 @@ function _ifrs_printed_pageno(pg)
     return nothing
 end
 
-# The printed statement page numbers listed on each type, keyed by statement type — used by `_ifrs_toc_range`.
-const _IFRS_TOC_TYPES = [(:bs, "bilanz"), (:is, "gewinn[-\\s]*und[-\\s]*verlustrechnung|gesamtergebnisrechnung"),
-                         (:cf, "kapitalflussrechnung"), (:eq, "eigenkapitalveränderungsrechnung|eigenkapitalentwicklung")]
+# The printed-TOC title bodies per statement type (multilingual) — used by `_ifrs_toc_range` to read a
+# "<printed-page> <title>" / "<title> <printed-page>" line off an Inhalt/Contents/Índice/Sommaire page.
+const _IFRS_TOC_TYPES = [(ty, _stmt_body(ty)) for ty in (:bs, :is, :cf, :eq)]
 
 # Locate the primary consolidated statements via the printed TABLE OF CONTENTS. A large German report reprints
 # the statements several times (a segment breakdown, a condensed set in the management report, the AUDITED
@@ -367,8 +446,8 @@ function _ifrs_toc_range(doc; margin::Int = 8)
     best_prs = Int[]; best_types = 0
     for pg in doc.pages
         txt = _ifrs_spacedtext(pg); prs = Int[]; tys = Set{Symbol}()
-        for (ty, stem) in _IFRS_TOC_TYPES
-            de = _dekonz(stem)
+        for (ty, body) in _IFRS_TOC_TYPES
+            de = body
             # A TOC lists the page number BEFORE the title ("64 Konzernbilanz", Fielmann) or AFTER it
             # ("Bilanz 270", Volkswagen's two-column TOC). Capture both; keep only plausible page numbers
             # (≤ page count) so a year in the title ("… 2023") is not mistaken for a page.
@@ -409,7 +488,9 @@ function _ifrs_statement_pages(doc; window::Int = 14)
     # reprint (Volkswagen), and it self-rejects when the TOC uses section-relative numbering (Siemens).
     toc = _ifrs_toc_range(doc)
     toc !== nothing && _ntypes(toc[1], toc[2]) >= 3 && return toc
-    # Strategy 2 — the PDF outline's statement bookmarks.
+    # Strategy 2 — the PDF outline's statement bookmarks. The primary set is CONTIGUOUS, so cluster the matched
+    # bookmark pages by gaps and keep the densest run — a stray MD&A bookmark that trips a bare name ("Off-
+    # Balance Sheet Arrangements" → :bs) sits far from the real cluster and would otherwise balloon the range.
     if haskey(doc, :outline) && doc.outline !== nothing && !isempty(doc.outline)
         sp = Int[]
         for e in doc.outline
@@ -417,7 +498,13 @@ function _ifrs_statement_pages(doc; window::Int = 14)
             t = String(get(e, :title, ""))
             any(occursin(rx, t) for rx in _IFRS_STMT_TITLES) && push!(sp, Int(p))
         end
-        isempty(sp) || return (minimum(sp), min(maximum(sp) + 3, npg))
+        if !isempty(sp)
+            sort!(unique!(sp))
+            runs = [[sp[1]]]                                   # split where consecutive pages gap by > 8
+            for p in sp[2:end]; (p - runs[end][end] <= 8) ? push!(runs[end], p) : push!(runs, [p]); end
+            best = argmax(length, runs)
+            return (minimum(best), min(maximum(best) + 3, npg))
+        end
     end
     # Strategy 3 — heading-scan: the `window` where the most DISTINCT consolidated statement types co-occur (a
     # long report mentions statement titles many times — MD&A, parent-company statements, note headings — so a
@@ -443,15 +530,25 @@ AS REPORTED — an unlabeled section total (e.g. Tencent's Revenue total under a
 by carrying down the section header, not by computing it from other lines — so the balance-sheet cross-foot and
 the benchmark check values the extractor did not itself derive. English analogue of [`extract_cas_pdf`](@ref).
 """
-# Sniff the presentation language from the consolidated statement headings — a German report carries
-# "Konzern-Bilanz" / "Konzern-Kapitalflussrechnung"; that jurisdiction sets the number locale (DE → :eu_dot,
-# decimal-comma) in `_ifrs_facts_from_sd`. Defaults to the English/HK path.
+# Per-language sniff regex (all four statement types unioned) → the doc's presentation language. German via
+# _dekonz; Romance/English verbatim. Drives the number LOCALE: a Brazilian/French/Italian report is decimal-
+# comma (not the en dot-decimal default), and a mis-locale silently corrupts every extracted value.
+const _LANG_SNIFF = vcat(
+    [(lang, juris, Regex("(?i)" * join(collect(values(d)), "|"))) for (lang, juris, d) in _STMT_LANGS if lang != "en"],
+    [("de", "DE", Regex("(?i)" * join([_dekonz(s) for s in values(_DE_STEMS)], "|")))])
+
+# Sniff the presentation language from the primary-statement headings so the number locale is right (a German
+# report carries "Konzern-Bilanz"; a Brazilian one "Balanço Patrimonial"; a French one "Bilan consolidé").
+# Picks the language whose statement names appear on the most pages; defaults to the English/HK path (`:en`
+# locale) when none do. Returns `(jurisdiction, language)`.
 function _ifrs_doc_juris(doc)
-    for pg in doc.pages
-        occursin(r"(?i)konzern[-\s]*(?:bilanz|kapitalflussrechnung|gewinn[-\s]*und[-\s]*verlustrechnung)",
-                 _ifrs_spacedtext(pg)) && return ("DE", "de")
+    texts = [_ifrs_spacedtext(pg) for pg in doc.pages]
+    best = ("HK", "en"); bestn = 0
+    for (lang, juris, rx) in _LANG_SNIFF
+        n = count(t -> occursin(rx, t), texts)
+        n > bestn && (bestn = n; best = (juris, lang))
     end
-    return ("HK", "en")
+    return best
 end
 
 function extract_ifrs_pdf(path::AbstractString)

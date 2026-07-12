@@ -15,7 +15,7 @@
 
 const _AMOUNT_LOCALE = Dict(
     "FR" => :eu_space, "RU" => :eu_space,
-    "DE" => :eu_dot, "IT" => :eu_dot, "ES" => :eu_dot, "PT" => :eu_dot,
+    "DE" => :eu_dot, "IT" => :eu_dot, "ES" => :eu_dot, "PT" => :eu_dot, "BR" => :eu_dot,
     "NL" => :eu_dot, "BE" => :eu_dot, "AT" => :eu_dot, "CH" => :eu_dot,
     "US" => :en, "GB" => :en, "UK" => :en, "IE" => :en,
     "CN" => :en, "JP" => :en, "KR" => :en, "IN" => :en)
