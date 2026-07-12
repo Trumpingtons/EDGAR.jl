@@ -9222,7 +9222,7 @@ has (Table~\ref{tab:generic-formats}). The pivotal case is tagged \textbf{XBRL}:
 --- the filing carries its own presentation linkbase --- so an Australian or Swedish IFRS instance classifies
 its statements with \emph{zero} national knowledge, exactly as a specialised system would. A tagged foreign
 filing is therefore handled about as well by Generic as by a bespoke adapter; the gap is widest for an
-untagged, non-English PDF.
+untagged PDF in a language past the extractor's statement-location and label reach (Table~\ref{tab:generic-langs}).
 
 \begin{table}[h]
 \centering
@@ -9236,10 +9236,39 @@ national vocabulary.}
 \midrule
 XBRL / iXBRL & \texttt{extract\_xbrl} (standard-agnostic) & the filing's \textbf{own} presentation linkbase ---
   self-describing \\
-English PDF & \texttt{extract\_ifrs\_pdf} (Docling) & the \texttt{ifrs-full} English label map --- IFRS-, not
-  country-specific \\
+IFRS PDF & \texttt{extract\_ifrs\_pdf} (Docling) & the \texttt{ifrs-full} label map, multilingual across six
+  languages (Table~\ref{tab:generic-langs}) --- IFRS-, not country-specific \\
 Other PDF & \texttt{extract\_pdf} (Tier-1) & geometric statement detection \\
 HTML & \texttt{toc} / \texttt{sections} & the heading / \emph{Item} structure \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The IFRS PDF path is \emph{multilingual}, but not uniformly so: its language-sensitive stages reach different
+distances. Reading a report's prose and parsing its tables are broad; \emph{locating} the primary statements
+and \emph{mapping} their line items onto \texttt{ifrs-full} concepts are the narrower, IFRS-specific frontiers
+(Table~\ref{tab:generic-langs}). The consequence is a funnel: a report can be detected as, say, Finnish and its
+tables parsed, yet remain un-extractable because statement location and label mapping do not reach that far ---
+so the honest gap is widest not for a \emph{non-English} PDF, but for one whose language falls past those last
+two rows.
+
+\begin{table}[h]
+\centering
+\small
+\caption{How far the Generic \emph{PDF} path reaches, by capability and presentation language --- a funnel that
+narrows the wrong way. Each stage is jurisdiction-general (one pattern set, no per-filer tuning); this only
+records which \emph{languages} each stage's patterns currently cover. Internal snapshot ---
+\texttt{docs/dev/language-support.md} holds the verified, per-symbol detail.}
+\label{tab:generic-langs}
+\begin{tabular}{@{}p{0.40\textwidth}cp{0.40\textwidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{\#} & \textbf{Languages} \\
+\midrule
+Detect prose language & 16 & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko zh ru \\
+Parse month names & 16 & all detected languages \\
+Classify statement tables & 10 & en pt es fr de it \(\cdot\) ja ko zh ru \\
+Locate primary statements & 6 & en pt fr it es de \\
+Map line items \(\rightarrow\) \texttt{ifrs-full} & 6 & en de fr it pt es \\
 \bottomrule
 \end{tabular}
 \end{table}
