@@ -17,12 +17,13 @@
 # Arelle is located via, in order: the `ARELLE_CMD` env var; `arelleCmdLine` on `PATH`; the macOS app
 # (`/Applications/Arelle.app/Contents/MacOS/arelleCmdLine`). Set `ARELLE_CMD` if yours is elsewhere.
 #
-# Usage (needs Arelle + a free OpenDART crtfc_key for DART discovery):
+# Usage (needs Arelle; discover the filing yourself for any system, e.g. DART with a free OpenDART key):
 #   set_credentials(DART(); api_key = ENV["DART_API_KEY"])
 #   include(joinpath(pkgdir(EDGAR), "src", "sources", "arelle_local_oracle.jl"))
 #   using .ArelleLocalOracle
-#   ArelleLocalOracle.report_dart("005930"; year = 2023)     # per-statement parity, incl. SCE
-#   f, rows = ArelleLocalOracle.validate_dart("005930"; year = 2023)
+#   f    = fetch_filing(first(discover(OpenDARTApi(); corp_code = dart_corp_code("005930"))))
+#   rows = ArelleLocalOracle.validate(f)
+#   ArelleLocalOracle.report(rows)                             # per-statement parity, incl. SCE
 #   filter(r -> !r.match, rows)                                # any discrepancies
 
 module ArelleLocalOracle
@@ -170,32 +171,14 @@ function validate(f)
     end
 end
 
-# Discover + fetch a DART filer's annual report for business `year`, then validate against local Arelle.
-function _dart_filing(corp_or_stock::AbstractString, year::Int)
-    cc = occursin(r"^\d{6}$", strip(corp_or_stock)) ? EDGAR.dart_corp_code(corp_or_stock) : String(strip(corp_or_stock))
-    hs = EDGAR.discover(EDGAR.OpenDARTApi(); corp_code = cc, bgn_de = "$(year+1)0101", end_de = "$(year+1)1231")
-    isempty(hs) && error("no DART annual filing for $corp_or_stock business year $year")
-    cand = filter(h -> h.period_end !== nothing && Dates.year(h.period_end) == year, hs)
-    return EDGAR.fetch_filing(isempty(cand) ? first(hs) : first(cand))
-end
-
-"""
-    validate_dart(corp_or_stock; year) -> (Filing, Vector{Row})
-
-Convenience for Korea: discover a DART filer's annual report (business `year`), then [`validate`](@ref) it
-against a local Arelle parse. `corp_or_stock` is an 8-digit `corp_code` or 6-digit KRX `stock_code`.
-"""
-function validate_dart(corp_or_stock::AbstractString; year::Int)
-    f = _dart_filing(corp_or_stock, year)
-    return f, validate(f)
-end
-
 """
     report(rows) -> rows
-    report_dart(corp_or_stock; year) -> rows
 
 Print a per-statement parity summary (how many of EDGAR.jl's facts Arelle confirms, statement by
 statement — including `Equity`, the statement of changes in equity), then return the rows.
+
+For a DART filer, discover + fetch the filing yourself, then `report(validate(f))`:
+`f = fetch_filing(first(discover(OpenDARTApi(); corp_code))); report(validate(f))`.
 """
 function report(rows::Vector{Row})
     @printf("Local-Arelle oracle: %d/%d EDGAR facts confirmed (%.1f%%)\n",
@@ -217,12 +200,6 @@ function report(rows::Vector{Row})
         end
     end
     return rows
-end
-
-function report_dart(corp_or_stock::AbstractString; year::Int)
-    _, rows = validate_dart(corp_or_stock; year = year)
-    println("DART $corp_or_stock FY$year vs local Arelle:")
-    return report(rows)
 end
 
 end # module

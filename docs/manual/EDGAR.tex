@@ -3522,42 +3522,55 @@ translations, when added, live in \texttt{translations} (the source tables are n
 \end{tabular}
 \end{table}
 
-\subsection{Measuring the PDF fact path: \texttt{accuracy}}
+\subsection{Measuring the PDF fact path: \texttt{coverage} and \texttt{accuracy}}
 \label{sec:pdf-accuracy}
 
 The PDF fact path (\texttt{extract\_ifrs\_pdf} and its siblings) is \emph{deterministic} and
-\emph{jurisdiction-general} --- one structural pipeline, no per-filer tuning. Its natural question is therefore
-statistical: \emph{across many filers and languages, how often does it recover the right number?} Two internal
-gauges answer it. Where a filer publishes \emph{both} a PDF report and its iXBRL twin, the exact,
-value-anchored cross-format check scores them against each other (\S\ref{sec:validation-crossformat}). Where no
-twin exists --- the long tail the generic path is \emph{for} (German \textit{Bundesanzeiger}, private or
-PDF-only filers) --- \texttt{accuracy} gives an \textbf{aggregate} gauge against an external provider.
+\emph{jurisdiction-general} --- one structural pipeline, no per-filer tuning. Two exported functions let you
+judge it on \emph{your own} filings, each returning data (not just printing):
 
-\texttt{accuracy} lives in the load-on-demand harness \texttt{src/sources/pdf\_scorecard.jl} (the same
-\texttt{PdfScorecard} module whose \texttt{report()} prints the per-stage extraction scorecard --- located
-$\to$ tables $\to$ facts $\to$ balance-sheet cross-foot --- over a fixture set). It runs the generic path over
-every fixture and compares its five headline totals (Assets, Equity, Revenue, Net income, Operating cash flow)
-to Yahoo Finance (via the shared oracle, \S\ref{sec:oracle-api}), printing a per-fixture $\checkmark$/$\times$
-grid and the aggregate hit-rate:
+\begin{itemize}
+\item \texttt{coverage(x)} --- the per-stage \textbf{funnel}: how far up the conveyor a report gets
+  (\emph{parsed} $\to$ \emph{located} $\to$ \emph{tables} $\to$ \emph{facts} $\to$ balance-sheet
+  \emph{cross-foot}), and the stage where it stops. \texttt{x} is a \texttt{Filing}, a PDF path, a
+  \texttt{Vector} of them, or already-extracted \texttt{FactRow}s. Network-free (the tables/facts stages need
+  the Tier-2 Docling stack).
+\item \texttt{accuracy(x; oracle, tol)} --- \textbf{correctness}: the five headline totals (Assets, Equity,
+  Revenue, Net income, Operating cash flow) against an independent \texttt{oracle}. \texttt{oracle = :yahoo}
+  compares to an external provider (needs a \texttt{ticker}; \S\ref{sec:oracle-api}); \texttt{oracle =
+  :xbrl\_twin} compares to the \emph{same} filer's own iXBRL filing (a \texttt{twin} \texttt{Filing}) --- the
+  dual-format check that needs no third party (\S\ref{sec:validation-crossformat}). Returns one row per metric
+  --- \texttt{(metric, statement, extracted, reference, rel\_diff, within\_tol)} --- plus the aggregate
+  \texttt{rate}.
+\end{itemize}
 
 \begin{lstlisting}
-julia> using EDGAR, PythonCall
-julia> include(joinpath(pkgdir(EDGAR), "src", "sources", "pdf_scorecard.jl"));
-julia> using .PdfScorecard
-julia> PdfScorecard.accuracy()          # five headline totals vs Yahoo, aggregated across fixtures
-==== 2R.G - generic-PDF headline accuracy vs yahoo (tol 1%) ====
-fixture     lang  Assets      Equity      Revenue     NetIncome   OperCashFlow
-------------------------------------------------------------------------------
-TotalEner.  fr    OK          OK          OK          x0.6%       OK
-...
-headline totals within 1%: .../...  - generic fallback, misses expected
+julia> using EDGAR, PythonCall             # PythonCall activates the Docling (Tier-2) extension
+julia> f = fetch_filing(Generic(), "report.pdf");
+
+julia> coverage(f)                         # where does the conveyor stop?
+(source = "report.pdf", lang = "fr", pages = 372, located = (421, 427), tables = 9,
+ facts = 43, types = Set(["BalanceSheet","IncomeStatement","CashFlow"]),
+ reconcile = :ok, error = "")               # reconcile: :ok / :off / :partial / :na
+
+julia> res = accuracy(f; oracle = :yahoo, ticker = "TTE.PA");  # five totals vs Yahoo
+julia> res.rate                            # aggregate hit-rate within tol (default 1%)
+0.8
+julia> res.rows[1]
+(metric = "Assets", statement = :bs, extracted = ..., reference = ...,
+ rel_diff = 0.0, within_tol = true)
 \end{lstlisting}
 
-It is an \emph{honest, statistical} gauge: the deterministic fallback is judged over a \emph{sample}, and
+Both are \emph{honest, statistical} gauges: the deterministic fallback is judged over a \emph{sample}, and
 misses are reported as data --- \textbf{not} hand-patched per filer (that would defeat the point of a generic
-extractor). A filer that also files structured data --- an ESEF issuer with an iXBRL twin --- should read its
-exact figures through the jurisdiction path (Chapter~\ref{sys:esef}), not the PDF fallback; \texttt{accuracy}
-only measures how good the no-tuning generic path is where that alternative is absent.
+extractor). \texttt{coverage} tells you \emph{where} a report falls off the conveyor (a language that does not
+locate, a statement Docling does not surface); \texttt{accuracy} tells you whether the numbers that \emph{did}
+come through are right. A filer that also files structured data --- an ESEF issuer with an iXBRL twin --- should
+read its exact figures through the jurisdiction path (Chapter~\ref{sys:esef}), not the PDF fallback (or pass
+that twin to \texttt{accuracy(...; oracle = :xbrl\_twin)}); the generic gauges measure only how good the
+no-tuning path is where that alternative is absent. The project's own regression panel --- the born-digital
+fixtures spanning languages --- runs these same two functions as a gated test (\texttt{EDGAR\_PDF\_SCORECARD=true});
+it is internal, not a user entry point.
 
 \section{Financial Data (XBRL)}
 \label{sec:api-xbrl}

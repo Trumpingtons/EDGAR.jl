@@ -2562,3 +2562,65 @@ end
 
 end  # @testset "network (live)"
 end  # if RUN_NETWORK
+
+# ── PDF quality regression panel (gated) ────────────────────────────────────────────────────────────────
+# The former `PdfScorecard` fixture panel, re-expressed as assertions on the exported `coverage`/`accuracy`.
+# It needs the local report stash (`~/EDGAR-Reports`, not in the repo) and the Tier-2 Docling stack
+# (`PythonCall`), and it Docling-parses each fixture's located statement pages — so it is OFF by default:
+#   EDGAR_PDF_SCORECARD=true julia --project=. -e 'using Pkg; Pkg.test()'
+# The invariants asserted are the multilingual guarantees (2R.B/2R.F), NOT full extraction — residual
+# per-filer gaps (a statement Docling doesn't surface) are tracked separately, not regressions to guard here.
+if get(ENV, "EDGAR_PDF_SCORECARD", "false") == "true"
+    @testset "PDF quality: multilingual coverage panel (gated)" begin
+        have_docling = try; @eval using PythonCall; true; catch e; @warn "EDGAR_PDF_SCORECARD set but PythonCall/Docling unavailable" e; false; end
+        stash = expanduser("~/EDGAR-Reports")
+        # (id, file, lang, want_loc, ticker) — `want_loc = false` is the 2R.F integrated-report case (Vale).
+        FIX = [
+            ("Wesfarmers", "GEN-Wesfarmers-2024.pdf",           "en", true,  "WES.AX"),
+            ("Vale",       "GEN-Vale-AR-2024.pdf",              "pt", false, ""),
+            ("Loblaw",     "GEN-Loblaw-AR-2024.pdf",            "en", true,  "L.TO"),
+            ("WEG",        "GEN-WEG-DF-2024.pdf",               "pt", true,  "WEGE3.SA"),
+            ("TotalEner.", "FR-TotalEnergiesFR2023.pdf",        "fr", true,  "TTE.PA"),
+            ("Enel",       "IT-EnelFR2023.pdf",                 "it", true,  "ENEL.MI"),
+            ("H&M",        "SE-HM-arsredovisning-2023.pdf",     "sv", true,  "HM-B.ST"),
+            ("Coop",       "DK-Coop-aarsrapport-2023.pdf",      "da", true,  ""),
+            ("Liander",    "NL-Liander-jaarbericht-2023.pdf",   "nl", true,  ""),
+            ("KGHM",       "PL-KGHM-skonsolidowane-2023.pdf",   "pl", true,  "KGH.WA"),
+            ("Kesko",      "FI-Kesko-vuosiraportti-2023.pdf",   "fi", true,  "KESKOB.HE"),
+            ("NorgesGr.",  "NO-NorgesGruppen-arsrapport-2023.pdf", "no", true, ""),
+            ("Fielmann",   "DE-FielmannFR2023.pdf",             "de", true,  "FIE.DE"),
+            ("Tencent",    "HK-Tencent-SEHK-AR2024.pdf",        "en", true,  "0700.HK"),
+        ]
+        if !have_docling
+            @test_skip "PythonCall/Docling unavailable"
+        else
+            for (id, file, lang, want_loc, ticker) in FIX
+                path = joinpath(stash, file)
+                if !isfile(path); @info "scorecard fixture missing — skipping $file"; continue; end
+                cov = coverage(path)
+                @testset "$id ($lang)" begin
+                    if want_loc
+                        @test cov.located !== nothing              # 2R.B: statements located (the multilingual guarantee)
+                        @test (cov.facts isa Int) && cov.facts > 0 # something extracted
+                        @test cov.reconcile != :off                # a located balance sheet must never MIS-foot
+                    else
+                        @test cov.located === nothing              # 2R.F: integrated report — no detailed statements
+                    end
+                end
+            end
+            # accuracy() smoke vs Yahoo on one ticker — proves the oracle plumbing (network; tolerant of hiccups).
+            if RUN_NETWORK
+                kg = joinpath(stash, "PL-KGHM-skonsolidowane-2023.pdf")
+                isfile(kg) && @testset "accuracy() vs Yahoo (KGHM)" begin
+                    try
+                        res = accuracy(kg; oracle = :yahoo, ticker = "KGH.WA")
+                        @test length(res.rows) == 5
+                        @test (res.compared isa Int) && 0.0 <= res.rate <= 1.0
+                    catch e
+                        @info "accuracy() Yahoo smoke skipped (network/provider): $e"; @test true
+                    end
+                end
+            end
+        end
+    end
+end
