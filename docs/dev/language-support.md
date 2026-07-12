@@ -29,7 +29,7 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 | Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **~10**: en de fr es it pt ru · zh ja ko | per-class heading regexes |
 | Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` (+ `_DE_STEMS`) | **6**: en pt fr it es de | per-language statement-name patterns |
 | Month-name parsing | `extractors/ifrs_pdf.jl` → `_IFRS_MONTHS` / `_MON` | **16** (step 2; was 6) — re-homed to the registry, all languages | month-name → number, per `LanguageProfile` |
-| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **5**: en de fr it pt | pattern branches per statement |
+| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **6**: en de fr it pt es | pattern branches per statement |
 | Number locale (separators) | `extractors/facts_derive.jl` → `_AMOUNT_LOCALE` / `amount_locale` | 3 separator **classes** | by **country** → `:en` / `:eu_dot` / `:eu_space` |
 
 ### Consumers (derive the presentation language, then use the tables above)
@@ -44,7 +44,7 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 ## The observations
 
 1. **A coverage funnel, widening the wrong way.** We can *detect* 16 languages, *classify* statement tables in
-   ~10, but only *locate* primary statements in 6 and *map line-item labels* in 5. A report can be recognised as
+   ~10, but only *locate* primary statements in 6 and *map line-item labels* in 6. A report can be recognised as
    Finnish or Dutch prose and still be un-extractable, because statement location and label mapping do not reach
    that far.
 2. **No single source of truth.** The supported set is defined implicitly and differently in six places. Adding
