@@ -26,7 +26,7 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 | Component | Where (`file` → symbol) | Languages covered | Keyed by |
 |---|---|---|---|
 | Prose language detection | `core/narratives.jl` → `_LANG_MARKERS` + `_detect_lang` | **16**: en pt es fr de it nl sv da no fi pl · ja ko zh ru | marker words (Latin) / script ranges (CJK, Cyrillic) |
-| Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **~10**: en de fr es it pt ru · zh ja ko | per-class heading regexes |
+| Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **16**: en pt es fr de it nl sv da no fi pl · zh ja ko ru | per-class heading regexes |
 | Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` (+ `_DE_STEMS`) | **6**: en pt fr it es de | per-language statement-name patterns |
 | Month-name parsing | `extractors/ifrs_pdf.jl` → `_IFRS_MONTHS` / `_MON` | **16** (step 2; was 6) — re-homed to the registry, all languages | month-name → number, per `LanguageProfile` |
 | Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **6**: en de fr it pt es | pattern branches per statement |
@@ -43,10 +43,10 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 
 ## The observations
 
-1. **A coverage funnel, widening the wrong way.** We can *detect* 16 languages, *classify* statement tables in
-   ~10, but only *locate* primary statements in 6 and *map line-item labels* in 6. A report can be recognised as
-   Finnish or Dutch prose and still be un-extractable, because statement location and label mapping do not reach
-   that far.
+1. **A coverage funnel, widening the wrong way.** We can *detect* 16 languages and *classify* statement tables in
+   16, but only *locate* primary statements in 6 and *map line-item labels* in 6. A report can be recognised as
+   Finnish or Dutch prose, and its tables classified, and still be un-extractable, because statement location and
+   label mapping do not reach that far.
 2. **No single source of truth.** The supported set is defined implicitly and differently in six places. Adding
    a language means editing each table that should cover it, with nothing enforcing that they agree.
 3. **No defined "add a language" process.** There is no registry entry to fill, no completeness check that says
