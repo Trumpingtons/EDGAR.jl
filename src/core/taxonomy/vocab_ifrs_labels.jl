@@ -117,6 +117,44 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         occursin(r"^total\s*pasivo\s*y\s*patrimonio\s*neto$"i, t)    && return C("ifrs-full:EquityAndLiabilities", :credit)
         occursin(r"^patrimonio\s*neto atribuido a la dominante"i, t) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
         occursin(r"^patrimonio\s*neto$"i, t)                         && return C("ifrs-full:Equity", :credit)
+        # Nordic (sv/da). Docling glues ALL-CAPS Swedish totals ("SUMMATILLGÅNGAR", "SUMMAEGETKAPITAL"), so
+        # allow optional spaces. Test the current/non-current subtotals before the umbrella totals. sv "summa"
+        # = total; da "… i alt" = total, with "aktiver" (assets) / "passiver" (equity+liabilities) sides.
+        (occursin(r"^summa\s*anläggningstillgångar$"i, t) || occursin(r"^anlægsaktiver i alt$"i, t)) && return C("ifrs-full:NoncurrentAssets", :debit)  # sv/da
+        (occursin(r"^summa\s*omsättningstillgångar$"i, t) || occursin(r"^omsætningsaktiver i alt$"i, t)) && return C("ifrs-full:CurrentAssets", :debit)
+        (occursin(r"^summa\s*eget\s*kapital\s*och\s*skulder$"i, t) || occursin(r"^passiver i alt$"i, t)) && return C("ifrs-full:EquityAndLiabilities", :credit)
+        (occursin(r"^summa\s*tillgångar$"i, t) || occursin(r"^aktiver i alt$"i, t)) && return C("ifrs-full:Assets", :debit)
+        (occursin(r"^summa\s*eget\s*kapital$"i, t) || occursin(r"^egenkapital i alt$"i, t)) && return C("ifrs-full:Equity", :credit)
+        # Dutch (nl, Liander): "Totaal activa/vaste activa/vlottende activa", "Totaal (eigen vermogen en)
+        # verplichtingen", "Totaal eigen vermogen". Anchored, so the subtotals don't match the umbrella totals.
+        occursin(r"^totaal vaste activa$"i, t)                       && return C("ifrs-full:NoncurrentAssets", :debit)  # nl
+        occursin(r"^totaal vlottende activa$"i, t)                   && return C("ifrs-full:CurrentAssets", :debit)
+        occursin(r"^totaal langlopende verplichtingen$"i, t)         && return C("ifrs-full:NoncurrentLiabilities", :credit)
+        occursin(r"^totaal kortlopende verplichtingen$"i, t)         && return C("ifrs-full:CurrentLiabilities", :credit)
+        occursin(r"^totaal eigen vermogen en verplichtingen$"i, t)   && return C("ifrs-full:EquityAndLiabilities", :credit)
+        occursin(r"^totaal verplichtingen$"i, t)                     && return C("ifrs-full:Liabilities", :credit)
+        occursin(r"^totaal activa$"i, t)                             && return C("ifrs-full:Assets", :debit)
+        occursin(r"^totaal eigen vermogen$"i, t)                     && return C("ifrs-full:Equity", :credit)
+        # Polish (pl, KGHM). "RAZEM AKTYWA", "Aktywa trwałe/obrotowe", "Kapitał własny (akcjonariuszy Jednostki
+        # Dominującej)", "RAZEM ZOBOWIĄZANIA I KAPITAŁ WŁASNY". Anchored; owners'-of-parent tested via its own line.
+        occursin(r"^aktywa trwałe$"i, t)                             && return C("ifrs-full:NoncurrentAssets", :debit)  # pl
+        occursin(r"^aktywa obrotowe$"i, t)                           && return C("ifrs-full:CurrentAssets", :debit)
+        occursin(r"^zobowiązania długoterminowe$"i, t)               && return C("ifrs-full:NoncurrentLiabilities", :credit)
+        occursin(r"^zobowiązania krótkoterminowe$"i, t)              && return C("ifrs-full:CurrentLiabilities", :credit)
+        occursin(r"^(?:razem aktywa|aktywa razem)$"i, t)             && return C("ifrs-full:Assets", :debit)
+        occursin(r"^(?:razem zobowiązania i kapitał własny|kapitał własny i zobowiązania razem)$"i, t) && return C("ifrs-full:EquityAndLiabilities", :credit)
+        occursin(r"^kapitał własny akcjonariuszy jednostki dominującej$"i, t) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)
+        occursin(r"^kapitał własny$"i, t)                            && return C("ifrs-full:Equity", :credit)
+        # Finnish (fi, Kesko) "… yhteensä" / Norwegian (no, NorgesGruppen) "Sum …". Docling may glue fi
+        # "Oma pääoma" → "omapääoma", so allow an optional space.
+        (occursin(r"^pitkäaikaiset varat yhteensä$"i, t) || occursin(r"^sum anleggsmidler$"i, t)) && return C("ifrs-full:NoncurrentAssets", :debit)  # fi/no
+        (occursin(r"^lyhytaikaiset varat yhteensä$"i, t) || occursin(r"^sum omløpsmidler$"i, t)) && return C("ifrs-full:CurrentAssets", :debit)
+        (occursin(r"^pitkäaikaiset velat yhteensä$"i, t) || occursin(r"^sum langsiktig gjeld$"i, t)) && return C("ifrs-full:NoncurrentLiabilities", :credit)
+        (occursin(r"^lyhytaikaiset velat yhteensä$"i, t) || occursin(r"^sum kortsiktig gjeld$"i, t)) && return C("ifrs-full:CurrentLiabilities", :credit)
+        (occursin(r"^oma ?pääoma ja velat yhteensä$"i, t) || occursin(r"^sum egenkapital og gjeld$"i, t)) && return C("ifrs-full:EquityAndLiabilities", :credit)
+        (occursin(r"^velat yhteensä$"i, t) || occursin(r"^sum gjeld$"i, t)) && return C("ifrs-full:Liabilities", :credit)
+        (occursin(r"^varat yhteensä$"i, t) || occursin(r"^sum eiendeler$"i, t)) && return C("ifrs-full:Assets", :debit)
+        (occursin(r"^oma ?pääoma yhteensä$"i, t) || occursin(r"^sum egenkapital$"i, t)) && return C("ifrs-full:Equity", :credit)
 
     elseif statement == "IncomeStatement"
         (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
@@ -178,6 +216,33 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         occursin(r"^resultados?\s*antes\s*de\s*impuestos"i, t)   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         occursin(r"^resultado\s*neto\s*atribuido\s*a\s*la\s*dominante"i, t) && return C("ifrs-full:ProfitLossAttributableToOwnersOfParent", :credit)
         occursin(r"^resultado\s*neto\s*del\s*ejercicio"i, t)     && return C("ifrs-full:ProfitLoss", :credit)
+        # Nordic (sv/da). Revenue: sv "Nettoomsättning" / da "Nettoomsætning". EBIT: sv "Rörelseresultat" /
+        # da "Driftsresultat". Pre-tax: sv "Resultat efter finansiella poster" (the Swedish pre-tax subtotal) /
+        # da "Resultat før skat". Net: sv/da "Årets resultat" (shared).
+        (t == "nettoomsättning" || t == "nettoomsætning")       && return C("ifrs-full:Revenue", :credit)  # sv/da
+        (t == "rörelseresultat" || t == "driftsresultat")       && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        (occursin(r"^resultat efter finansiella poster$"i, t) || occursin(r"^resultat før skat$"i, t)) && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        occursin(r"^årets resultat$"i, t)                        && return C("ifrs-full:ProfitLoss", :credit)
+        # Dutch (nl, Liander): "Netto-omzet"; EBIT "Bedrijfsresultaat"; pre-tax "Resultaat voor belastingen";
+        # net "Resultaat na belastingen".
+        occursin(r"^netto-?omzet$"i, t)                          && return C("ifrs-full:Revenue", :credit)  # nl
+        occursin(r"^bedrijfsresultaat$"i, t)                     && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        occursin(r"^resultaat voor belastingen$"i, t)            && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        occursin(r"^resultaat na belastingen$"i, t)              && return C("ifrs-full:ProfitLoss", :credit)
+        # Polish (pl, KGHM): revenue "Przychody z umów z klientami" / "Przychody (netto) ze sprzedaży"; operating
+        # "Zysk (strata) z działalności operacyjnej"; pre-tax "…przed opodatkowaniem"; net "(Strata)/zysk netto"
+        # (NOT "…ze sprzedaży", the profit-on-sales subtotal, nor "…przypadający", the attribution line).
+        occursin(r"^przychody (?:z umów z klientami|netto ze sprzedaży|ze sprzedaży)"i, t) && return C("ifrs-full:Revenue", :credit)  # pl
+        occursin(r"zysk.{0,12}z działalności operacyjnej$"i, t)  && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        occursin(r"przed opodatkowaniem$"i, t)                   && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        occursin(r"^(?:\(?strata\)?/zysk|zysk(?: \(strata\))?) netto$"i, t) && return C("ifrs-full:ProfitLoss", :credit)
+        # Finnish (fi): "Liikevaihto"/"Liikevoitto"/"Tulos ennen veroja"/"Tilikauden tulos". Norwegian (no):
+        # "Sum driftsinntekter"/"Resultat før skattekostnad"/"Årsresultat" (operating "Driftsresultat" shared
+        # with da/sv above).
+        (occursin(r"^liikevaihto$"i, t) || occursin(r"^sum driftsinntekter$"i, t)) && return C("ifrs-full:Revenue", :credit)  # fi/no
+        (occursin(r"^liikevoitto$"i, t) || occursin(r"^liiketulos$"i, t)) && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        (occursin(r"^tulos ennen veroja$"i, t) || occursin(r"^resultat før skat(?:t|tekostnad)?$"i, t)) && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        (occursin(r"^tilikauden tulos$"i, t) || occursin(r"^årsresultat$"i, t)) && return C("ifrs-full:ProfitLoss", :credit)
 
     elseif statement == "CashFlow"
         # "net cash from/used in", "cash generated from", or "cash flow(s) from/used in/provided by" + the
@@ -216,6 +281,32 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
          occursin(r"fluxo de caixa.*atividades? de financiamento"i, t) || occursin(r"flujos.*actividades de financiación"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
         (occursin(r"incremento.*decremento.*disponibilità liquide"i, t) || occursin(r"augmentation.*diminution.*trésorerie"i, t) ||
          occursin(r"(?:redução|aumento).*(?:caixa|equivalentes)"i, t) || occursin(r"variación neta de efectivo"i, t))  && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # --- Nordic (sv/da). Docling glues ALL-CAPS Swedish totals ("KASSAFLÖDEFRÅNDENLÖPANDEVERKSAMHETEN"), so
+        # allow optional spaces. sv "Kassaflöde från den löpande verksamheten / investeringsverksamheten /
+        # finansieringsverksamheten"; da "Pengestrømme (vedrørende|fra) drift / investeringer / finansiering".
+        (occursin(r"kassaflöde\s*från\s*den\s*löpande\s*verksamheten"i, t) || occursin(r"pengestrømme (?:vedrørende|fra) drift"i, t)) && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)
+        (occursin(r"kassaflöde\s*från\s*investeringsverksamheten"i, t) || occursin(r"pengestrømme (?:vedrørende|fra) investering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        (occursin(r"kassaflöde\s*från\s*finansieringsverksamheten"i, t) || occursin(r"pengestrømme (?:vedrørende|fra) finansiering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        (occursin(r"^årets kassaflöde$"i, t) || occursin(r"^årets ændring i likvide beholdninger$"i, t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # Dutch (nl, Liander): "Kasstroom uit operationele/investerings/financieringsactiviteiten"; net change
+        # "Nettokasstroom" / "Mutatie geldmiddelen".
+        occursin(r"kasstroom uit operationele activiteiten"i, t) && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)  # nl
+        occursin(r"kasstroom uit investeringsactiviteiten"i, t)  && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        occursin(r"kasstroom uit financieringsactiviteiten"i, t) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        (occursin(r"^nettokasstroom$"i, t) || occursin(r"^mutatie geldmiddelen"i, t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # Polish (pl, KGHM): "Przepływy pieniężne netto z działalności operacyjnej/inwestycyjnej/finansowej";
+        # net change "PRZEPŁYWY PIENIĘŻNE NETTO" / "Zmiana stanu środków pieniężnych".
+        occursin(r"przepływy pieniężne netto z działalności operacyjnej"i, t)  && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)  # pl
+        occursin(r"przepływy pieniężne netto z działalności inwestycyjnej"i, t) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        occursin(r"przepływy pieniężne netto z działalności finansowej"i, t)   && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        (occursin(r"^przepływy pieniężne netto$"i, t) || occursin(r"^zmiana stanu środków pieniężnych"i, t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # Finnish (fi): "Liiketoiminnan/Investointien/Rahoituksen nettorahavirta"; net "Rahavarojen muutos".
+        # Norwegian (no): "Netto kontantstrøm(mer) fra operasjonelle/investerings/finansieringsaktiviteter";
+        # net "Netto endring i bankinnskudd og kontanter".
+        (occursin(r"liiketoiminnan nettorahavirta"i, t) || occursin(r"netto kontantstrøm(?:mer)? fra operasjonelle"i, t)) && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)  # fi/no
+        (occursin(r"investointien nettorahavirta"i, t) || occursin(r"netto kontantstrøm(?:mer)? fra investering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        (occursin(r"rahoituksen nettorahavirta"i, t) || occursin(r"netto kontantstrøm(?:mer)? fra finansiering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        (occursin(r"^rahavarojen muutos$"i, t) || occursin(r"netto endring i (?:bankinnskudd|kontanter)"i, t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
     end
     return nothing
 end

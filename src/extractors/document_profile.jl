@@ -34,7 +34,8 @@ const TABLE_CLASSES = TableClass[
         r"balance de situación"i,   # es — traditional Spanish PGC term (Inditex), alongside the IFRS "estado de situación financiera"
         # nl/sv/da/no/fi/pl — local-GAAP balance-sheet headings (bare terms need \b so they don't over-match;
         # sv "balansräkning" / pl "bilans" have no boundary after the stem, so they stay separate from nl "balans")
-        r"balansräkning"i, r"\bbalans\b"i, r"\bbalancen?\b"i, r"\bbalansen?\b"i, r"\btase(?:et)?\b"i, r"\bbilans\b"i,
+        r"balansräkning"i, r"\bbalans\b"i, r"\bbalancen?\b"i, r"\bbalansen?\b"i, r"(?:konserni)?tase(?:et)?\b"i, r"\bbilans\b"i,   # fi "tase"/"konsernitase" (compound)
+        r"sprawozdanie z sytuacji finansowej"i,   # pl (IFRS-form name, alongside the traditional "bilans")
         r"资产负债表", r"財政状態計算書|貸借対照表", r"재무상태표|대차대조표",
         r"отч[её]т о финансовом положении"i, r"бухгалтерский баланс"i]),
     TableClass("income_statement", "statement", "Income statement / profit or loss / comprehensive income", [
@@ -47,7 +48,7 @@ const TABLE_CLASSES = TableClass[
         r"demonstraç(?:ão|ões) d[eo]s? resultados?"i,   # pt "Demonstração do Resultado (do Exercício)"
         r"resultaträkning"i, r"resultatregnskap"i, r"resultatopgørelse"i,   # sv/no/da income statement
         r"winst-?\s*en\s*verliesrekening"i, r"resultatenrekening"i,   # nl P&L (both forms)
-        r"tuloslaskelma"i, r"rachunek zysków i strat"i,   # fi / pl P&L
+        r"(?<!laaja )tuloslaskelma"i, r"rachunek zysków i strat"i, r"sprawozdanie z wyniku"i,   # fi P&L (exclude OCI "laaja tuloslaskelma") / pl
         r"利润表|损益表|综合收益表", r"損益計算書|包括利益計算書", r"손익계산서|포괄손익계산서",
         r"отч[её]т о (?:прибыл|совокупном доходе|финансовых результатах)"i, r"о прибыли или убытке"i]),
     TableClass("cash_flow", "statement", "Cash-flow statement", [

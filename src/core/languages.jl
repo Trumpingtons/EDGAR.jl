@@ -128,6 +128,48 @@ const _SP_DE = Dict(
     :bs => _dekonz("bilanz"),
     :cf => _dekonz("kapitalflussrechnung"),
     :eq => "entwicklung des konzern[-\\s]*eigenkapitals|" * _dekonz("eigenkapitalveränderungsrechnung|eigenkapitalentwicklung"))
+# Nordic statement names (distinctive local-GAAP/IFRS headings, so "koncern"/"koncernens" is not required to
+# disambiguate — unlike English). sv from H&M's "Koncernens resultaträkning/balansräkning/kassaflödesanalys/
+# förändring i eget kapital"; da from Coop's "Resultatopgørelse/Balance(n)/Pengestrømsopgørelse/
+# Egenkapitalopgørelse". :is is the P&L only (the separate comprehensive-income/totalresultat report is left
+# out, so its "Årets resultat" line does not duplicate profit).
+const _SP_SV = Dict(
+    :is => "resultaträkning",
+    :bs => "balansräkning",
+    :cf => "kassaflödesanalys",
+    :eq => "förändring(?:ar)? i eget kapital")
+const _SP_DA = Dict(
+    :is => "resultatopgørelse",
+    :bs => "balancen?\\b",
+    :cf => "pengestrømsopgørelse",
+    :eq => "egenkapitalopgørelse")
+# Dutch (Liander): "Geconsolideerde winst- en verliesrekening / balans / kasstroomoverzicht / Mutatieoverzicht
+# … eigen vermogen". `\bbalans\b` so it does not swallow Swedish "balansräkning" in the shared language sniff.
+const _SP_NL = Dict(
+    :is => "winst[-\\s]*en[-\\s]*verliesrekening",
+    :bs => "\\bbalans\\b",
+    :cf => "kasstroomoverzicht",
+    :eq => "(?:mutatieoverzicht|wijzigingen|mutaties).{0,30}eigen vermogen")
+# Polish (KGHM): IFRS-form "sprawozdanie z wyniku / z sytuacji finansowej / z przepływów pieniężnych / ze zmian
+# w kapitale własnym", plus the traditional "rachunek zysków i strat" / "bilans" forms other filers use.
+const _SP_PL = Dict(
+    :is => "sprawozdanie z wyniku|rachunek zysków i strat",
+    :bs => "sprawozdanie z sytuacji finansowej|\\bbilans\\b",
+    :cf => "sprawozdanie z przepływów pieniężnych|rachunek przepływów pieniężnych",
+    :eq => "(?:sprawozdanie ze|zestawienie) zmian w kapitale własnym")
+# Finnish (Kesko): "Konsernin tuloslaskelma / Konsernitase / rahavirtalaskelma / oman pääoman muutoksista".
+# :is excludes the OCI "laaja tuloslaskelma" via lookbehind; :bs matches the "konsernitase" compound.
+const _SP_FI = Dict(
+    :is => "(?<!laaja )tuloslaskelma",
+    :bs => "(?:konserni)?tase\\b",
+    :cf => "rahavirtalaskelma",
+    :eq => "oman pääoman muuto")
+# Norwegian (NorgesGruppen): "Resultatregnskap / Balanse / Kontantstrømoppstilling / endringer i egenkapital".
+const _SP_NO = Dict(
+    :is => "resultatregnskap",
+    :bs => "\\bbalanse\\b",
+    :cf => "kontantstrøm",
+    :eq => "endringer i egenkapital")
 
 const SUPPORTED_LANGS = LanguageProfile[
     _lp("en", "English",    :latin, (" the "," and "," of "," to "," in "," is "," for "," was "," with "," that "," on "," as "," by "," are "), _M_EN, :tableclass, :labels, :locale; jurisdiction = "HK", stmt_patterns = _SP_EN),
@@ -136,12 +178,12 @@ const SUPPORTED_LANGS = LanguageProfile[
     _lp("fr", "French",     :latin, (" de "," la "," le "," et "," des "," les "," une "," pour "," est "," du "," à "," qui "," dans "," sur "), _M_FR, :tableclass, :labels, :locale; jurisdiction = "FR", stmt_patterns = _SP_FR),
     _lp("de", "German",     :latin, (" und "," der "," die "," das "," den "," von "," mit "," für "," ist "," im "," ein "," auf ","ß"," zu "), _M_DE, :tableclass, :labels, :locale; jurisdiction = "DE", stmt_patterns = _SP_DE),
     _lp("it", "Italian",    :latin, (" di "," il "," la "," che "," del "," per "," con "," una "," dei "," è "," gli "," nel "," non "," sono "), _M_IT, :tableclass, :labels, :locale; jurisdiction = "IT", stmt_patterns = _SP_IT),
-    _lp("nl", "Dutch",      :latin, (" de "," het "," een "," van "," en "," op "," voor "," met "," dat "," die "," zijn "," aan "," niet "," wordt "), _M_NL, :tableclass, :locale),
-    _lp("sv", "Swedish",    :latin, (" och "," att "," det "," som "," för "," med "," av "," är "," på "," till "," inte "," ett "," en "), _M_SV, :tableclass),
-    _lp("da", "Danish",     :latin, (" og "," at "," det "," som "," for "," med "," af "," er "," på "," til "," ikke "," en ","æ","ø"), _M_DA, :tableclass),
-    _lp("no", "Norwegian",  :latin, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø"), _M_NO, :tableclass),
-    _lp("fi", "Finnish",    :latin, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös "), _M_FI, :tableclass),
-    _lp("pl", "Polish",     :latin, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub "), _M_PL, :tableclass),
+    _lp("nl", "Dutch",      :latin, (" de "," het "," een "," van "," en "," op "," voor "," met "," dat "," die "," zijn "," aan "," niet "," wordt "), _M_NL, :tableclass, :labels, :locale; jurisdiction = "NL", stmt_patterns = _SP_NL),
+    _lp("sv", "Swedish",    :latin, (" och "," att "," det "," som "," för "," med "," av "," är "," på "," till "," inte "," ett "," en "), _M_SV, :tableclass, :labels, :locale; jurisdiction = "SE", stmt_patterns = _SP_SV),
+    _lp("da", "Danish",     :latin, (" og "," at "," det "," som "," for "," med "," af "," er "," på "," til "," ikke "," en ","æ","ø"), _M_DA, :tableclass, :labels, :locale; jurisdiction = "DK", stmt_patterns = _SP_DA),
+    _lp("no", "Norwegian",  :latin, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø"), _M_NO, :tableclass, :labels, :locale; jurisdiction = "NO", stmt_patterns = _SP_NO),
+    _lp("fi", "Finnish",    :latin, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös "), _M_FI, :tableclass, :labels, :locale; jurisdiction = "FI", stmt_patterns = _SP_FI),
+    _lp("pl", "Polish",     :latin, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub "), _M_PL, :tableclass, :labels, :locale; jurisdiction = "PL", stmt_patterns = _SP_PL),
     _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :locale),
     _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :locale),
     _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale),

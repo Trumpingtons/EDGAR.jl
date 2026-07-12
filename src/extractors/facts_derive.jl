@@ -14,9 +14,9 @@
 # separator one. Japanese negative sign is △/▲ (handled below), and CJK may use full-width digits.
 
 const _AMOUNT_LOCALE = Dict(
-    "FR" => :eu_space, "RU" => :eu_space,
+    "FR" => :eu_space, "RU" => :eu_space, "SE" => :eu_space, "NO" => :eu_space, "FI" => :eu_space, "PL" => :eu_space,  # space thousands, comma decimal
     "DE" => :eu_dot, "IT" => :eu_dot, "ES" => :eu_dot, "PT" => :eu_dot, "BR" => :eu_dot,
-    "NL" => :eu_dot, "BE" => :eu_dot, "AT" => :eu_dot, "CH" => :eu_dot,
+    "NL" => :eu_dot, "BE" => :eu_dot, "AT" => :eu_dot, "CH" => :eu_dot, "DK" => :eu_dot,  # DK: dot thousands, comma decimal
     "US" => :en, "GB" => :en, "UK" => :en, "IE" => :en,
     "CN" => :en, "JP" => :en, "KR" => :en, "IN" => :en)
 

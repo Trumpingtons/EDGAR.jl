@@ -71,6 +71,13 @@ const FIXTURES = Fixture[
     Fixture(id = "WEG",        file = "GEN-WEG-DF-2024.pdf",       lang = "pt", expect = _ALL3, ticker = "WEGE3.SA"),
     Fixture(id = "TotalEner.", file = "FR-TotalEnergiesFR2023.pdf", lang = "fr", expect = _ALL3, ticker = "TTE.PA"),
     Fixture(id = "Enel",       file = "IT-EnelFR2023.pdf",         lang = "it", expect = _ALL3, ticker = "ENEL.MI"),
+    # -- Nordic/Benelux/Polish filers WITH statements (2R multilingual expansion; native-language reports) --
+    Fixture(id = "H&M",        file = "SE-HM-arsredovisning-2023.pdf",   lang = "sv", expect = _ALL3, ticker = "HM-B.ST"),
+    Fixture(id = "Coop",       file = "DK-Coop-aarsrapport-2023.pdf",    lang = "da", expect = _ALL3),   # Coop amba — unlisted (no ticker)
+    Fixture(id = "Liander",    file = "NL-Liander-jaarbericht-2023.pdf", lang = "nl", expect = _ALL3),   # Alliander subsidiary — unlisted
+    Fixture(id = "KGHM",       file = "PL-KGHM-skonsolidowane-2023.pdf", lang = "pl", expect = _ALL3, ticker = "KGH.WA"),
+    Fixture(id = "Kesko",      file = "FI-Kesko-vuosiraportti-2023.pdf", lang = "fi", expect = _ALL3, ticker = "KESKOB.HE"),
+    Fixture(id = "NorgesGr.",  file = "NO-NorgesGruppen-arsrapport-2023.pdf", lang = "no", expect = _ALL3),   # NorgesGruppen ASA — unlisted
     # -- known-good anchors (should already pass; regression guards for the fixes) --
     Fixture(id = "Fielmann",   file = "DE-FielmannFR2023.pdf",    lang = "de", expect = _ALL3, ticker = "FIE.DE"),
     Fixture(id = "Tencent",    file = "HK-Tencent-SEHK-AR2024.pdf", lang = "en", expect = _ALL3, ticker = "0700.HK"),

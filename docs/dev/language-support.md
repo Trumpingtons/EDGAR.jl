@@ -27,9 +27,9 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 |---|---|---|---|
 | Prose language detection | `core/narratives.jl` → `_LANG_MARKERS` + `_detect_lang` | **16**: en pt es fr de it nl sv da no fi pl · ja ko zh ru | marker words (Latin) / script ranges (CJK, Cyrillic) |
 | Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **16**: en pt es fr de it nl sv da no fi pl · zh ja ko ru | per-class heading regexes |
-| Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` (+ `_DE_STEMS`) | **6**: en pt fr it es de | per-language statement-name patterns |
+| Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` | **12** (all Latin): en pt es fr de it nl sv da no fi pl | per-language statement-name patterns |
 | Month-name parsing | `extractors/ifrs_pdf.jl` → `_IFRS_MONTHS` / `_MON` | **16** (step 2; was 6) — re-homed to the registry, all languages | month-name → number, per `LanguageProfile` |
-| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **6**: en de fr it pt es | pattern branches per statement |
+| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **12** (all Latin): en pt es fr de it nl sv da no fi pl | pattern branches per statement |
 | Number locale (separators) | `extractors/facts_derive.jl` → `_AMOUNT_LOCALE` / `amount_locale` | 3 separator **classes** | by **country** → `:en` / `:eu_dot` / `:eu_space` |
 
 ### Consumers (derive the presentation language, then use the tables above)
@@ -44,9 +44,9 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 ## The observations
 
 1. **A coverage funnel, widening the wrong way.** We can *detect* 16 languages and *classify* statement tables in
-   16, but only *locate* primary statements in 6 and *map line-item labels* in 6. A report can be recognised as
-   Finnish or Dutch prose, and its tables classified, and still be un-extractable, because statement location and
-   label mapping do not reach that far.
+   16, but only *locate* primary statements in 12 and *map line-item labels* in 12 — now exactly the 12
+   Latin-script languages. The remaining gap is the 4 non-Latin scripts (ja ko zh ru), which route through
+   framework-specific vocabularies (CAS / JP-GAAP / K-IFRS / RAS), not the IFRS-PDF `ifrs_label_concept` path.
 2. **No single source of truth.** The supported set is defined implicitly and differently in six places. Adding
    a language means editing each table that should cover it, with nothing enforcing that they agree.
 3. **No defined "add a language" process.** There is no registry entry to fill, no completeness check that says
