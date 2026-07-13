@@ -169,33 +169,43 @@ accuracy(path::AbstractString; kwargs...) = accuracy(extract_ifrs_pdf(expanduser
 # Scale is NOT a document property: a report can print its income statement "in millions" and its balance sheet
 # in FULL units (Enel). So resolve it PER STATEMENT — each BS/IS/CF has its own anchor whose ORDER of magnitude
 # vs the provider tells us this statement's scale, immune to the provider's 1–2% standardisation noise.
-const _SCALE_ANCHOR = Dict("BalanceSheet" => "Assets", "IncomeStatement" => "Revenue", "CashFlow" => "OperCashFlow")
+# TWO anchors per statement (one for CF, which has only one headline flow). Scale is a UNIFORM multiplier, so
+# every anchor of a statement MUST yield the same power-of-ten gap — that agreement is the plausibility check.
+const _SCALE_ANCHORS = Dict("BalanceSheet"    => ["Assets", "Equity"],
+                            "IncomeStatement" => ["Revenue", "NetIncome"],
+                            "CashFlow"        => ["OperCashFlow"])
 
 """
     calibrate_scale(x, ticker; provider = :yahoo, system = :germany) -> Vector{FactRow}
 
-Fix each statement's SCALE against a single external anchor value — the robust primary for units, since scale
-errors are clean powers of ten. For every statement (`BalanceSheet`/`IncomeStatement`/`CashFlow`) it compares
-its anchor (`Assets`/`Revenue`/`OperCashFlow`) to `provider`'s value for that metric and, if their orders of
-magnitude differ, multiplies EVERY fact in that statement by the matching power of ten (`10^round(log10(ref/e))`).
-Order-of-magnitude only, so a 1–2% period/standardisation gap never triggers a correction. A statement whose
-anchor the provider has no value for is left untouched — the deterministic per-table scale (the offline
-fallback in `extract_ifrs_pdf`) stands. `x` is a `Vector{FactRow}`, a `Filing`, or a PDF path.
+Fix each statement's SCALE against external anchor values — the robust primary for units, since scale errors
+are clean powers of ten. For every statement (`BalanceSheet`/`IncomeStatement`/`CashFlow`) it takes its anchors
+(BS: `Assets`+`Equity`; IS: `Revenue`+`NetIncome`; CF: `OperCashFlow`), computes each one's order-of-magnitude
+gap to `provider`'s value, and applies `10^gap` to EVERY fact in that statement **only when all anchors agree**
+on the gap. Scale is a uniform multiplier, so the anchors must agree; a disagreement means an anchor is itself
+mis-extracted (not a scale error), so the statement is left untouched — the deterministic per-table scale (the
+offline fallback in `extract_ifrs_pdf`) stands. Order-of-magnitude only, so a 1–2% period/standardisation gap
+never triggers a correction. `x` is a `Vector{FactRow}`, a `Filing`, or a PDF path.
 """
 function calibrate_scale(pdffacts::AbstractVector{FactRow}, ticker::AbstractString;
                          provider::Symbol = :yahoo, system::Symbol = :germany)
     _ensure_ua()
     p = _provider(provider); funds = provider_fetch(p, ticker)
     out = collect(pdffacts)
-    for (stmt, metricname) in _SCALE_ANCHOR
-        mi = findfirst(x -> x.name == metricname, ORACLE_METRICS); mi === nothing && continue
-        m  = ORACLE_METRICS[mi]
-        e  = _edgar_metric(out, m, system); e === nothing && continue
-        payload = m.statement === :bs ? funds.bs : m.statement === :is ? funds.is : funds.cf
-        ref = provider_value(p, payload, provider_concepts(p, m.name), e.period_end)
-        (ref === nothing || ref == 0 || e.value == 0) && continue
-        gap = round(Int, log10(abs(ref) / abs(e.value)))
-        gap == 0 && continue                                   # orders of magnitude already agree
+    for (stmt, anchors) in _SCALE_ANCHORS
+        gaps = Int[]
+        for name in anchors
+            mi = findfirst(x -> x.name == name, ORACLE_METRICS); mi === nothing && continue
+            m  = ORACLE_METRICS[mi]
+            e  = _edgar_metric(out, m, system); e === nothing && continue
+            payload = m.statement === :bs ? funds.bs : m.statement === :is ? funds.is : funds.cf
+            ref = provider_value(p, payload, provider_concepts(p, m.name), e.period_end)
+            (ref === nothing || ref == 0 || e.value == 0) && continue
+            push!(gaps, round(Int, log10(abs(ref) / abs(e.value))))
+        end
+        # every anchor must agree on the gap (scale is uniform); a mismatch flags a mis-extracted anchor → skip.
+        (isempty(gaps) || !all(==(first(gaps)), gaps)) && continue
+        gap = first(gaps); gap == 0 && continue                # orders of magnitude already agree
         factor = 10.0^gap
         for (i, r) in enumerate(out)
             r.statement == stmt && (out[i] = merge(r, (value = r.value * factor,)))
