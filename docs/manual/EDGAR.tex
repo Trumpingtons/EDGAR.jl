@@ -1127,6 +1127,63 @@ swap-ins inside the standard pipeline (table, picture, chart models).}
 \label{fig:docling-pipeline}
 \end{figure}
 
+\subsection{Standard versus the VLM pipeline}
+\label{sec:pdf-standard-vs-vlm}
+
+Given that Docling ships both, why does EDGAR.jl run the \emph{standard} pipeline rather than let a
+vision-language model read each page? The answer follows the model ladder (\S\ref{sec:model-ladder}): the VLM
+pipeline is a better \emph{fallback}, not a better default.
+
+\paragraph{Precision.} The standard pipeline's \textbf{TableFormer} is purpose-built for table \emph{structure}
+--- cell / row / column grids --- which is exactly what a dense financial statement is, and it is a
+specialised, \emph{non-generative} model. A VLM instead reads the page \emph{autoregressively} into tokens, and
+for a dense numeric table that invites the failure mode the fallback design already assumes: digit-level
+hallucination and OCR-style misreads; dropped or merged rows and misaligned columns; and degradation as the
+table grows (resolution and context limits). And the local VLMs that \emph{fit a memory budget} ---
+SmolDocling is only 256\,M --- are the weak end of the range. On precise numeric transcription of a clean
+table, TableFormer very likely \emph{beats} a 256\,M VLM, not the reverse. A 2--3\,B or a cloud VLM would
+narrow the gap, but that breaks the local-budget, privacy, and reproducibility constraints that motivated a
+local default in the first place.
+
+\paragraph{Speed.} The standard pipeline runs TableFormer and layout as mostly \emph{single-pass} models, and
+for a born-digital PDF it skips OCR entirely --- the slow part. A VLM \emph{generates} the whole page's
+structure token by token, and a dense financial page is \emph{many} output tokens, so it is slow, especially
+on the CPU a memory-constrained user runs on. For dense statements the VLM is likely \emph{slower}, not faster.
+
+\paragraph{Reproducibility.} The standard pipeline is (near-)deterministic; a VLM is autoregressive,
+temperature-sensitive, and version-fragile. For an \emph{audit} trail --- a stated goal --- that matters, and
+the standard pipeline wins.
+
+\paragraph{Where the VLM does win.} Exactly the hard minority: pages TableFormer cannot parse --- glued text
+with no clean grid, or \emph{scanned} / OCR-heavy pages, where the VLM's \emph{joint} OCR-and-layout beats
+running OCR as a separate stage. That is the whole point of the ladder: the VLM is a \emph{gated fallback},
+invoked only when the standard pipeline fails, never the default.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Standard (TableFormer) versus VLM pipeline, by workload. The standard pipeline wins on the bulk ---
+dense, clean financial tables --- on all three axes; the VLM earns its place only on the hard, glued, or
+scanned minority, as a fallback.}
+\label{tab:standard-vs-vlm}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{Dense clean tables (the bulk)} & \textbf{Hard / scanned / glued pages} \\
+\midrule
+Precision        & \textbf{Standard} (TableFormer)            & VLM can recover what Standard cannot \\
+Speed            & \textbf{Standard} (single-pass, skips OCR) & comparable; the VLM's OCR is ``free'' here \\
+Reproducibility  & \textbf{Standard}                          & VLM weaker \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Verdict.} Do not switch wholesale: it would cost precision, speed, \emph{and} reproducibility
+on the common case to help a minority. The standard pipeline stays the default, and the VLM is used
+\emph{selectively on the pages it fails} --- the local vision-LLM fallback of the model ladder. The claim is
+also \emph{measurable}: run both pipelines over a fixture set --- the VLM pipeline (SmolDocling) against the
+standard one on a hard case and a clean one --- and compare recovered facts (precision, via the accuracy gauge
+of \S\ref{sec:pdf-accuracy}) and wall-clock. That is the honest way to turn the argument above into a number.
+
 \section{Statement classification and the PDF outline}
 \label{sec:pdf-classification}
 
