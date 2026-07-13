@@ -32,6 +32,17 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 | Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **12** (all Latin): en pt es fr de it nl sv da no fi pl | pattern branches per statement |
 | Number locale (separators) | `extractors/facts_derive.jl` → `_AMOUNT_LOCALE` / `amount_locale` | 3 separator **classes** | by **country** → `:en` / `:eu_dot` / `:eu_space` |
 
+**Chinese (`zh`) — script vs framework.** `zh` is one ISO code but two written scripts, and they route
+differently. *Detection* (`_detect_lang`, script `:han`) spans **both** scripts. *Extraction* does not:
+
+- **Simplified Chinese** — mainland (CSRC/CNINFO) filers, reporting under **CAS**. `_SP_ZH` is Simplified; a
+  match makes `extract_ifrs_pdf` delegate to `extract_cas_pdf` (`cas:` concepts). Verified on a live CN filing.
+- **Traditional Chinese** — Hong Kong / Taiwan, reporting under **HKFRS (≈ IFRS)**. It writes the statements
+  with different characters (資產負債表 vs 资产负债表), so `_SP_ZH` does **not** match it — correctly, since it
+  belongs on the IFRS path (`ifrs-full`), not CAS. A Traditional-*only* HK/TW PDF is the outstanding gap: it
+  needs Traditional statement-name + label patterns mapped to `ifrs-full` (not `cas:`). Most HK issuers file in
+  English, which already works via the IFRS path.
+
 ### Consumers (derive the presentation language, then use the tables above)
 
 - `extractors/ifrs_pdf.jl` → `_LANG_SNIFF` / `_ifrs_doc_juris`: sniffs the presentation language from the

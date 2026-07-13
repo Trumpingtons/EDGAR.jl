@@ -174,9 +174,15 @@ const _SP_NO = Dict(
 # LOCATE statements in Japanese/Korean/Russian/Chinese PDFs too — the long tail Generic is for (a filer not in
 # EDINET/DART/CNINFO). Optional 連結 (ja) / 연결 (ko) = "consolidated". For ja/ko/ru it is locate + table-class
 # only; mapping the line-item labels to `ifrs-full` (K-IFRS / JP-IFRS) or a native vocab (JP-GAAP / RAS) is the
-# follow-on, and these are standard names not yet validated against live filings. Chinese (zh) is added too,
-# but its role is DETECTION: once `extract_ifrs_pdf` sniffs a Chinese report it delegates to `extract_cas_pdf`
-# (Chinese filers report under CAS — `cas:` concepts, not `ifrs-full`).
+# follow-on, and these are standard names not yet validated against live filings.
+#
+# Chinese, and the Simplified/Traditional split: `zh` DETECTION is script-based (any Han character), so it spans
+# both scripts. But these `_SP_ZH` patterns — and everything downstream — are SIMPLIFIED Chinese for MAINLAND
+# (CSRC/CNINFO) filers, who report under CAS. `extract_ifrs_pdf` sniffs such a report and delegates to
+# `extract_cas_pdf` (`cas:` concepts, not `ifrs-full`). TRADITIONAL Chinese (Hong Kong / Taiwan) writes the same
+# statements with different characters (資產負債表 vs 资产负债表) and is NOT covered here; that is correct, because
+# Hong Kong reports under HKFRS (≈ IFRS) and belongs on the IFRS path — it must not delegate to CAS. A
+# Traditional-only HK/TW report is the outstanding gap (it needs Traditional label patterns → `ifrs-full`).
 const _SP_JA = Dict(
     :is => "(?:連結)?(?:損益計算書|包括利益計算書)",
     :bs => "(?:連結)?(?:財政状態計算書|貸借対照表)",

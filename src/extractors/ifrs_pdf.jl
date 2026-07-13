@@ -541,9 +541,11 @@ end
 function extract_ifrs_pdf(path::AbstractString)
     doc = _pdf_words(path)
     juris, lang = _ifrs_doc_juris(doc)
-    # A Chinese report is CAS, not IFRS — sniff the language here and hand off to the CAS extractor (its own
-    # statement locator + `cas:` label map). This lets the GENERIC PDF path handle a Chinese filing that was
-    # NOT discovered via CNINFO (a `China()` filing already routes to `extract_cas_pdf` upstream).
+    # A mainland (SIMPLIFIED-Chinese, CAS) report is not IFRS — sniff it here and hand off to the CAS extractor
+    # (its own statement locator + `cas:` label map). Lets the GENERIC PDF path handle a mainland filing NOT
+    # discovered via CNINFO (a `China()` filing already routes to `extract_cas_pdf` upstream). Only Simplified
+    # matches `_SP_ZH`, so a Traditional-Chinese Hong Kong report (HKFRS ≈ IFRS) is NOT delegated — it correctly
+    # stays on this IFRS path.
     lang == "zh" && return extract_cas_pdf(path)
     rng = _ifrs_statement_pages(doc)
     if rng === nothing
