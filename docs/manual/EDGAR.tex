@@ -9886,6 +9886,11 @@ Total assets were
 </p>
 \end{lstlisting}
 Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although modern tools often treat it as HTML with XML namespaces.
+  \item[LEI] \emph{Legal Entity Identifier}, the ISO~17442 twenty-character alphanumeric code that uniquely
+    identifies a legal entity worldwide (Inditex $\to$ \texttt{549300TTCXZOGZM2EY83}). It is the filer identity
+    for \textbf{ESEF} and the other XBRL-International regimes --- the non-SEC analogue of the \textbf{CIK} ---
+    and the key you discover their filings by: \texttt{discover(FilingsXBRLOrg(); lei = \ldots)}. Carried on a
+    filing as \texttt{EntityId(:lei, \ldots)}.
   \item[Period] the time a fact covers, and how it is written. \textbf{Frames}
     use \emph{calendar} periods: \texttt{CY} + year, as in \texttt{CY2022} (a full
     calendar year), \texttt{CY2022Q4} (a quarter), or \texttt{CY2022Q4I} (a single

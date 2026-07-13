@@ -122,7 +122,7 @@ accuracy("KGHM.pdf"; oracle = :yahoo, ticker = "KGH.WA")
 accuracy(pdf_filing; oracle = :xbrl_twin, twin = esef_filing)   # PDF vs the filer's own iXBRL
 ```
 """
-function accuracy(facts::AbstractVector{FactRow}; oracle::Symbol = :yahoo, tol::Float64 = 0.01,
+function accuracy(pdffacts::AbstractVector{FactRow}; oracle::Symbol = :yahoo, tol::Float64 = 0.01,
                   ticker::AbstractString = "", twin = nothing, system::Symbol = :germany)
     # oracle setup
     local p, funds, twinrows, twinsys
@@ -141,7 +141,7 @@ function accuracy(facts::AbstractVector{FactRow}; oracle::Symbol = :yahoo, tol::
 
     rows = NamedTuple[]; hit = 0; cmp = 0
     for m in ORACLE_METRICS
-        e  = _edgar_metric(facts, m, system)
+        e  = _edgar_metric(pdffacts, m, system)
         ev = e === nothing ? nothing : e.value
         pe = e === nothing ? nothing : e.period_end
         rv = if oracle === :yahoo

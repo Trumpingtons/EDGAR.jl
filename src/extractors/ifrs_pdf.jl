@@ -127,11 +127,18 @@ function _ifrs_scale_currency(sd)
                  [c.text for t in sd.tables for c in t.cells])
     u = _ifrs_unit(texts)
     u === nothing || return u
-    # fallback: magnitude alone, currency by presence (HK$ preferred — the HK default)
+    # fallback: magnitude alone, currency by presence (HK$ preferred — the HK default). The magnitude word is
+    # matched across the supported languages (sv miljoner/MSEK, fi miljoonaa, da/no millioner, nl miljoen, it
+    # milioni, es millones, pt milhões, pl milionów) — the English-only regex silently defaulted a Swedish
+    # "MSEK" report to thousands (values 1000x too small).
     text = join(texts, " ")
-    scale = occursin(r"(?i)million|\bMio\.?\b|\bMillionen\b", text) ? 1e6 :
-            occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€", text) ? 1e3 : 1.0
-    cur = occursin(r"(?i)canadian dollar|\bCAD\b|\bC\$", text) ? "CAD" :
+    scale = occursin(r"(?i)million|\bMio\.?\b|\bMilj\.|\bMillionen\b|miljoner|miljoona|millioner|miljoen|milioni|mill[oó]n|milhõe?s?|milh[ãa]o|\bmilion\w*|\bmln\b|\bM(?:SEK|EUR|NOK|DKK)\b|\bMkr\b", text) ? 1e6 :
+            occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€|tusen|tuhat|tusind|duizend|tysi[ąa]c|migliaia|\bmiles\b|milhares|\bTSEK\b|\bTkr\b", text) ? 1e3 : 1.0
+    cur = occursin(r"(?i)\bMSEK\b|\bTSEK\b|\bSEK\b|svenska kronor|\bMkr\b", text) ? "SEK" :
+          occursin(r"(?i)\bNOK\b|norske kroner", text) ? "NOK" :
+          occursin(r"(?i)\bDKK\b|danske kroner", text) ? "DKK" :
+          occursin(r"(?i)\bPLN\b|złot", text) ? "PLN" :
+          occursin(r"(?i)canadian dollar|\bCAD\b|\bC\$", text) ? "CAD" :
           occursin(r"(?i)australian dollar|\bAUD\b|\bA\$", text) ? "AUD" :
           occursin(r"(?i)singapore dollar|\bSGD\b|\bS\$", text) ? "SGD" :
           occursin(r"(?i)US\$|\bUSD\b|\bU\.S\. dollar|united states dollar", text) ? "USD" :
@@ -151,6 +158,26 @@ end
 function _ifrs_table_unit(tbl, def_scale::Float64, def_cur::AbstractString)
     u = _ifrs_unit([strip(c.text) for c in tbl.cells])
     return u === nothing ? (def_scale, def_cur) : u
+end
+
+# Full-units guard. A report can state DIFFERENT scales per statement — Enel's income statement is "in milioni
+# di euro" but its balance sheet prints FULL euros ("71.244.987.342"). A balance-sheet table that carries no
+# unit token of its OWN then inherits the document-wide "millions" scale and is multiplied by 1e6 into nonsense
+# (7e16). No real company total exceeds ~1e13, so if the table's own largest value already blows past that ceiling
+# once scaled, its values are already in full units → drop the scale to 1. Only kicks in for `scale > 1`.
+const _IFRS_TOTAL_CEILING = 1e13
+function _ifrs_sane_scale(tbl, scale::Float64, loc::Symbol)
+    scale <= 1 && return scale
+    vals = Float64[]
+    for c in tbl.cells
+        p = parse_amount(c.text; locale = loc)
+        (p === nothing || p.nil || p.val == 0) || push!(vals, abs(p.val))
+    end
+    isempty(vals) && return scale
+    # Use the MEDIAN, not the max: a full-units statement (Enel's BS) has MOST values already large, whereas a
+    # millions statement with one mis-parsed outlier cell does not — so a stray big cell can't strip the scale.
+    med = sort!(vals)[cld(length(vals), 2)]
+    return med * scale > _IFRS_TOTAL_CEILING ? 1.0 : scale
 end
 
 # A monetary VALUE cell (a grouped-thousands separator or a parenthesised negative). Locale-aware: the German
@@ -625,6 +652,7 @@ function _ifrs_facts_from_sd(sd; accession::AbstractString = "", url::AbstractSt
         ci_title = (_is_pl(own) || _is_ci(own)) ? own : title
         (stmt == "IncomeStatement" && _is_ci(ci_title) && !_is_pl(ci_title) && has_sep_is) && continue
         tscale, tcur = _ifrs_table_unit(tbl, scale, currency)   # this statement's OWN unit (£m vs a note's £'000)
+        tscale = _ifrs_sane_scale(tbl, tscale, loc)             # …unless its values are already full units (Enel BS)
         append!(facts, _ifrs_table_facts(tbl, stmt, stmt == "BalanceSheet", pends, tscale, tcur, loc))
     end
 
