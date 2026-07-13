@@ -29,7 +29,7 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 | Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **16**: en pt es fr de it nl sv da no fi pl · zh ja ko ru | per-class heading regexes |
 | Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` | **16**: en pt es fr de it nl sv da no fi pl · ja ko zh ru (zh sniff → delegates to `extract_cas_pdf`) | per-language statement-name patterns |
 | Month-name parsing | `extractors/ifrs_pdf.jl` → `_IFRS_MONTHS` / `_MON` | **16** (step 2; was 6) — re-homed to the registry, all languages | month-name → number, per `LanguageProfile` |
-| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **15**: en pt es fr de it nl sv da no fi pl · ja ko ru | pattern branches per statement |
+| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **15\***: en pt es fr de it nl sv da no fi pl · ja ko ru (\*zh also extracts, via the `cas:` map, not `ifrs-full`) | pattern branches per statement |
 | Number locale (separators) | `extractors/facts_derive.jl` → `_AMOUNT_LOCALE` / `amount_locale` | 3 separator **classes** | by **country** → `:en` / `:eu_dot` / `:eu_space` |
 
 **Chinese (`zh`) — script vs framework.** `zh` is one ISO code but two written scripts, and they route

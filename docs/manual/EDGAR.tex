@@ -9281,9 +9281,15 @@ Detect prose language & 16 & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko
 Parse month names & 16 & all detected languages \\
 Classify statement tables & 16 & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko zh ru \\
 Locate primary statements & 16 & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko zh ru (zh $\to$ CAS extractor) \\
-Map line items \(\rightarrow\) \texttt{ifrs-full} & 15 & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko ru \\
+Map line items \(\rightarrow\) \texttt{ifrs-full} & 15\textsuperscript{*} & en pt es fr de it nl sv da no fi pl \(\cdot\) ja ko ru \\
 \bottomrule
 \end{tabular}
+
+\vspace{2pt}
+{\footnotesize \textsuperscript{*}The 16th located language, \textbf{zh}, also extracts facts, but through its
+own CAS map (\texttt{cas:} concepts) rather than \texttt{ifrs-full}: a Chinese report is sniffed and delegated
+to \texttt{extract\_cas\_pdf} (\S\ref{sys:china}). So every located language extracts --- 15 via \texttt{ifrs-full},
+zh via CAS.}
 \end{table}
 
 \section{A floor, not a ceiling}
