@@ -106,7 +106,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        prefer_statements, company_search, CompanyHit,
        Filing, fetch_filing, save_filing, open_filing, download_assets, extract_section, find_paragraphs, sections,
        Selection, Fact, select_section, select_sections, markdown, facts, facts_json, extract_pdf, extract_cas_pdf, cas_concept, extract_ifrs_pdf, ifrs_label_concept, extract_hgb_pdf, hgb_concept, born_digital, extract_fund_portfolio, extract_reit_portfolio, FundPortfolio, FundHolding, FundAssetClass, FundIndustryExposure,
-       validate, report, coverage, accuracy,
+       validate, report, coverage, accuracy, calibrate_scale,
        Narrative, narratives,
        toc, TocNode, TocRow,
        structured_document, StructuredDocument, persist_document, write_structured_document,
