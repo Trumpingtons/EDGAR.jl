@@ -350,7 +350,7 @@ A trailing \texttt{I} on the frame period (\texttt{"CY2022Q4I"}) denotes an
 (a flow such as revenue). See the Glossary (Appendix~\ref{sec:glossary}).
 
 
-\chapter{Architecture and Portability}
+\chapter{Architecture}
 \label{sec:architecture}
 
 EDGAR.jl is built around a deliberate split: a \textbf{jurisdiction-agnostic core} and a thin
@@ -605,6 +605,81 @@ claims = only(r.value for r in rows if r.concept == "ras:line_1700")
 Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row table, so the downstream
 (classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
 of which extractor produced it.
+
+
+\section{The model ladder: a federation of specialists}
+\label{sec:model-ladder}
+
+Everything above is \emph{deterministic} --- regexes, structural parses, taxonomy maps. Language models enter
+only where determinism runs out: a scanned page with no text layer, a statement whose layout the structural
+parser cannot read, a line-item label no vocabulary covers, a free-prose question over a filing. The design
+principle for that frontier is not ``call a big model''. It is a \textbf{ladder} of increasingly capable ---
+and increasingly costly --- rungs, where each rung is invoked \emph{only when the one below it fails a
+validation gate}:
+
+\begin{table}[h]
+\centering
+\small
+\caption{The model ladder. The deterministic floor does the bulk; each higher rung is a fallback, gated by the
+one below failing. Cost rises with height (compute, then privacy + money); reproducibility falls.}
+\label{tab:model-ladder}
+\begin{tabular}{@{}p{0.14\textwidth}p{0.40\textwidth}p{0.34\textwidth}@{}}
+\toprule
+\textbf{Rung} & \textbf{Does} & \textbf{Properties} \\
+\midrule
+\textbf{0 · Deterministic} & regex / structural parse / taxonomy maps (\texttt{ifrs\_label\_concept}, the
+  linkbases) & always runs · free · exactly reproducible \\
+\textbf{1 · Local specialist} & one job each: vision (read a statement image), translation, fuzzy
+  classification, entity linking, embeddings for retrieval & on-demand · offline · cheap · data never leaves \\
+\textbf{2 · Local generalist} & harder structuring / light reasoning a specialist cannot do alone & still
+  private; small models reason weakly --- this is where local hits its ceiling \\
+\textbf{3 · Cloud} & hard comprehension, genuine ambiguity, novel layouts, cross-filing synthesis & opt-in
+  per call · high value · \textbf{data leaves the machine} · not reproducible \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why a federation, not one model.} A user is memory-constrained --- often only a few GB, enough for
+one quantized 3--8\,B model resident at a time. Under that budget, \emph{specialisation beats generalisation}:
+a 7\,B vision model reads a statement page better than a 70\,B generalist you cannot load. So Rung~1 is a
+\textbf{federation of small specialists}, swapped in and out on demand (embeddings, being tiny, can stay
+resident; the large ones are loaded per task and batched to amortise the swap). The classes EDGAR.jl draws on,
+by job: \textbf{perception} (vision-LLM for statement images, \S\ref{sec:pdf-accuracy}); \textbf{language}
+(translation --- several local models today; embeddings via BGE-M3 for retrieval); \textbf{structuring}
+(messy text/table $\to$ structured \texttt{FactRow}s; fuzzy label\,$\to$\,concept when the deterministic map
+misses; entity linking); and, forward-looking, \textbf{code} (generate/repair DuckDB or XBRL queries) and
+\textbf{reasoning} (\textsc{MD\&A} analysis, Q\&A). Perception, structuring, and retrieval are local's sweet
+spot; open-ended reasoning is where the ladder climbs to the cloud.
+
+\paragraph{The invariant that makes small models safe: validate before you believe.} A 3\,B model
+hallucinates numbers. It is trusted \emph{only} because its output must pass the same deterministic check the
+Rung-0 path uses before it is accepted --- a balance sheet must cross-foot, a magnitude must be plausible, a
+concept must type-check. Output that fails is \textbf{rejected, not merged}: a rejected fallback is no worse
+than the thin result it tried to replace, so a higher rung can only \emph{improve or abstain}, never silently
+corrupt. This gate is what lets a tiny local model, or even a powerful but fallible cloud one, sit safely over
+authoritative financial data.
+
+\paragraph{Local versus cloud, and the highest-leverage pattern.} Local models do the \emph{reading and
+structuring at scale} --- run on every filing, offline, cached, on pinned versions (reproducibility matters
+for an \emph{audit}, not just cost). The cloud model does \emph{understanding and judgement at the margin} ---
+low-volume, high-value, opt-in because regulatory data leaving the machine is a real cost and because a cloud
+call is not reproducible. The most valuable interaction between the two is \textbf{``cloud compiles, local
+executes''}: spend an expensive cloud reasoning pass \emph{once} to mint a cheap \emph{deterministic} artifact
+--- a label map, a vocabulary, an extraction rule --- then run it free forever at Rung~0. The multilingual
+\texttt{ifrs\_label\_concept} branches were built exactly this way: a capable model read real line-item labels
+off live filings and emitted deterministic pattern branches, turning a recurring per-call cost into a one-time
+one. This is the template: use cloud reasoning to \emph{compile understanding into deterministic assets}, and
+amortise it to zero.
+
+\paragraph{Orchestration and the role of agents.} The local orchestrator is a \emph{deterministic} control
+loop, not a model: it routes a task to the right specialist, manages the model lifecycle under the memory
+budget (load / unload; keep embeddings resident; batch by model), and enforces the validation gate
+(accept / reject / escalate). Reproducibility and cost demand a state machine here, not a model-in-the-loop.
+\emph{Agents} --- model-driven control loops --- belong on the cloud rung, for genuinely hard multi-step
+reasoning and, above all, the \emph{meta} work: an agent that plans, cracks a hard case, and \textbf{writes
+the deterministic rule} the local tier then runs at scale (the compile pattern above). So agents are the glue
+and the meta-programmer; the per-filing workhorse stays deterministic plus gated specialists. The design keeps
+climbing the ladder only on failure, and only when the answer is worth the next rung's cost.
 
 
 \section{Related Work and Comparison}
