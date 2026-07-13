@@ -217,8 +217,8 @@ const SUPPORTED_LANGS = LanguageProfile[
     _lp("no", "Norwegian",  :latin, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø"), _M_NO, :tableclass, :labels, :locale; jurisdiction = "NO", stmt_patterns = _SP_NO),
     _lp("fi", "Finnish",    :latin, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös "), _M_FI, :tableclass, :labels, :locale; jurisdiction = "FI", stmt_patterns = _SP_FI),
     _lp("pl", "Polish",     :latin, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub "), _M_PL, :tableclass, :labels, :locale; jurisdiction = "PL", stmt_patterns = _SP_PL),
-    _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :locale; jurisdiction = "JP", stmt_patterns = _SP_JA),
-    _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :locale; jurisdiction = "KR", stmt_patterns = _SP_KO),
+    _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :labels, :locale; jurisdiction = "JP", stmt_patterns = _SP_JA),
+    _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :labels, :locale; jurisdiction = "KR", stmt_patterns = _SP_KO),
     _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale; jurisdiction = "CN", stmt_patterns = _SP_ZH),   # detection → extract_ifrs_pdf delegates to extract_cas_pdf
     _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :locale; jurisdiction = "RU", stmt_patterns = _SP_RU),
 ]

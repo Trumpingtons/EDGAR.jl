@@ -155,6 +155,17 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"^velat yhteensä$"i, t) || occursin(r"^sum gjeld$"i, t)) && return C("ifrs-full:Liabilities", :credit)
         (occursin(r"^varat yhteensä$"i, t) || occursin(r"^sum eiendeler$"i, t)) && return C("ifrs-full:Assets", :debit)
         (occursin(r"^oma ?pääoma yhteensä$"i, t) || occursin(r"^sum egenkapital$"i, t)) && return C("ifrs-full:Equity", :credit)
+        # Japanese (ja, Fast Retailing IFRS) / Korean (ko, Samsung K-IFRS). CJK totals carry no leading
+        # enumerator, so anchor on the total line. ja "資産合計/資本合計/負債及び資本合計"; ko (FSS-standard)
+        # "자산총계/자본총계/부채와자본총계". [ko BS/IS labels are the standard forms — the Samsung BS PDF's font
+        # did not decode; ko cash-flow IS from the live parse.]
+        occursin("親会社の所有者に帰属する持分", t)                    && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)  # ja
+        occursin(r"^流動資産合計$", t)                                && return C("ifrs-full:CurrentAssets", :debit)  # ja
+        occursin(r"^非流動資産合計$", t)                              && return C("ifrs-full:NoncurrentAssets", :debit)
+        (occursin(r"^負債及び資本合計$", t) || occursin(r"^부채와?자본총계$", t)) && return C("ifrs-full:EquityAndLiabilities", :credit)  # ja/ko
+        (occursin(r"^負債合計$", t)         || occursin(r"^부채총계$", t))       && return C("ifrs-full:Liabilities", :credit)
+        (occursin(r"^資産合計$", t)         || occursin(r"^자산총계$", t))       && return C("ifrs-full:Assets", :debit)
+        (occursin(r"^資本合計$", t)         || occursin(r"^자본총계$", t))       && return C("ifrs-full:Equity", :credit)
 
     elseif statement == "IncomeStatement"
         (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
@@ -243,6 +254,13 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"^liikevoitto$"i, t) || occursin(r"^liiketulos$"i, t)) && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
         (occursin(r"^tulos ennen veroja$"i, t) || occursin(r"^resultat før skat(?:t|tekostnad)?$"i, t)) && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         (occursin(r"^tilikauden tulos$"i, t) || occursin(r"^årsresultat$"i, t)) && return C("ifrs-full:ProfitLoss", :credit)
+        # Japanese (ja): 売上収益 / 営業利益 / 税引前利益 / 当期利益. Korean (ko): 매출액|수익(매출액) / 영업이익 /
+        # 법인세비용차감전순이익 / 당기순이익 (± "(손실)").
+        (occursin(r"^売上収益$", t) || occursin(r"^매출액$", t) || occursin(r"^수익\(매출액\)$", t)) && return C("ifrs-full:Revenue", :credit)  # ja/ko
+        occursin(r"^売上総利益$", t)                                  && return C("ifrs-full:GrossProfit", :credit)  # ja
+        (occursin(r"^営業利益$", t) || occursin(r"^영업이익(?:\(손실\))?$", t)) && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)  # ja/ko
+        (occursin(r"^税引前利益$", t) || occursin(r"^법인세비용차감전순이익$", t)) && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        (occursin(r"^当期利益$", t) || occursin(r"^당기순이익(?:\(손실\))?$", t)) && return C("ifrs-full:ProfitLoss", :credit)
 
     elseif statement == "CashFlow"
         # "net cash from/used in", "cash generated from", or "cash flow(s) from/used in/provided by" + the
@@ -307,6 +325,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"investointien nettorahavirta"i, t) || occursin(r"netto kontantstrøm(?:mer)? fra investering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
         (occursin(r"rahoituksen nettorahavirta"i, t) || occursin(r"netto kontantstrøm(?:mer)? fra finansiering"i, t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
         (occursin(r"^rahavarojen muutos$"i, t) || occursin(r"netto endring i (?:bankinnskudd|kontanter)"i, t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # Japanese (ja): "…活動によるキャッシュ・フロー". Korean (ko, live Samsung): "영업/투자/재무활동현금흐름"
+        # (the line keeps a Ⅰ./Ⅱ. unicode prefix, so match the core substring).
+        (occursin("営業活動によるキャッシュ・フロー", t) || occursin(r"영업활동\s?현금흐름", t)) && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)  # ja/ko
+        (occursin("投資活動によるキャッシュ・フロー", t) || occursin(r"투자활동\s?현금흐름", t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        (occursin("財務活動によるキャッシュ・フロー", t) || occursin(r"재무활동\s?현금흐름", t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        (occursin("現金及び現金同等物の増減額", t) || occursin(r"현금및현금성자산의\s?순?증가", t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
     end
     return nothing
 end

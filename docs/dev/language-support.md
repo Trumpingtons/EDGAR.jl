@@ -29,7 +29,7 @@ Each language-sensitive component keeps its **own** table, and they cover **diff
 | Table-class headings | `extractors/document_profile.jl` → `TABLE_CLASSES` | **16**: en pt es fr de it nl sv da no fi pl · zh ja ko ru | per-class heading regexes |
 | Statement location | `extractors/ifrs_pdf.jl` → `_STMT_LANGS` | **16**: en pt es fr de it nl sv da no fi pl · ja ko zh ru (zh sniff → delegates to `extract_cas_pdf`) | per-language statement-name patterns |
 | Month-name parsing | `extractors/ifrs_pdf.jl` → `_IFRS_MONTHS` / `_MON` | **16** (step 2; was 6) — re-homed to the registry, all languages | month-name → number, per `LanguageProfile` |
-| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **12** (all Latin): en pt es fr de it nl sv da no fi pl | pattern branches per statement |
+| Line-item label → `ifrs-full` | `core/taxonomy/vocab_ifrs_labels.jl` → `ifrs_label_concept` | **14**: en pt es fr de it nl sv da no fi pl · ja ko | pattern branches per statement |
 | Number locale (separators) | `extractors/facts_derive.jl` → `_AMOUNT_LOCALE` / `amount_locale` | 3 separator **classes** | by **country** → `:en` / `:eu_dot` / `:eu_space` |
 
 **Chinese (`zh`) — script vs framework.** `zh` is one ISO code but two written scripts, and they route
@@ -56,11 +56,12 @@ differently. *Detection* (`_detect_lang`, script `:han`) spans **both** scripts.
 
 1. **A coverage funnel, widening the wrong way.** We can *detect* 16 languages and *classify* statement tables in
    16; the Generic path now *locates* primary statements in all **16** (a Chinese PDF is sniffed and delegated to
-   `extract_cas_pdf`, which returns `cas:` facts — verified on a live CN filing), but still *maps line-item
-   labels through `ifrs_label_concept` in only **12** (the Latin set). So a Japanese/Korean/Russian PDF is now
-   found and its statements classified, but its line items are not yet mapped to `ifrs-full` — the label branches
-   (K-IFRS/JP-IFRS → `ifrs-full`; JP-GAAP/RAS → a native vocab) are the follow-on. (The ja/ko/ru statement-name
-   patterns are standard names, not yet validated on live filings; zh is verified via the CAS path.)
+   `extract_cas_pdf`, which returns `cas:` facts — verified on a live CN filing), and *maps line-item labels
+   through `ifrs_label_concept` in **14** — the 12 Latin **+ ja + ko** (both IFRS/K-IFRS, so they map to
+   `ifrs-full`; built from live Fast Retailing / Samsung filings, though Samsung's BS/IS text needed the
+   FSS-standard label forms as its font did not decode). The remaining gap: **ru** (RAS — needs a native vocab)
+   and **Traditional-Chinese HK/TW**. (The ja/ko/ru statement-name patterns are standard names not fully
+   validated end-to-end on live filings; zh is verified via the CAS path.)
 2. **No single source of truth.** The supported set is defined implicitly and differently in six places. Adding
    a language means editing each table that should cover it, with nothing enforcing that they agree.
 3. **No defined "add a language" process.** There is no registry entry to fill, no completeness check that says
