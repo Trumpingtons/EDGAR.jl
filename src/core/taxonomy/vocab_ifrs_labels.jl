@@ -166,6 +166,14 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"^負債合計$", t)         || occursin(r"^부채총계$", t))       && return C("ifrs-full:Liabilities", :credit)
         (occursin(r"^資産合計$", t)         || occursin(r"^자산총계$", t))       && return C("ifrs-full:Assets", :debit)
         (occursin(r"^資本合計$", t)         || occursin(r"^자본총계$", t))       && return C("ifrs-full:Equity", :credit)
+        # Russian IFRS/МСФО (ru, Lukoil): "Итого активы / Итого капитал / Итого обязательства (и капитал)".
+        occursin(r"^итого акционерный капитал, относящ"i, t) && return C("ifrs-full:EquityAttributableToOwnersOfParent", :credit)  # ru
+        occursin(r"^итого внеоборотные активы$"i, t)  && return C("ifrs-full:NoncurrentAssets", :debit)
+        occursin(r"^итого оборотные активы$"i, t)     && return C("ifrs-full:CurrentAssets", :debit)
+        occursin(r"^итого обязательства и капитал$"i, t) && return C("ifrs-full:EquityAndLiabilities", :credit)
+        occursin(r"^итого обязательства$"i, t)        && return C("ifrs-full:Liabilities", :credit)
+        occursin(r"^итого активы$"i, t)               && return C("ifrs-full:Assets", :debit)
+        occursin(r"^итого капитал$"i, t)              && return C("ifrs-full:Equity", :credit)
 
     elseif statement == "IncomeStatement"
         (t == "revenue" || t == "revenues" || t == "turnover" || t == "operating revenue" ||
@@ -261,6 +269,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin(r"^営業利益$", t) || occursin(r"^영업이익(?:\(손실\))?$", t)) && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)  # ja/ko
         (occursin(r"^税引前利益$", t) || occursin(r"^법인세비용차감전순이익$", t)) && return C("ifrs-full:ProfitLossBeforeTax", :credit)
         (occursin(r"^当期利益$", t) || occursin(r"^당기순이익(?:\(손실\))?$", t)) && return C("ifrs-full:ProfitLoss", :credit)
+        # Russian IFRS (ru): "Выручка (от реализации)" / "Операционная прибыль" / "Прибыль до налога на
+        # прибыль" / "Чистая прибыль" (bare — not the "…относящаяся к…" attribution lines).
+        occursin(r"^выручка"i, t)                     && return C("ifrs-full:Revenue", :credit)  # ru
+        occursin(r"^операционная прибыль"i, t)        && return C("ifrs-full:ProfitLossFromOperatingActivities", :credit)
+        occursin(r"^прибыль до налога"i, t)           && return C("ifrs-full:ProfitLossBeforeTax", :credit)
+        occursin(r"^чистая прибыль$"i, t)             && return C("ifrs-full:ProfitLoss", :credit)
 
     elseif statement == "CashFlow"
         # "net cash from/used in", "cash generated from", or "cash flow(s) from/used in/provided by" + the
@@ -331,6 +345,12 @@ function ifrs_label_concept(label::AbstractString, statement::AbstractString)
         (occursin("投資活動によるキャッシュ・フロー", t) || occursin(r"투자활동\s?현금흐름", t)) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
         (occursin("財務活動によるキャッシュ・フロー", t) || occursin(r"재무활동\s?현금흐름", t)) && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
         (occursin("現金及び現金同等物の増減額", t) || occursin(r"현금및현금성자산의\s?순?증가", t)) && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
+        # Russian IFRS (ru): "Чистые денежные средства, полученные от / использованные в … деятельности";
+        # net "Чистое увеличение денежных средств".
+        occursin(r"чистые денежные средства.{0,30}операционной деятельности"i, t)  && return C("ifrs-full:CashFlowsFromUsedInOperatingActivities", :none)  # ru
+        occursin(r"чистые денежные средства.{0,30}инвестиционной деятельности"i, t) && return C("ifrs-full:CashFlowsFromUsedInInvestingActivities", :none)
+        occursin(r"чистые денежные средства.{0,30}финансовой деятельности"i, t)     && return C("ifrs-full:CashFlowsFromUsedInFinancingActivities", :none)
+        occursin(r"^чистое (?:увеличение|уменьшение).{0,25}денежных средств"i, t)   && return C("ifrs-full:IncreaseDecreaseInCashAndCashEquivalents", :none)
     end
     return nothing
 end

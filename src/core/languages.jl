@@ -220,7 +220,7 @@ const SUPPORTED_LANGS = LanguageProfile[
     _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :labels, :locale; jurisdiction = "JP", stmt_patterns = _SP_JA),
     _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :labels, :locale; jurisdiction = "KR", stmt_patterns = _SP_KO),
     _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale; jurisdiction = "CN", stmt_patterns = _SP_ZH),   # detection → extract_ifrs_pdf delegates to extract_cas_pdf
-    _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :locale; jurisdiction = "RU", stmt_patterns = _SP_RU),
+    _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :labels, :locale; jurisdiction = "RU", stmt_patterns = _SP_RU),
 ]
 
 # All month-name → number pairs across the registry — the single source for `_IFRS_MONTHS` (see ifrs_pdf.jl).
