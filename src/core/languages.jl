@@ -171,11 +171,12 @@ const _SP_NO = Dict(
     :cf => "kontantstrøm",
     :eq => "endringer i egenkapital")
 # Non-Latin statement names (the SAME vocabulary already carried by `TABLE_CLASSES`) so the Generic path can
-# LOCATE statements in Japanese/Korean/Russian PDFs too — the long tail Generic is for (a filer not in
-# EDINET/DART). Optional 連結 (ja) / 연결 (ko) = "consolidated". Locate + table-class only for now; mapping the
-# line-item labels to `ifrs-full` (K-IFRS / JP-IFRS) or a native vocab (JP-GAAP / RAS) is the follow-on, and
-# these are standard names not yet validated against live ja/ko/ru filings. Chinese locates via its own CAS
-# path (`extract_cas_pdf`), so it is not added here.
+# LOCATE statements in Japanese/Korean/Russian/Chinese PDFs too — the long tail Generic is for (a filer not in
+# EDINET/DART/CNINFO). Optional 連結 (ja) / 연결 (ko) = "consolidated". For ja/ko/ru it is locate + table-class
+# only; mapping the line-item labels to `ifrs-full` (K-IFRS / JP-IFRS) or a native vocab (JP-GAAP / RAS) is the
+# follow-on, and these are standard names not yet validated against live filings. Chinese (zh) is added too,
+# but its role is DETECTION: once `extract_ifrs_pdf` sniffs a Chinese report it delegates to `extract_cas_pdf`
+# (Chinese filers report under CAS — `cas:` concepts, not `ifrs-full`).
 const _SP_JA = Dict(
     :is => "(?:連結)?(?:損益計算書|包括利益計算書)",
     :bs => "(?:連結)?(?:財政状態計算書|貸借対照表)",
@@ -191,6 +192,11 @@ const _SP_RU = Dict(
     :bs => "отч[её]т о финансовом положении|бухгалтерский баланс",
     :cf => "отч[её]т о движении денежных средств",
     :eq => "отч[её]т об изменени.{0,15}капитал")
+const _SP_ZH = Dict(
+    :is => "利润表|损益表|综合收益表",
+    :bs => "资产负债表",
+    :cf => "现金流量表",
+    :eq => "(?:所有者|股东)权益变动表")
 
 const SUPPORTED_LANGS = LanguageProfile[
     _lp("en", "English",    :latin, (" the "," and "," of "," to "," in "," is "," for "," was "," with "," that "," on "," as "," by "," are "), _M_EN, :tableclass, :labels, :locale; jurisdiction = "HK", stmt_patterns = _SP_EN),
@@ -207,7 +213,7 @@ const SUPPORTED_LANGS = LanguageProfile[
     _lp("pl", "Polish",     :latin, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub "), _M_PL, :tableclass, :labels, :locale; jurisdiction = "PL", stmt_patterns = _SP_PL),
     _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :locale; jurisdiction = "JP", stmt_patterns = _SP_JA),
     _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :locale; jurisdiction = "KR", stmt_patterns = _SP_KO),
-    _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale),   # zh locates via its own CAS path (extract_cas_pdf)
+    _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale; jurisdiction = "CN", stmt_patterns = _SP_ZH),   # detection → extract_ifrs_pdf delegates to extract_cas_pdf
     _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :locale; jurisdiction = "RU", stmt_patterns = _SP_RU),
 ]
 

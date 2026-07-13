@@ -540,6 +540,11 @@ end
 
 function extract_ifrs_pdf(path::AbstractString)
     doc = _pdf_words(path)
+    juris, lang = _ifrs_doc_juris(doc)
+    # A Chinese report is CAS, not IFRS — sniff the language here and hand off to the CAS extractor (its own
+    # statement locator + `cas:` label map). This lets the GENERIC PDF path handle a Chinese filing that was
+    # NOT discovered via CNINFO (a `China()` filing already routes to `extract_cas_pdf` upstream).
+    lang == "zh" && return extract_cas_pdf(path)
     rng = _ifrs_statement_pages(doc)
     if rng === nothing
         # 2R.F — tell "this document has no detailed statements" from "the statements are here but I missed
@@ -554,7 +559,6 @@ function extract_ifrs_pdf(path::AbstractString)
               "(looks like a summary/integrated report) — returning no facts"
         return FactRow[]
     end
-    juris, lang = _ifrs_doc_juris(doc)
     sd = structured_document(path; pages = rng, jurisdiction = juris, language = lang)
     return _ifrs_facts_from_sd(sd; accession = basename(path), url = path)
 end
