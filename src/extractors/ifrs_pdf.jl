@@ -129,15 +129,19 @@ function _ifrs_scale_currency(sd)
     u === nothing || return u
     # fallback: magnitude alone, currency by presence (HK$ preferred — the HK default). The magnitude word is
     # matched across the supported languages (sv miljoner/MSEK, fi miljoonaa, da/no millioner, nl miljoen, it
-    # milioni, es millones, pt milhões, pl milionów) — the English-only regex silently defaulted a Swedish
-    # "MSEK" report to thousands (values 1000x too small).
+    # milioni, es millones, pt milhões, pl milionów; ja 百万, ko 백만, ru млн/миллион) — the English-only regex
+    # silently defaulted a Swedish "MSEK" (or a Russian "млн руб") report to thousands, values 1000x too small.
+    # zh is not here: a Chinese report delegates to extract_cas_pdf before this, so its scale (incl. 万 = 1e4) is
+    # the CAS extractor's concern.
     text = join(texts, " ")
-    scale = occursin(r"(?i)million|\bMio\.?\b|\bMilj\.|\bMillionen\b|miljoner|miljoona|millioner|miljoen|milioni|mill[oó]n|milhõe?s?|milh[ãa]o|\bmilion\w*|\bmln\b|\bM(?:SEK|EUR|NOK|DKK)\b|\bMkr\b", text) ? 1e6 :
-            occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€|tusen|tuhat|tusind|duizend|tysi[ąa]c|migliaia|\bmiles\b|milhares|\bTSEK\b|\bTkr\b", text) ? 1e3 : 1.0
+    scale = occursin(r"(?i)million|\bMio\.?\b|\bMilj\.|\bMillionen\b|miljoner|miljoona|millioner|miljoen|milioni|mill[oó]n|milhõe?s?|milh[ãa]o|\bmilion\w*|\bmln\b|\bM(?:SEK|EUR|NOK|DKK)\b|\bMkr\b|百万|百萬|백만|миллион|млн", text) ? 1e6 :
+            occursin(r"(?i)'?000\b|thousand|\bTEUR\b|T€|tusen|tuhat|tusind|duizend|tysi[ąa]c|migliaia|\bmiles\b|milhares|\bTSEK\b|\bTkr\b|千円|천원|тысяч|тыс\.", text) ? 1e3 : 1.0
     cur = occursin(r"(?i)\bMSEK\b|\bTSEK\b|\bSEK\b|svenska kronor|\bMkr\b", text) ? "SEK" :
           occursin(r"(?i)\bNOK\b|norske kroner", text) ? "NOK" :
           occursin(r"(?i)\bDKK\b|danske kroner", text) ? "DKK" :
           occursin(r"(?i)\bPLN\b|złot", text) ? "PLN" :
+          occursin(r"(?i)₩|\bKRW\b|korean won|백만원|천원|원화", text) ? "KRW" :
+          occursin(r"(?i)₽|\bRUB\b|рубл|российских рубл", text) ? "RUB" :
           occursin(r"(?i)canadian dollar|\bCAD\b|\bC\$", text) ? "CAD" :
           occursin(r"(?i)australian dollar|\bAUD\b|\bA\$", text) ? "AUD" :
           occursin(r"(?i)singapore dollar|\bSGD\b|\bS\$", text) ? "SGD" :
