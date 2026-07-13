@@ -1063,6 +1063,70 @@ fields.}
 \label{fig:pdf-ingestion}
 \end{figure}
 
+Figure~\ref{fig:pdf-ingestion} treats the parser as one box; Figure~\ref{fig:docling-pipeline} zooms inside it,
+to Docling's present-day (2026) pipeline. Two things are worth reading off it. First, the engine EDGAR.jl uses
+--- the \emph{standard} PDF pipeline --- is a chain of \emph{specialised computer-vision models} (layout
+detection, then \textbf{TableFormer} for table structure, plus optional OCR), \emph{not} a language model.
+Second, Docling now also ships a \emph{VLM} pipeline in which a single small vision-language model
+(\textbf{SmolDocling}, only 256\,M; or Granite-Vision; or a remote VLM) reads each page image directly --- and
+vision-LLMs have begun to appear as optional swap-ins even \emph{inside} the standard pipeline (a
+Granite-Vision table model, picture description, chart extraction). So the ``structural versus vision-LLM''
+line already runs through the engine itself --- which is exactly why the local vision-LLM fallback
+(\S\ref{sec:pdf-accuracy}, the model ladder \S\ref{sec:model-ladder}) can be a Docling pipeline \emph{flag}
+rather than new infrastructure.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  io/.style={draw, rounded corners, align=center, inner sep=5pt, text width=11.4cm, fill=black!3},
+  pipe/.style={draw, thick, rounded corners, align=left, inner sep=6pt},
+  ir/.style={draw, thick, rounded corners, align=center, inner sep=6pt, text width=11.4cm},
+  arr/.style={-{Latex[length=2.2mm]}, thick},
+]
+  \node[io] (in) {\textbf{Input:} PDF \textperiodcentered\ scanned image \textperiodcentered\ DOCX/PPTX/XLSX
+    \textperiodcentered\ HTML/Markdown \textperiodcentered\ audio ($\to$ ASR pipeline)};
+  \node[io, below=6mm of in] (parse) {\textbf{Backend / parse:} PDF $\to$ \texttt{docling-parse} (text cells +
+    page render, with bounding boxes) \textperiodcentered\ office/HTML $\to$ SimplePipeline};
+
+  \node[pipe, below=15mm of parse, xshift=-31mm, anchor=north, text width=5.7cm] (std)
+    {\textbf{Standard PDF pipeline}\\{\scriptsize CV models --- \emph{not} an LLM \;(used by EDGAR.jl)}\\[3pt]
+     1.~\textbf{OCR} (optional/forced): EasyOCR, Tesseract, RapidOCR\\
+     2.~\textbf{Layout} model (DocLayNet / RT-DETR) $\to$ regions\\
+     3.~\textbf{TableFormer} $\to$ cell/row/col (OTSL)\\
+     4.~Reading-order assembly};
+  \node[pipe, below=15mm of parse, xshift=33mm, anchor=north, text width=5.0cm] (vlm)
+    {\textbf{VLM pipeline}\\{\scriptsize one vision-LLM per page}\\[3pt]
+     page image $\to$ \textbf{VLM} $\to$ DocTags\\[3pt]
+     {\scriptsize $\bullet$~SmolDocling 256\,M (default)\\ $\bullet$~Granite-Vision 2--3\,B\\
+     $\bullet$~GOT-OCR / remote VLM}};
+
+  \node[pipe, below=52mm of parse, anchor=north, text width=10.8cm, align=center] (enr)
+    {\textbf{Enrichments} {\scriptsize(optional, per element)}: formula$\to$LaTeX \textperiodcentered\ code
+     \textperiodcentered\ picture classify/describe \textperiodcentered\ chart extraction {\scriptsize(Granite-Vision)}};
+  \node[ir, below=6mm of enr] (doc)
+    {\textbf{DoclingDocument} {\scriptsize(unified IR)}: body $\to$ sections $\to$
+     text / tables[cells] / pictures / figures \;(+ bounding boxes)};
+  \node[io, below=6mm of doc] (out)
+    {\textbf{Export:} Markdown \textperiodcentered\ JSON \textperiodcentered\ HTML \textperiodcentered\ DocTags
+     \quad$\longrightarrow$\quad EDGAR.jl \texttt{StructuredDocument}};
+
+  \draw[arr] (in) -- (parse);
+  \draw[arr] (parse.south) -- (std.north);
+  \draw[arr] (parse.south) -- (vlm.north);
+  \draw[arr] (std.south) -- (enr.north);
+  \draw[arr] (vlm.south) -- (enr.north);
+  \draw[arr] (enr) -- (doc);
+  \draw[arr] (doc) -- (out);
+\end{tikzpicture}
+\caption{Docling's present-day (2026) pipeline. The \emph{standard} PDF pipeline EDGAR.jl uses is
+specialised computer-vision models (layout $\to$ TableFormer $\to$ optional OCR), not a language model; the
+alternative \emph{VLM} pipeline has a single small vision-language model read each page. Both converge on one
+\texttt{DoclingDocument}, which EDGAR.jl maps to its \texttt{StructuredDocument}. VLMs also appear as optional
+swap-ins inside the standard pipeline (table, picture, chart models).}
+\label{fig:docling-pipeline}
+\end{figure}
+
 \section{Statement classification and the PDF outline}
 \label{sec:pdf-classification}
 
