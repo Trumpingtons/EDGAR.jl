@@ -170,6 +170,27 @@ const _SP_NO = Dict(
     :bs => "\\bbalanse\\b",
     :cf => "kontantstrøm",
     :eq => "endringer i egenkapital")
+# Non-Latin statement names (the SAME vocabulary already carried by `TABLE_CLASSES`) so the Generic path can
+# LOCATE statements in Japanese/Korean/Russian PDFs too — the long tail Generic is for (a filer not in
+# EDINET/DART). Optional 連結 (ja) / 연결 (ko) = "consolidated". Locate + table-class only for now; mapping the
+# line-item labels to `ifrs-full` (K-IFRS / JP-IFRS) or a native vocab (JP-GAAP / RAS) is the follow-on, and
+# these are standard names not yet validated against live ja/ko/ru filings. Chinese locates via its own CAS
+# path (`extract_cas_pdf`), so it is not added here.
+const _SP_JA = Dict(
+    :is => "(?:連結)?(?:損益計算書|包括利益計算書)",
+    :bs => "(?:連結)?(?:財政状態計算書|貸借対照表)",
+    :cf => "(?:連結)?キャッシュ・?フロー計算書",
+    :eq => "(?:連結)?株主資本等変動計算書")
+const _SP_KO = Dict(
+    :is => "(?:연결)?(?:손익계산서|포괄손익계산서)",
+    :bs => "(?:연결)?(?:재무상태표|대차대조표)",
+    :cf => "(?:연결)?현금흐름표",
+    :eq => "(?:연결)?자본변동표")
+const _SP_RU = Dict(
+    :is => "отч[её]т о (?:прибыл|совокупном доходе|финансовых результатах)|о прибыли или убытке",
+    :bs => "отч[её]т о финансовом положении|бухгалтерский баланс",
+    :cf => "отч[её]т о движении денежных средств",
+    :eq => "отч[её]т об изменени.{0,15}капитал")
 
 const SUPPORTED_LANGS = LanguageProfile[
     _lp("en", "English",    :latin, (" the "," and "," of "," to "," in "," is "," for "," was "," with "," that "," on "," as "," by "," are "), _M_EN, :tableclass, :labels, :locale; jurisdiction = "HK", stmt_patterns = _SP_EN),
@@ -184,10 +205,10 @@ const SUPPORTED_LANGS = LanguageProfile[
     _lp("no", "Norwegian",  :latin, (" og "," å "," det "," som "," for "," med "," av "," er "," på "," til "," ikke "," en "," ikkje ","æ","ø"), _M_NO, :tableclass, :labels, :locale; jurisdiction = "NO", stmt_patterns = _SP_NO),
     _lp("fi", "Finnish",    :latin, (" ja "," on "," ei "," että "," se "," ovat "," oli "," joka "," mutta "," tai "," kuin "," myös "), _M_FI, :tableclass, :labels, :locale; jurisdiction = "FI", stmt_patterns = _SP_FI),
     _lp("pl", "Polish",     :latin, (" i "," w "," na "," się "," że "," do "," nie "," z "," jest "," oraz "," dla "," po "," lub "), _M_PL, :tableclass, :labels, :locale; jurisdiction = "PL", stmt_patterns = _SP_PL),
-    _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :locale),
-    _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :locale),
-    _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale),
-    _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :locale),
+    _lp("ja", "Japanese",   :kana,     (), _M_CJK, :tableclass, :locale; jurisdiction = "JP", stmt_patterns = _SP_JA),
+    _lp("ko", "Korean",     :hangul,   (), _M_CJK, :tableclass, :locale; jurisdiction = "KR", stmt_patterns = _SP_KO),
+    _lp("zh", "Chinese",    :han,      (), _M_CJK, :tableclass, :locale),   # zh locates via its own CAS path (extract_cas_pdf)
+    _lp("ru", "Russian",    :cyrillic, (), _M_RU, :tableclass, :locale; jurisdiction = "RU", stmt_patterns = _SP_RU),
 ]
 
 # All month-name → number pairs across the registry — the single source for `_IFRS_MONTHS` (see ifrs_pdf.jl).
