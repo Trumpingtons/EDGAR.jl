@@ -2325,7 +2325,7 @@ as a mismatch, as every standardisation gap does.
 \noindent The practical rule for any Yahoo cross-check: anchor on the unambiguous totals, and read a persistent
 sub-line gap as a Morningstar \emph{definition} to look up (Table~\ref{tab:morningstar-defs}), not as a bug. The
 \emph{complete} standardised field set --- all 700-odd fields across the six industry templates, by statement,
-with codes --- is catalogued in Appendix~\ref{ch:morningstar-fields}.
+with codes --- is catalogued in \S\ref{ch:morningstar-fields}.
 
 \subsection{AlphaVantage}\label{sec:alphavantage-oracle}
 
@@ -2585,6 +2585,391 @@ the numbers must satisfy. \texttt{EDGAR.jl} checks these directly:
 self-inconsistent (or that \texttt{EDGAR.jl} mis-extracted structurally), while the data sources
 (\S\ref{sec:validation-sources}) catch a value that is internally consistent but wrong against the world.
 
+\begin{subappendices}
+\section{Morningstar Standardised Field Reference}
+\label{ch:morningstar-fields}
+
+\noindent The complete field set of Morningstar's standardised financial-statement template --- the source of
+Yahoo Finance's fundamentals (\S\ref{sec:morningstar}) --- by statement, as field name and code. This is the
+full list \emph{across all six industry templates} (a given filer uses only its template's subset); the
+headline-line \emph{definitions} are in Table~\ref{tab:morningstar-defs}. Extracted from Morningstar's
+\emph{Global Equity Data Definitions} (Morningstar, 2021; Ch.~\ref{ch:references}).
+
+\section{Income Statement (codes 20xxx)}
+{\footnotesize
+\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
+\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
+\midrule \endhead
+\texttt{Amortization} (20007) & \texttt{SecuritiesAmortization} (20008) \\
+\texttt{CostOfRevenue} (20013) & \texttt{Depletion} (20017) \\
+\texttt{Depreciation} (20018) & \texttt{DepreciationAndAmortization} (20019) \\
+\texttt{DepreciationAmortizationDepletion} (20020) & \texttt{NetIncomeDiscontinuousOperations} (20022) \\
+\texttt{ExciseTaxes} (20028) & \texttt{NetIncomeExtraordinary} (20030) \\
+\texttt{FeeRevenueAndOtherIncome} (20031) & \texttt{GeneralAndAdministrativeExpense} (20045) \\
+\texttt{GrossProfit} (20046) & \texttt{InterestExpense} (20057) \\
+\texttt{InterestExpenseNonOperating} (20064) & \texttt{InterestIncomeAfterProvisionForLoanLoss} (20066) \\
+\texttt{InterestIncomeNonOperating} (20075) & \texttt{NetNonOperatingInterestIncomeExpense} (20077) \\
+\texttt{LossAdjustmentExpense} (20084) & \texttt{MinorityInterests} (20087) \\
+\texttt{NetIncome} (20091) & \texttt{NetIncomeCommonStockholders} (20093) \\
+\texttt{NetIncomeContinuousOperations} (20094) & \texttt{NetInterestIncome} (20095) \\
+\texttt{NetInvestmentIncome} (20096) & \texttt{TotalRevenue} (20100) \\
+\texttt{NonInterestExpense} (20105) & \texttt{NonInterestIncome} (20106) \\
+\texttt{OperatingExpense} (20108) & \texttt{OperatingIncome} (20109) \\
+\texttt{OperatingRevenue} (20112) & \texttt{OtherIncomeExpense} (20117) \\
+\texttt{PolicyAcquisitionExpense} (20125) & \texttt{NetPolicyholderBenefitsAndClaims} (20129) \\
+\texttt{PreferredStockDividends} (20134) & \texttt{TotalPremiumsEarned} (20135) \\
+\texttt{PretaxIncome} (20136) & \texttt{TaxProvision} (20145) \\
+\texttt{CreditLossesProvision} (20146) & \texttt{ResearchAndDevelopment} (20151) \\
+\texttt{SellingAndMarketingExpense} (20158) & \texttt{SellingGeneralAndAdministration} (20159) \\
+\texttt{SpecialIncomeCharges} (20162) & \texttt{TotalExpenses} (20164) \\
+\texttt{InterestIncome} (20177) & \texttt{EBIT} (20189) \\
+\texttt{EBITDA} (20190) & \texttt{NetIncomeContinuousOperationsNetMinorityInterest} (20191) \\
+\texttt{CededPremiums} (20201) & \texttt{CreditCard} (20204) \\
+\texttt{DividendIncome} (20206) & \texttt{EarningsFromEquityInterest} (20208) \\
+\texttt{Equipment} (20210) & \texttt{ExplorationDevelopmentAndMineralPropertyLeaseExpenses} (20211) \\
+\texttt{FeesAndCommissions} (20213) & \texttt{ForeignExchangeTradingGains} (20214) \\
+\texttt{Fuel} (20215) & \texttt{FuelAndPurchasePower} (20216) \\
+\texttt{GainOnSaleOfBusiness} (20217) & \texttt{GainOnSaleOfPPE} (20218) \\
+\texttt{GainOnSaleOfSecurity} (20219) & \texttt{GrossPremiumsWritten} (20224) \\
+\texttt{ImpairmentOfCapitalAssets} (20225) & \texttt{IncreaseDecreaseInNetUnearnedPremiumReserves} (20230) \\
+\texttt{InsuranceAndClaims} (20231) & \texttt{InterestExpenseForDeposit} (20235) \\
+\texttt{InterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (20236) & \texttt{InterestExpenseForLongTermDebtAndCapitalSecurities} (20238) \\
+\texttt{InterestExpenseForShortTermDebt} (20239) & \texttt{InterestIncomeFromDeposits} (20240) \\
+\texttt{InterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (20241) & \texttt{InterestIncomeFromLeases} (20243) \\
+\texttt{InterestIncomeFromLoans} (20244) & \texttt{InterestIncomeFromLoansAndLease} (20245) \\
+\texttt{InterestIncomeFromSecurities} (20246) & \texttt{InvestmentBankingProfit} (20248) \\
+\texttt{MaintenanceAndRepairs} (20252) & \texttt{NetForeignExchangeGainLoss} (20255) \\
+\texttt{NetOccupancyExpense} (20256) & \texttt{NetPremiumsWritten} (20257) \\
+\texttt{NetRealizedGainLossOnInvestments} (20258) & \texttt{OccupancyAndEquipment} (20260) \\
+\texttt{OperationAndMaintenance} (20262) & \texttt{OtherCustomerServices} (20263) \\
+\texttt{OtherInterestExpense} (20265) & \texttt{OtherInterestIncome} (20266) \\
+\texttt{OtherNonInterestExpense} (20267) & \texttt{OtherSpecialCharges} (20269) \\
+\texttt{OtherTaxes} (20271) & \texttt{PolicyholderBenefitsCeded} (20273) \\
+\texttt{PolicyholderBenefitsGross} (20274) & \texttt{PolicyholderDividends} (20275) \\
+\texttt{PolicyholderInterest} (20276) & \texttt{ProfessionalExpenseAndContractServicesExpense} (20280) \\
+\texttt{ProvisionForDoubtfulAccounts} (20283) & \texttt{RentAndLandingFees} (20287) \\
+\texttt{RestructuringAndMergernAcquisition} (20289) & \texttt{SalariesAndWages} (20292) \\
+\texttt{SecuritiesActivities} (20293) & \texttt{ServiceChargeOnDepositorAccounts} (20295) \\
+\texttt{TradingGainLoss} (20298) & \texttt{TrustFeesbyCommissions} (20300) \\
+\texttt{UnderwritingExpenses} (20301) & \texttt{WriteOff} (20304) \\
+\texttt{OtherNonInterestIncome} (20306) & \texttt{AmortizationOfIntangibles} (20308) \\
+\texttt{NetIncomeFromContinuingAndDiscontinuedOperation} (20309) & \texttt{NetIncomeFromTaxLossCarryforward} (20311) \\
+\texttt{OtherOperatingExpenses} (20312) & \texttt{TotalMoneyMarketInvestments} (20313) \\
+\texttt{ReconciledCostOfRevenue} (20314) & \texttt{ReconciledDepreciation} (20315) \\
+\texttt{NormalizedIncome} (20316) & \texttt{NetIncomeFromContinuingOperationNetMinorityInterest} (20331) \\
+\texttt{GainLossonSaleofAssets} (20333) & \texttt{GainonSaleofLoans} (20334) \\
+\texttt{GainonSaleofInvestmentProperty} (20335) & \texttt{LossonExtinguishmentofDebt} (20343) \\
+\texttt{EarningsfromEquityInterestNetOfTax} (20345) & \texttt{NetIncomeIncludingNoncontrollingInterests} (20346) \\
+\texttt{OtherunderPreferredStockDividend} (20347) & \texttt{StaffCosts} (20359) \\
+\texttt{SocialSecurityCosts} (20360) & \texttt{PensionCosts} (20361) \\
+\texttt{OtherOperatingIncomeTotal} (20363) & \texttt{IncomefromAssociatesandOtherParticipatingInterests} (20367) \\
+\texttt{TotalOtherFinanceCost} (20368) & \texttt{GrossDividendPayment} (20371) \\
+\texttt{FeesandCommissionIncome} (20377) & \texttt{FeesandCommissionExpense} (20378) \\
+\texttt{NetTradingIncome} (20379) & \texttt{OtherStaffCosts} (20381) \\
+\texttt{GainonInvestmentProperties} (20383) & \texttt{AverageDilutionEarn} (20385) \\
+\texttt{GainLossonFinancialInstrumentsDesignatedasCashFlowHedges} (20391) & \texttt{GainLossonDerecognitionofAvailableForSaleFinancialAssets} (20392) \\
+\texttt{NegativeGoodwillImmediatelyRecognized} (20394) & \texttt{GainsLossesonFinancialInstrumentsDuetoFairValueAdjustmentsinHedgeAccountingTotal} (20395) \\
+\texttt{ImpairmentLossesReversalsFinancialInstrumentsNet} (20396) & \texttt{ClaimsandPaidIncurred} (20400) \\
+\texttt{ReinsuranceRecoveriesClaimsandBenefits} (20401) & \texttt{ChangeinInsuranceLiabilitiesNetofReinsurance} (20402) \\
+\texttt{ChangeinInvestmentContract} (20405) & \texttt{CreditRiskProvisions} (20409) \\
+\texttt{WagesandSalaries} (20411) & \texttt{OtherNonOperatingIncomeExpenses} (20412) \\
+\texttt{OtherNonOperatingIncome} (20414) & \texttt{OtherNonOperatingExpenses} (20415) \\
+\texttt{TotalUnusualItems} (20416) & \texttt{TotalUnusualItemsExcludingGoodwill} (20417) \\
+\texttt{TaxRateForCalcs} (20418) & \texttt{TaxEffectOfUnusualItems} (20419) \\
+\texttt{NormalizedEBITDA} (20420) & \texttt{StockBasedCompensation} (20422) \\
+\texttt{ISFileDate} (20423) & \texttt{DilutedNIAvailtoComStockholders} (20424) \\
+\texttt{InvestmentContractLiabilitiesIncurred} (20425) & \texttt{ReinsuranceRecoveriesofInvestmentContract} (20426) \\
+\texttt{TotalDividendPaymentofEquityShares} (20429) & \texttt{TotalDividendPaymentofNonEquityShares} (20430) \\
+\texttt{ChangeinTheGrossProvisionforUnearnedPremiums} (20431) & \texttt{ChangeinTheGrossProvisionforUnearnedPremiumsReinsurersShare} (20432) \\
+\texttt{ClaimsandChangeinInsuranceLiabilities} (20433) & \texttt{ReinsuranceRecoveriesofInsuranceLiabilities} (20434) \\
+\texttt{TotalOperatingIncomeAsReported} (20435) & \texttt{OtherCostofRevenue} (20437) \\
+\texttt{RentandLandingFeesCostofRevenue} (20438) & \texttt{DDACostofRevenue} (20439) \\
+\texttt{RentExpenseSupplemental} (20440) & \texttt{NormalizedPreTaxIncome} (20441) \\
+\texttt{ResearchAndDevelopmentExpensesSupplemental} (20442) & \texttt{DepreciationExpenseSupplemental} (20443) \\
+\texttt{AmortizationExpenseSupplemental} (20444) & \texttt{TotalRevenueAsReported} (20445) \\
+\texttt{OperatingExpenseAsReported} (20446) & \texttt{NormalizedIncomeAsReported} (20447) \\
+\texttt{NormalizedEBITDAAsReported} (20448) & \texttt{NormalizedEBITAsReported} (20449) \\
+\texttt{NormalizedOperatingProfitAsReported} (20450) & \texttt{EffectiveTaxRateAsReported} (20451) \\
+\texttt{DisposalofBusinessesSupplemental} (20452) & \texttt{DiscontinuedOperationsSupplemental} (20453) \\
+\texttt{AssetDisposalsSupplemental} (20454) & \texttt{ImpairmentWriteOffWriteDownofCapitalAssetsSupplemental} (20455) \\
+\texttt{GoodwillImpairmentWriteOffSupplemental} (20456) & \texttt{ImpairmentWriteOffWriteDownofOtherAssetsSupplemental} (20457) \\
+\texttt{GainLossOnExtinguishmentofDebtSupplemental} (20458) & \texttt{DebtRestructuringSupplemental} (20459) \\
+\texttt{LitigationIncomeExpenseSupplemental} (20460) & \texttt{MergerAndAcquisitionIncomeExpenseSupplemental} (20461) \\
+\texttt{RestructuringAndReorganizationExpenseSupplemental} (20462) & \texttt{OtherIrregularIncomeExpensesSupplemental} (20463) \\
+\bottomrule
+\end{longtable}}
+
+\section{Balance Sheet (codes 23xxx)}
+{\footnotesize
+\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
+\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
+\midrule \endhead
+\texttt{AccountsPayable} (23000) & \texttt{AccountsReceivable} (23001) \\
+\texttt{CurrentAccruedExpenses} (23004) & \texttt{NonCurrentAccruedExpenses} (23005) \\
+\texttt{AccruedInvestmentIncome} (23007) & \texttt{AccumulatedDepreciation} (23008) \\
+\texttt{GainsLossesNotAffectingRetainedEarnings} (23009) & \texttt{AdditionalPaidInCapital} (23012) \\
+\texttt{AllowanceForLoansAndLeaseLosses} (23016) & \texttt{AvailableForSaleSecurities} (23020) \\
+\texttt{CapitalStock} (23027) & \texttt{Cash} (23028) \\
+\texttt{CashEquivalents} (23029) & \texttt{CashAndCashEquivalents} (23030) \\
+\texttt{CashAndDueFromBanks} (23031) & \texttt{CashCashEquivalentsAndFederalFundsSold} (23032) \\
+\texttt{CashCashEquivalentsAndShortTermInvestments} (23033) & \texttt{CommonStock} (23038) \\
+\texttt{CurrentAssets} (23044) & \texttt{CurrentDebt} (23045) \\
+\texttt{CurrentDebtAndCapitalLeaseObligation} (23046) & \texttt{CurrentLiabilities} (23047) \\
+\texttt{CurrentCapitalLeaseObligation} (23048) & \texttt{DeferredAssets} (23052) \\
+\texttt{DeferredCosts} (23054) & \texttt{NonCurrentDeferredLiabilities} (23057) \\
+\texttt{CurrentDeferredLiabilities} (23058) & \texttt{DeferredPolicyAcquisitionCosts} (23059) \\
+\texttt{CurrentDeferredRevenue} (23061) & \texttt{NonCurrentDeferredRevenue} (23062) \\
+\texttt{DeferredTaxAssets} (23063) & \texttt{CurrentDeferredTaxesAssets} (23064) \\
+\texttt{CurrentDeferredTaxesLiabilities} (23065) & \texttt{NonCurrentDeferredTaxesAssets} (23066) \\
+\texttt{NonCurrentDeferredTaxesLiabilities} (23067) & \texttt{EquityInvestments} (23076) \\
+\texttt{FederalFundsPurchasedAndSecuritiesSoldUnderAgreementToRepurchase} (23079) & \texttt{FederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (23081) \\
+\texttt{FixedMaturityInvestments} (23089) & \texttt{FuturePolicyBenefits} (23095) \\
+\texttt{GeneralPartnershipCapital} (23096) & \texttt{Goodwill} (23097) \\
+\texttt{GoodwillAndOtherIntangibleAssets} (23098) & \texttt{GrossLoan} (23099) \\
+\texttt{GrossPPE} (23100) & \texttt{HeldToMaturitySecurities} (23102) \\
+\texttt{IncomeTaxPayable} (23103) & \texttt{InterestBearingDepositsLiabilities} (23105) \\
+\texttt{InterestPayable} (23106) & \texttt{InterestBearingDepositsAssets} (23107) \\
+\texttt{Inventory} (23108) & \texttt{InvestmentsAndAdvances} (23111) \\
+\texttt{LimitedPartnershipCapital} (23118) & \texttt{LongTermDebt} (23123) \\
+\texttt{LongTermDebtAndCapitalLeaseObligation} (23124) & \texttt{LongTermInvestments} (23126) \\
+\texttt{LongTermCapitalLeaseObligation} (23127) & \texttt{MinorityInterest} (23132) \\
+\texttt{MoneyMarketInvestments} (23133) & \texttt{NetLoan} (23137) \\
+\texttt{NetPPE} (23139) & \texttt{NonInterestBearingDeposits} (23142) \\
+\texttt{CurrentNotesPayable} (23143) & \texttt{NotesReceivable} (23144) \\
+\texttt{NonCurrentNoteReceivables} (23146) & \texttt{OtherCurrentLiabilities} (23151) \\
+\texttt{OtherIntangibleAssets} (23155) & \texttt{ShortTermInvestments} (23163) \\
+\texttt{Payables} (23165) & \texttt{PayablesAndAccruedExpenses} (23166) \\
+\texttt{PolicyReservesBenefits} (23169) & \texttt{PolicyholderFunds} (23171) \\
+\texttt{PreferredSecuritiesOutsideStockEquity} (23172) & \texttt{PreferredStock} (23174) \\
+\texttt{PrepaidAssets} (23179) & \texttt{NonCurrentPrepaidAssets} (23180) \\
+\texttt{Receivables} (23189) & \texttt{ReinsuranceRecoverable} (23196) \\
+\texttt{RetainedEarnings} (23204) & \texttt{SecuritiesLendingCollateral} (23205) \\
+\texttt{SecurityAgreeToBeResell} (23207) & \texttt{SecuritySoldNotYetRepurchased} (23208) \\
+\texttt{SeparateAccountAssets} (23209) & \texttt{SeparateAccountBusiness} (23210) \\
+\texttt{ShortTermInvestmentsAvailableForSale} (23212) & \texttt{ShortTermInvestmentsHeldToMaturity} (23213) \\
+\texttt{ShortTermInvestmentsTrading} (23214) & \texttt{StockholdersEquity} (23215) \\
+\texttt{TotalTaxPayable} (23217) & \texttt{TotalAssets} (23220) \\
+\texttt{TotalDeposits} (23223) & \texttt{TotalInvestments} (23224) \\
+\texttt{TotalNonCurrentAssets} (23226) & \texttt{TotalPartnershipCapital} (23228) \\
+\texttt{TradingAssets} (23229) & \texttt{TradingLiabilities} (23230) \\
+\texttt{TradingSecurities} (23231) & \texttt{TreasuryStock} (23232) \\
+\texttt{UnearnedIncome} (23235) & \texttt{UnearnedPremiums} (23236) \\
+\texttt{UnpaidLossAndLossReserve} (23237) & \texttt{InvestedCapital} (23245) \\
+\texttt{CurrentDeferredAssets} (23252) & \texttt{NonCurrentDeferredAssets} (23253) \\
+\texttt{SecuritiesAndInvestments} (23258) & \texttt{TotalLiabilitiesNetMinorityInterest} (23259) \\
+\texttt{TotalNonCurrentLiabilitiesNetMinorityInterest} (23260) & \texttt{TotalEquityGrossMinorityInterest} (23261) \\
+\texttt{GrossAccountsReceivable} (23262) & \texttt{NonCurrentAccountsReceivable} (23263) \\
+\texttt{AccruedInterestReceivable} (23264) & \texttt{AdvanceFromFederalHomeLoanBanks} (23265) \\
+\texttt{AllowanceForDoubtfulAccountsReceivable} (23266) & \texttt{AllowanceForNotesReceivable} (23267) \\
+\texttt{AssetsHeldForSale} (23268) & \texttt{AssetsOfDiscontinuedOperations} (23269) \\
+\texttt{BankIndebtedness} (23271) & \texttt{BankOwnedLifeInsurance} (23273) \\
+\texttt{SecurityBorrowed} (23274) & \texttt{BuildingsAndImprovements} (23275) \\
+\texttt{CommercialLoan} (23278) & \texttt{CommercialPaper} (23279) \\
+\texttt{CommonStockEquity} (23280) & \texttt{ConstructionInProgress} (23282) \\
+\texttt{ConsumerLoan} (23283) & \texttt{MinimumPensionLiabilities} (23284) \\
+\texttt{CustomerAcceptances} (23285) & \texttt{DefinedPensionBenefit} (23288) \\
+\texttt{DerivativeProductLiabilities} (23289) & \texttt{DerivativeAssets} (23290) \\
+\texttt{DividendsPayable} (23291) & \texttt{EmployeeBenefits} (23293) \\
+\texttt{FederalFundsPurchased} (23295) & \texttt{FederalFundsSold} (23296) \\
+\texttt{FederalHomeLoanBankStock} (23297) & \texttt{FinancialAssets} (23298) \\
+\texttt{FinancialInstrumentsSoldUnderAgreementsToRepurchase} (23299) & \texttt{FinishedGoods} (23300) \\
+\texttt{FlightFleetVehicleAndRelatedEquipments} (23301) & \texttt{ForeclosedAssets} (23302) \\
+\texttt{ForeignCurrencyTranslationAdjustments} (23304) & \texttt{InventoriesAdjustmentsAllowances} (23307) \\
+\texttt{InvestmentsInOtherVenturesUnderEquityMethod} (23310) & \texttt{LandAndImprovements} (23312) \\
+\texttt{Leases} (23313) & \texttt{LiabilitiesOfDiscontinuedOperations} (23314) \\
+\texttt{LineOfCredit} (23316) & \texttt{LoansHeldForSale} (23317) \\
+\texttt{LoansReceivable} (23318) & \texttt{MachineryFurnitureEquipment} (23319) \\
+\texttt{MaterialsAndSupplies} (23320) & \texttt{MineralProperties} (23321) \\
+\texttt{MortgageLoan} (23322) & \texttt{MortgageAndConsumerloans} (23323) \\
+\texttt{GrossNotesReceivable} (23328) & \texttt{OtherAssets} (23329) \\
+\texttt{OtherCapitalStock} (23330) & \texttt{OtherCurrentAssets} (23331) \\
+\texttt{OtherCurrentBorrowings} (23332) & \texttt{OtherEquityAdjustments} (23335) \\
+\texttt{OtherInventories} (23337) & \texttt{OtherInvestedAssets} (23338) \\
+\texttt{OtherNonCurrentAssets} (23339) & \texttt{OtherProperties} (23340) \\
+\texttt{OtherRealEstateOwned} (23341) & \texttt{OtherReceivables} (23342) \\
+\texttt{NonCurrentPensionAndOtherPostretirementBenefitPlans} (23344) & \texttt{PolicyLoans} (23345) \\
+\texttt{PreferredStockEquity} (23347) & \texttt{Properties} (23351) \\
+\texttt{CurrentProvisions} (23352) & \texttt{LongTermProvisions} (23353) \\
+\texttt{RawMaterials} (23355) & \texttt{ReceivablesAdjustmentsAllowances} (23358) \\
+\texttt{RegulatoryAssets} (23359) & \texttt{RegulatoryLiabilities} (23360) \\
+\texttt{ReinsuranceBalancesPayable} (23361) & \texttt{RestrictedCash} (23365) \\
+\texttt{RestrictedCashAndCashEquivalents} (23366) & \texttt{RestrictedCashAndInvestments} (23367) \\
+\texttt{RestrictedCommonStock} (23368) & \texttt{RestrictedInvestments} (23369) \\
+\texttt{TaxesReceivable} (23372) & \texttt{TotalCapitalization} (23374) \\
+\texttt{TotalDeferredCreditsAndOtherNonCurrentLiabilities} (23375) & \texttt{UnbilledReceivables} (23376) \\
+\texttt{UnrealizedGainLoss} (23377) & \texttt{WorkInProcess} (23378) \\
+\texttt{OtherNonCurrentLiabilities} (23379) & \texttt{CapitalLeaseObligations} (23380) \\
+\texttt{OtherLiabilities} (23381) & \texttt{OtherPayable} (23382) \\
+\texttt{TangibleBookValue} (23383) & \texttt{TotalEquity} (23384) \\
+\texttt{WorkingCapital} (23385) & \texttt{TotalDebt} (23386) \\
+\texttt{CommonUtilityPlant} (23388) & \texttt{ElectricUtilityPlant} (23389) \\
+\texttt{NaturalGasFuelAndOther} (23390) & \texttt{NetUtilityPlant} (23391) \\
+\texttt{WaterProduction} (23392) & \texttt{OrdinarySharesNumber} (23393) \\
+\texttt{PreferredSharesNumber} (23394) & \texttt{TreasurySharesNumber} (23395) \\
+\texttt{TradingAndOtherReceivable} (23399) & \texttt{SecuritiesLoaned} (23401) \\
+\texttt{NetTangibleAssets} (23403) & \texttt{DuefromRelatedPartiesCurrent} (23404) \\
+\texttt{DuefromRelatedPartiesNonCurrent} (23405) & \texttt{DuetoRelatedParties} (23406) \\
+\texttt{DuetoRelatedPartiesCurrent} (23407) & \texttt{DuetoRelatedPartiesNonCurrent} (23408) \\
+\texttt{InvestmentProperties} (23410) & \texttt{InvestmentsinSubsidiariesatCost} (23411) \\
+\texttt{InvestmentsinAssociatesatCost} (23412) & \texttt{InvestmentsinJointVenturesatCost} (23413) \\
+\texttt{InvestmentinFinancialAssets} (23414) & \texttt{FinanceLeaseReceivables} (23415) \\
+\texttt{ConvertibleLoansCurrent} (23418) & \texttt{BankLoansCurrent} (23419) \\
+\texttt{OtherLoansCurrent} (23420) & \texttt{AccruedandDeferredIncome} (23422) \\
+\texttt{BankLoansNonCurrent} (23426) & \texttt{OtherLoansNonCurrent} (23427) \\
+\texttt{OtherReserves} (23430) & \texttt{LoansandAdvancestoBank} (23432) \\
+\texttt{LoansandAdvancestoCustomer} (23433) & \texttt{TreasuryBillsandOtherEligibleBills} (23434) \\
+\texttt{EquitySharesInvestments} (23435) & \texttt{DepositsbyBank} (23436) \\
+\texttt{CustomerAccounts} (23437) & \texttt{ItemsinTheCourseofTransmissiontoOtherBanks} (23438) \\
+\texttt{TradingandFinancialLiabilities} (23439) & \texttt{DebtSecuritiesinIssue} (23440) \\
+\texttt{SubordinatedLiabilities} (23441) & \texttt{ProvisionsTotal} (23443) \\
+\texttt{OperatingLeaseAssets} (23444) & \texttt{ClaimsOutstanding} (23445) \\
+\texttt{LiabilitiesHeldforSaleCurrent} (23452) & \texttt{LiabilitiesHeldforSaleNonCurrent} (23453) \\
+\texttt{DebtSecurities} (23455) & \texttt{TotalFinancialLeaseObligations} (23456) \\
+\texttt{AccruedandDeferredIncomeCurrent} (23457) & \texttt{AccruedandDeferredIncomeNonCurrent} (23458) \\
+\texttt{FinanceLeaseReceivablesCurrent} (23459) & \texttt{FinanceLeaseReceivablesNonCurrent} (23460) \\
+\texttt{FinancialLiabilitiesCurrent} (23462) & \texttt{FinancialLiabilitiesNonCurrent} (23463) \\
+\texttt{FinancialAssetsDesignatedasFairValueThroughProfitorLossTotal} (23466) & \texttt{TaxesAssetsCurrent} (23468) \\
+\texttt{OtherEquityInterest} (23469) & \texttt{InterestBearingBorrowingsNonCurrent} (23470) \\
+\texttt{NonInterestBearingBorrowingsNonCurrent} (23471) & \texttt{TradeandOtherPayablesNonCurrent} (23472) \\
+\texttt{NonInterestBearingBorrowingsCurrent} (23474) & \texttt{PensionandOtherPostRetirementBenefitPlansCurrent} (23475) \\
+\texttt{OtherLoanAssets} (23478) & \texttt{AssetsPledgedasCollateralSubjecttoSaleorRepledgingTotal} (23480) \\
+\texttt{TaxAssetsTotal} (23481) & \texttt{AdvancesfromCentralBanks} (23482) \\
+\texttt{DepositCertificates} (23484) & \texttt{NonInterestBearingBorrowingsTotal} (23487) \\
+\texttt{OtherBorrowedFunds} (23488) & \texttt{FinancialLiabilitiesDesignatedasFairValueThroughProfitorLossTotal} (23490) \\
+\texttt{FinancialLiabilitiesMeasuredatAmortizedCostTotal} (23491) & \texttt{AccruedLiabilitiesTotal} (23495) \\
+\texttt{DeferredIncomeTotal} (23496) & \texttt{DeferredTaxLiabilitiesTotal} (23497) \\
+\texttt{ReinsuranceAssets} (23499) & \texttt{DepositsMadeunderAssumedReinsuranceContract} (23502) \\
+\texttt{InsuranceContractAssets} (23503) & \texttt{InsuranceContractLiabilities} (23505) \\
+\texttt{DepositsReceivedunderCededInsuranceContract} (23508) & \texttt{InvestmentContractLiabilities} (23509) \\
+\texttt{PensionAndOtherPostretirementBenefitPlansTotal} (23515) & \texttt{LiabilitiesHeldforSaleTotal} (23516) \\
+\texttt{HedgingAssetsCurrent} (23518) & \texttt{ConvertibleLoansTotal} (23519) \\
+\texttt{BankLoansTotal} (23520) & \texttt{OtherLoansTotal} (23521) \\
+\texttt{InsuranceFundsNonCurrent} (23524) & \texttt{DebtTotal} (23528) \\
+\texttt{ComTreShaNum} (23529) & \texttt{PreTreShaNum} (23530) \\
+\texttt{NetDebt} (23531) & \texttt{ShareIssued} (23532) \\
+\texttt{AssetsHeldForSaleCurrent} (23533) & \texttt{AssetsHeldForSaleNonCurrent} (23534) \\
+\texttt{BiologicalAssets} (23535) & \texttt{CashRestrictedOrPledged} (23536) \\
+\texttt{ConvertibleLoansNonCurrent} (23537) & \texttt{OtherInvestments} (23540) \\
+\texttt{BSFileDate} (23542) & \texttt{DueFromRelatedParties} (23543) \\
+\texttt{UnallocatedSurplus} (23546) & \texttt{DebtDueInYear1} (23547) \\
+\texttt{DebtDueInYear2} (23548) & \texttt{DebtDueWithnYear5} (23549) \\
+\texttt{DebtDueBeyond} (23550) & \texttt{TotalDebtInMaturity} (23551) \\
+\texttt{FixedAssetsRevaluationReserve} (23552) & \texttt{CurrentOtherFinancialLiabilities} (23553) \\
+\texttt{NonCurrentOtherFinancialLiabilities} (23554) & \texttt{OtherFinancialLiabilities} (23555) \\
+\texttt{TotalLiabilitiesAsReported} (23556) & \texttt{TotalEquityAsReported} (23557) \\
+\bottomrule
+\end{longtable}}
+
+\section{Cash Flow (codes 26xxx)}
+{\footnotesize
+\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
+\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
+\midrule \endhead
+\texttt{Amortization} (26000) & \texttt{CapitalExpenditure} (26005) \\
+\texttt{CashDividendsPaid} (26007) & \texttt{CashFlowFromContinuingFinancingActivities} (26008) \\
+\texttt{CashFlowFromContinuingInvestingActivities} (26009) & \texttt{CashFlowFromContinuingOperatingActivities} (26010) \\
+\texttt{CashFlowFromDiscontinuedOperation} (26011) & \texttt{FinancingCashFlow} (26012) \\
+\texttt{InvestingCashFlow} (26013) & \texttt{OperatingCashFlow} (26014) \\
+\texttt{BeginningCashPosition} (26015) & \texttt{EndCashPosition} (26016) \\
+\texttt{CashFromDiscontinuedFinancing} (26017) & \texttt{CashFromDiscontinuedFinancingActivities} (26018) \\
+\texttt{CashFromDiscontinuedInvesting} (26019) & \texttt{CashFromDiscontinuedInvestingActivities} (26020) \\
+\texttt{CashFromDiscontinuedOperating} (26021) & \texttt{ChangeInAccountPayable} (26022) \\
+\texttt{ChangeInTaxPayable} (26024) & \texttt{ChangeInAccruedExpense} (26025) \\
+\texttt{ChangeInAccruedInvestmentIncome} (26026) & \texttt{ChangesInCash} (26027) \\
+\texttt{ChangeInDeferredAcquisitionCosts} (26028) & \texttt{ChangeInFederalFundsAndSecuritiesSoldForRepurchase} (26030) \\
+\texttt{ChangeInFundsWithheld} (26031) & \texttt{ChangeInIncomeTaxPayable} (26032) \\
+\texttt{ChangeInInterestPayable} (26033) & \texttt{ChangeInInventory} (26034) \\
+\texttt{ChangeInLoans} (26035) & \texttt{ChangeInLossAndLossAdjustmentExpenseReserves} (26036) \\
+\texttt{ChangeInPayable} (26040) & \texttt{ChangeInPayablesAndAccruedExpense} (26041) \\
+\texttt{ChangeInPrepaidAssets} (26043) & \texttt{ChangeInReceivables} (26045) \\
+\texttt{ChangeInReinsuranceRecoverableOnPaidAndUnpaidLosses} (26047) & \texttt{ChangeInRestrictedCash} (26049) \\
+\texttt{ChangeInTradingAccountSecurities} (26050) & \texttt{ChangeInWorkingCapital} (26053) \\
+\texttt{DeferredIncomeTax} (26056) & \texttt{DeferredTax} (26057) \\
+\texttt{Depletion} (26058) & \texttt{Depreciation} (26059) \\
+\texttt{DepreciationAndAmortization} (26060) & \texttt{DepreciationAmortizationDepletion} (26061) \\
+\texttt{EffectOfExchangeRateChanges} (26063) & \texttt{IncreaseDecreaseInDeposit} (26069) \\
+\texttt{NetCommonStockIssuance} (26071) & \texttt{NetIssuancePaymentsOfDebt} (26072) \\
+\texttt{NetLongTermDebtIssuance} (26073) & \texttt{NetPreferredStockIssuance} (26074) \\
+\texttt{NetShortTermDebtIssuance} (26075) & \texttt{NetCashFromDiscontinuedOperations} (26077) \\
+\texttt{NetForeignCurrencyExchangeGainLoss} (26078) & \texttt{NetIncomeFromContinuingOperations} (26080) \\
+\texttt{PaymentForLoans} (26087) & \texttt{CommonStockPayments} (26088) \\
+\texttt{PreferredStockPayments} (26089) & \texttt{LongTermDebtPayments} (26090) \\
+\texttt{ShortTermDebtPayments} (26091) & \texttt{ProceedsFromLoans} (26095) \\
+\texttt{ProceedsFromStockOptionExercised} (26097) & \texttt{CommonStockIssuance} (26098) \\
+\texttt{LongTermDebtIssuance} (26099) & \texttt{PreferredStockIssuance} (26100) \\
+\texttt{ShortTermDebtIssuance} (26101) & \texttt{NetProceedsPaymentForLoan} (26103) \\
+\texttt{ProceedsPaymentInInterestBearingDepositsInBank} (26104) & \texttt{PurchaseOfIntangibles} (26108) \\
+\texttt{PurchaseOfInvestment} (26110) & \texttt{PurchaseOfPPE} (26112) \\
+\texttt{PurchaseOfBusiness} (26115) & \texttt{NetBusinessPurchaseAndSale} (26116) \\
+\texttt{NetIntangiblesPurchaseAndSale} (26117) & \texttt{NetInvestmentPurchaseAndSale} (26118) \\
+\texttt{NetPPEPurchaseAndSale} (26119) & \texttt{SaleOfBusiness} (26123) \\
+\texttt{SaleOfIntangibles} (26124) & \texttt{SaleOfInvestment} (26125) \\
+\texttt{SaleOfPPE} (26127) & \texttt{ChangesInAccountReceivables} (26137) \\
+\texttt{AmortizationOfFinancingCostsAndDiscounts} (26141) & \texttt{AmortizationOfSecurities} (26142) \\
+\texttt{AssetImpairmentCharge} (26143) & \texttt{ChangeInDividendPayable} (26144) \\
+\texttt{ChangeInDeferredCharges} (26145) & \texttt{ChangeInOtherCurrentAssets} (26146) \\
+\texttt{ChangeInOtherCurrentLiabilities} (26147) & \texttt{ChangeInOtherWorkingCapital} (26148) \\
+\texttt{ChangeInUnearnedPremiums} (26152) & \texttt{CommonStockDividendPaid} (26154) \\
+\texttt{EarningsLossesFromEquityInvestments} (26155) & \texttt{ExcessTaxBenefitFromStockBasedCompensation} (26156) \\
+\texttt{GainLossOnInvestmentSecurities} (26158) & \texttt{GainLossOnSaleOfBusiness} (26159) \\
+\texttt{GainLossOnSaleOfPPE} (26160) & \texttt{InterestCreditedOnPolicyholderDeposits} (26161) \\
+\texttt{CashFromDiscontinuedOperatingActivities} (26162) & \texttt{OperatingGainsLosses} (26163) \\
+\texttt{NetOtherFinancingCharges} (26164) & \texttt{NetOtherInvestingChanges} (26165) \\
+\texttt{OtherNonCashItems} (26166) & \texttt{PensionAndEmployeeBenefitExpense} (26167) \\
+\texttt{PreferredStockDividendPaid} (26168) & \texttt{ProceedsPaymentFederalFundsSoldAndSecuritiesPurchasedUnderAgreementToResell} (26169) \\
+\texttt{ProvisionForLoanLeaseAndOtherLosses} (26170) & \texttt{RealizedGainLossOnSaleOfLoansAndLease} (26171) \\
+\texttt{StockBasedCompensation} (26172) & \texttt{UnrealizedGainLossOnInvestmentSecurities} (26173) \\
+\texttt{UnrealizedGainsLossesOnDerivatives} (26174) & \texttt{AmortizationOfIntangibles} (26175) \\
+\texttt{IncomeTaxPaidSupplementalData} (26179) & \texttt{InterestPaidSupplementalData} (26180) \\
+\texttt{IssuanceOfCapitalStock} (26181) & \texttt{IssuanceOfDebt} (26182) \\
+\texttt{RepaymentOfDebt} (26183) & \texttt{RepurchaseOfCapitalStock} (26184) \\
+\texttt{FreeCashFlow} (26185) & \texttt{DecreaseinInterestBearingDepositsinBank} (26188) \\
+\texttt{IncreaseinInterestBearingDepositsinBank} (26189) & \texttt{InterestReceivedCFO} (26194) \\
+\texttt{InterestPaidCFO} (26195) & \texttt{PurchaseofSubsidiaries} (26196) \\
+\texttt{PurchaseofJointVentureAssociate} (26197) & \texttt{SaleofSubsidiaries} (26198) \\
+\texttt{SaleofJointVentureAssociate} (26199) & \texttt{IncreaseDecreaseinLeaseFinancing} (26200) \\
+\texttt{IncreaseinLeaseFinancing} (26201) & \texttt{RepaymentinLeaseFinancing} (26202) \\
+\texttt{ShareofAssociates} (26203) & \texttt{ProfitonDisposals} (26204) \\
+\texttt{ReorganizationOtherCosts} (26205) & \texttt{NetOutwardLoans} (26207) \\
+\texttt{IssueExpenses} (26208) & \texttt{ChangeinFairValueofInvestmentProperties} (26218) \\
+\texttt{ChangeinDepositsbyBankandCustomers} (26219) & \texttt{CashFlowsfromusedinOperatingActivitiesDirect} (26220) \\
+\texttt{ClassesofCashReceiptsfromOperatingActivities} (26221) & \texttt{OtherCashReceiptsfromOperatingActivities} (26222) \\
+\texttt{ClassesofCashPayments} (26223) & \texttt{PaymentstoSuppliersforGoodsandServices} (26224) \\
+\texttt{PaymentsonBehalfofEmployees} (26226) & \texttt{OtherCashPaymentsfromOperatingActivities} (26228) \\
+\texttt{DividendsPaidDirect} (26229) & \texttt{DividendsReceivedDirect} (26230) \\
+\texttt{InterestPaidDirect} (26231) & \texttt{InterestReceivedDirect} (26232) \\
+\texttt{TaxesRefundPaidDirect} (26233) & \texttt{TotalAdjustmentsforNonCashItems} (26234) \\
+\texttt{ImpairmentLossReversalRecognizedinProfitorLoss} (26235) & \texttt{DividendPaidCFO} (26238) \\
+\texttt{DividendReceivedCFO} (26239) & \texttt{TaxesRefundPaid} (26240) \\
+\texttt{OtherOperatingInflowsOutflowsofCash} (26241) & \texttt{CashAdvancesandLoansMadetoOtherParties} (26243) \\
+\texttt{CashReceiptsfromRepaymentofAdvancesandLoansMadetoOtherParties} (26244) & \texttt{DividendsReceivedCFI} (26246) \\
+\texttt{InterestReceivedCFI} (26247) & \texttt{InterestPaidCFF} (26253) \\
+\texttt{ChangeinAccruedIncome} (26255) & \texttt{ChangeinFinancialAssets} (26258) \\
+\texttt{ChangeinAdvancesfromCentralBanks} (26259) & \texttt{ChangeinFinancialLiabilities} (26260) \\
+\texttt{ChangeinInsuranceContractAssets} (26261) & \texttt{ChangeinReinsuranceReceivables} (26262) \\
+\texttt{ChangeinDeferredAcquisitionCostsNet} (26263) & \texttt{ChangeinInsuranceFunds} (26264) \\
+\texttt{ChangeinInvestmentContractLiabilities} (26266) & \texttt{ChangeinInsuranceContractLiabilities} (26267) \\
+\texttt{ProvisionandWriteOffofAssets} (26269) & \texttt{ReceiptsfromCustomers} (26270) \\
+\texttt{ReceiptsfromGovernmentGrants} (26271) & \texttt{MinorityInterest} (26272) \\
+\texttt{CapExReported} (26273) & \texttt{CashReceiptsfromTaxRefunds} (26274) \\
+\texttt{CashReceiptsfromDepositsbyBanksandCustomers} (26276) & \texttt{CashReceiptsfromLoans} (26277) \\
+\texttt{CashReceiptsfromSecuritiesRelatedActivities} (26278) & \texttt{CashReceiptsfromFeesandCommissions} (26280) \\
+\texttt{CashPaymentsforDepositsbyBanksandCustomers} (26282) & \texttt{CashPaymentsforLoans} (26283) \\
+\texttt{InterestandCommissionPaid} (26284) & \texttt{AllTaxesPaid} (26285) \\
+\texttt{CashReceivedfromInsuranceActivities} (26286) & \texttt{PremiumReceived} (26287) \\
+\texttt{ReinsuranceandOtherRecoveriesReceived} (26288) & \texttt{PolicyholderDepositInvestmentReceived} (26289) \\
+\texttt{CashPaidforInsuranceActivities} (26290) & \texttt{ClaimsPaid} (26291) \\
+\texttt{CommissionPaid} (26292) & \texttt{CashPaidtoReinsurers} (26293) \\
+\texttt{OtherUnderwritingExpensesPaid} (26294) & \texttt{CashDividendsForMinorities} (26295) \\
+\texttt{CFFileDate} (26296) & \texttt{CashGeneratedfromOperatingActivities} (26298) \\
+\texttt{FundFromOperation} (26299) & \texttt{NetInvestmentPropertiesPurchaseAndSale} (26300) \\
+\texttt{PurchaseOfInvestmentProperties} (26301) & \texttt{SaleOfInvestmentProperties} (26302) \\
+\texttt{OtherCashAdjustIncludedIntoChangeinCash} (26303) & \texttt{OtherCashAdjustExcludeFromChangeinCash} (26304) \\
+\texttt{ChangeinCashSupplementalAsReported} (26305) & \texttt{CashFlowfromOperationsbeforeNWC} (26306) \\
+\bottomrule
+\end{longtable}}
+\end{subappendices}
+
 \chapter{Accounting-Adjustment Schemes and Topics}
 \label{sec:schemes}
 
@@ -2680,7 +3065,7 @@ lets a cross-jurisdiction cross-check agree on the unambiguous totals yet diverg
 mechanics of that template --- the field definitions, and the class of deltas it produces (net-of-excise
 revenue, recomputed retained earnings, deferred-tax gross-ups, hybrid-capital treatment) --- are treated in
 depth where the oracle needs them: \S\ref{sec:morningstar} and the field appendix
-(Appendix~\ref{ch:morningstar-fields}).
+(\S\ref{ch:morningstar-fields}).
 
 As a \emph{scheme}, Morningstar is the set of \texttt{(issuer, metric)} entries under
 \texttt{SCHEME\_REGISTRY[:morningstar]} --- the documented divergences the standardisation produces, each with
@@ -10571,390 +10956,6 @@ Historically, iXBRL was defined on top of XHTML (XML-compliant HTML), although m
 \end{lstlisting}
 A browser won't render this as a nice financial statement. It's intended for software.
 \end{description}
-
-\chapter{Morningstar Standardised Field Reference}
-\label{ch:morningstar-fields}
-
-\noindent The complete field set of Morningstar's standardised financial-statement template --- the source of
-Yahoo Finance's fundamentals (\S\ref{sec:morningstar}) --- by statement, as field name and code. This is the
-full list \emph{across all six industry templates} (a given filer uses only its template's subset); the
-headline-line \emph{definitions} are in Table~\ref{tab:morningstar-defs}. Extracted from Morningstar's
-\emph{Global Equity Data Definitions} (Morningstar, 2021; Ch.~\ref{ch:references}).
-
-\section{Income Statement (codes 20xxx)}
-{\footnotesize
-\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
-\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
-\midrule \endhead
-\texttt{Amortization} (20007) & \texttt{SecuritiesAmortization} (20008) \\
-\texttt{CostOfRevenue} (20013) & \texttt{Depletion} (20017) \\
-\texttt{Depreciation} (20018) & \texttt{DepreciationAndAmortization} (20019) \\
-\texttt{DepreciationAmortizationDepletion} (20020) & \texttt{NetIncomeDiscontinuousOperations} (20022) \\
-\texttt{ExciseTaxes} (20028) & \texttt{NetIncomeExtraordinary} (20030) \\
-\texttt{FeeRevenueAndOtherIncome} (20031) & \texttt{GeneralAndAdministrativeExpense} (20045) \\
-\texttt{GrossProfit} (20046) & \texttt{InterestExpense} (20057) \\
-\texttt{InterestExpenseNonOperating} (20064) & \texttt{InterestIncomeAfterProvisionForLoanLoss} (20066) \\
-\texttt{InterestIncomeNonOperating} (20075) & \texttt{NetNonOperatingInterestIncomeExpense} (20077) \\
-\texttt{LossAdjustmentExpense} (20084) & \texttt{MinorityInterests} (20087) \\
-\texttt{NetIncome} (20091) & \texttt{NetIncomeCommonStockholders} (20093) \\
-\texttt{NetIncomeContinuousOperations} (20094) & \texttt{NetInterestIncome} (20095) \\
-\texttt{NetInvestmentIncome} (20096) & \texttt{TotalRevenue} (20100) \\
-\texttt{NonInterestExpense} (20105) & \texttt{NonInterestIncome} (20106) \\
-\texttt{OperatingExpense} (20108) & \texttt{OperatingIncome} (20109) \\
-\texttt{OperatingRevenue} (20112) & \texttt{OtherIncomeExpense} (20117) \\
-\texttt{PolicyAcquisitionExpense} (20125) & \texttt{NetPolicyholderBenefitsAndClaims} (20129) \\
-\texttt{PreferredStockDividends} (20134) & \texttt{TotalPremiumsEarned} (20135) \\
-\texttt{PretaxIncome} (20136) & \texttt{TaxProvision} (20145) \\
-\texttt{CreditLossesProvision} (20146) & \texttt{ResearchAndDevelopment} (20151) \\
-\texttt{SellingAndMarketingExpense} (20158) & \texttt{SellingGeneralAndAdministration} (20159) \\
-\texttt{SpecialIncomeCharges} (20162) & \texttt{TotalExpenses} (20164) \\
-\texttt{InterestIncome} (20177) & \texttt{EBIT} (20189) \\
-\texttt{EBITDA} (20190) & \texttt{NetIncomeContinuousOperationsNetMinorityInterest} (20191) \\
-\texttt{CededPremiums} (20201) & \texttt{CreditCard} (20204) \\
-\texttt{DividendIncome} (20206) & \texttt{EarningsFromEquityInterest} (20208) \\
-\texttt{Equipment} (20210) & \texttt{ExplorationDevelopmentAndMineralPropertyLeaseExpenses} (20211) \\
-\texttt{FeesAndCommissions} (20213) & \texttt{ForeignExchangeTradingGains} (20214) \\
-\texttt{Fuel} (20215) & \texttt{FuelAndPurchasePower} (20216) \\
-\texttt{GainOnSaleOfBusiness} (20217) & \texttt{GainOnSaleOfPPE} (20218) \\
-\texttt{GainOnSaleOfSecurity} (20219) & \texttt{GrossPremiumsWritten} (20224) \\
-\texttt{ImpairmentOfCapitalAssets} (20225) & \texttt{IncreaseDecreaseInNetUnearnedPremiumReserves} (20230) \\
-\texttt{InsuranceAndClaims} (20231) & \texttt{InterestExpenseForDeposit} (20235) \\
-\texttt{InterestExpenseForFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (20236) & \texttt{InterestExpenseForLongTermDebtAndCapitalSecurities} (20238) \\
-\texttt{InterestExpenseForShortTermDebt} (20239) & \texttt{InterestIncomeFromDeposits} (20240) \\
-\texttt{InterestIncomeFromFederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (20241) & \texttt{InterestIncomeFromLeases} (20243) \\
-\texttt{InterestIncomeFromLoans} (20244) & \texttt{InterestIncomeFromLoansAndLease} (20245) \\
-\texttt{InterestIncomeFromSecurities} (20246) & \texttt{InvestmentBankingProfit} (20248) \\
-\texttt{MaintenanceAndRepairs} (20252) & \texttt{NetForeignExchangeGainLoss} (20255) \\
-\texttt{NetOccupancyExpense} (20256) & \texttt{NetPremiumsWritten} (20257) \\
-\texttt{NetRealizedGainLossOnInvestments} (20258) & \texttt{OccupancyAndEquipment} (20260) \\
-\texttt{OperationAndMaintenance} (20262) & \texttt{OtherCustomerServices} (20263) \\
-\texttt{OtherInterestExpense} (20265) & \texttt{OtherInterestIncome} (20266) \\
-\texttt{OtherNonInterestExpense} (20267) & \texttt{OtherSpecialCharges} (20269) \\
-\texttt{OtherTaxes} (20271) & \texttt{PolicyholderBenefitsCeded} (20273) \\
-\texttt{PolicyholderBenefitsGross} (20274) & \texttt{PolicyholderDividends} (20275) \\
-\texttt{PolicyholderInterest} (20276) & \texttt{ProfessionalExpenseAndContractServicesExpense} (20280) \\
-\texttt{ProvisionForDoubtfulAccounts} (20283) & \texttt{RentAndLandingFees} (20287) \\
-\texttt{RestructuringAndMergernAcquisition} (20289) & \texttt{SalariesAndWages} (20292) \\
-\texttt{SecuritiesActivities} (20293) & \texttt{ServiceChargeOnDepositorAccounts} (20295) \\
-\texttt{TradingGainLoss} (20298) & \texttt{TrustFeesbyCommissions} (20300) \\
-\texttt{UnderwritingExpenses} (20301) & \texttt{WriteOff} (20304) \\
-\texttt{OtherNonInterestIncome} (20306) & \texttt{AmortizationOfIntangibles} (20308) \\
-\texttt{NetIncomeFromContinuingAndDiscontinuedOperation} (20309) & \texttt{NetIncomeFromTaxLossCarryforward} (20311) \\
-\texttt{OtherOperatingExpenses} (20312) & \texttt{TotalMoneyMarketInvestments} (20313) \\
-\texttt{ReconciledCostOfRevenue} (20314) & \texttt{ReconciledDepreciation} (20315) \\
-\texttt{NormalizedIncome} (20316) & \texttt{NetIncomeFromContinuingOperationNetMinorityInterest} (20331) \\
-\texttt{GainLossonSaleofAssets} (20333) & \texttt{GainonSaleofLoans} (20334) \\
-\texttt{GainonSaleofInvestmentProperty} (20335) & \texttt{LossonExtinguishmentofDebt} (20343) \\
-\texttt{EarningsfromEquityInterestNetOfTax} (20345) & \texttt{NetIncomeIncludingNoncontrollingInterests} (20346) \\
-\texttt{OtherunderPreferredStockDividend} (20347) & \texttt{StaffCosts} (20359) \\
-\texttt{SocialSecurityCosts} (20360) & \texttt{PensionCosts} (20361) \\
-\texttt{OtherOperatingIncomeTotal} (20363) & \texttt{IncomefromAssociatesandOtherParticipatingInterests} (20367) \\
-\texttt{TotalOtherFinanceCost} (20368) & \texttt{GrossDividendPayment} (20371) \\
-\texttt{FeesandCommissionIncome} (20377) & \texttt{FeesandCommissionExpense} (20378) \\
-\texttt{NetTradingIncome} (20379) & \texttt{OtherStaffCosts} (20381) \\
-\texttt{GainonInvestmentProperties} (20383) & \texttt{AverageDilutionEarn} (20385) \\
-\texttt{GainLossonFinancialInstrumentsDesignatedasCashFlowHedges} (20391) & \texttt{GainLossonDerecognitionofAvailableForSaleFinancialAssets} (20392) \\
-\texttt{NegativeGoodwillImmediatelyRecognized} (20394) & \texttt{GainsLossesonFinancialInstrumentsDuetoFairValueAdjustmentsinHedgeAccountingTotal} (20395) \\
-\texttt{ImpairmentLossesReversalsFinancialInstrumentsNet} (20396) & \texttt{ClaimsandPaidIncurred} (20400) \\
-\texttt{ReinsuranceRecoveriesClaimsandBenefits} (20401) & \texttt{ChangeinInsuranceLiabilitiesNetofReinsurance} (20402) \\
-\texttt{ChangeinInvestmentContract} (20405) & \texttt{CreditRiskProvisions} (20409) \\
-\texttt{WagesandSalaries} (20411) & \texttt{OtherNonOperatingIncomeExpenses} (20412) \\
-\texttt{OtherNonOperatingIncome} (20414) & \texttt{OtherNonOperatingExpenses} (20415) \\
-\texttt{TotalUnusualItems} (20416) & \texttt{TotalUnusualItemsExcludingGoodwill} (20417) \\
-\texttt{TaxRateForCalcs} (20418) & \texttt{TaxEffectOfUnusualItems} (20419) \\
-\texttt{NormalizedEBITDA} (20420) & \texttt{StockBasedCompensation} (20422) \\
-\texttt{ISFileDate} (20423) & \texttt{DilutedNIAvailtoComStockholders} (20424) \\
-\texttt{InvestmentContractLiabilitiesIncurred} (20425) & \texttt{ReinsuranceRecoveriesofInvestmentContract} (20426) \\
-\texttt{TotalDividendPaymentofEquityShares} (20429) & \texttt{TotalDividendPaymentofNonEquityShares} (20430) \\
-\texttt{ChangeinTheGrossProvisionforUnearnedPremiums} (20431) & \texttt{ChangeinTheGrossProvisionforUnearnedPremiumsReinsurersShare} (20432) \\
-\texttt{ClaimsandChangeinInsuranceLiabilities} (20433) & \texttt{ReinsuranceRecoveriesofInsuranceLiabilities} (20434) \\
-\texttt{TotalOperatingIncomeAsReported} (20435) & \texttt{OtherCostofRevenue} (20437) \\
-\texttt{RentandLandingFeesCostofRevenue} (20438) & \texttt{DDACostofRevenue} (20439) \\
-\texttt{RentExpenseSupplemental} (20440) & \texttt{NormalizedPreTaxIncome} (20441) \\
-\texttt{ResearchAndDevelopmentExpensesSupplemental} (20442) & \texttt{DepreciationExpenseSupplemental} (20443) \\
-\texttt{AmortizationExpenseSupplemental} (20444) & \texttt{TotalRevenueAsReported} (20445) \\
-\texttt{OperatingExpenseAsReported} (20446) & \texttt{NormalizedIncomeAsReported} (20447) \\
-\texttt{NormalizedEBITDAAsReported} (20448) & \texttt{NormalizedEBITAsReported} (20449) \\
-\texttt{NormalizedOperatingProfitAsReported} (20450) & \texttt{EffectiveTaxRateAsReported} (20451) \\
-\texttt{DisposalofBusinessesSupplemental} (20452) & \texttt{DiscontinuedOperationsSupplemental} (20453) \\
-\texttt{AssetDisposalsSupplemental} (20454) & \texttt{ImpairmentWriteOffWriteDownofCapitalAssetsSupplemental} (20455) \\
-\texttt{GoodwillImpairmentWriteOffSupplemental} (20456) & \texttt{ImpairmentWriteOffWriteDownofOtherAssetsSupplemental} (20457) \\
-\texttt{GainLossOnExtinguishmentofDebtSupplemental} (20458) & \texttt{DebtRestructuringSupplemental} (20459) \\
-\texttt{LitigationIncomeExpenseSupplemental} (20460) & \texttt{MergerAndAcquisitionIncomeExpenseSupplemental} (20461) \\
-\texttt{RestructuringAndReorganizationExpenseSupplemental} (20462) & \texttt{OtherIrregularIncomeExpensesSupplemental} (20463) \\
-\bottomrule
-\end{longtable}}
-
-\section{Balance Sheet (codes 23xxx)}
-{\footnotesize
-\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
-\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
-\midrule \endhead
-\texttt{AccountsPayable} (23000) & \texttt{AccountsReceivable} (23001) \\
-\texttt{CurrentAccruedExpenses} (23004) & \texttt{NonCurrentAccruedExpenses} (23005) \\
-\texttt{AccruedInvestmentIncome} (23007) & \texttt{AccumulatedDepreciation} (23008) \\
-\texttt{GainsLossesNotAffectingRetainedEarnings} (23009) & \texttt{AdditionalPaidInCapital} (23012) \\
-\texttt{AllowanceForLoansAndLeaseLosses} (23016) & \texttt{AvailableForSaleSecurities} (23020) \\
-\texttt{CapitalStock} (23027) & \texttt{Cash} (23028) \\
-\texttt{CashEquivalents} (23029) & \texttt{CashAndCashEquivalents} (23030) \\
-\texttt{CashAndDueFromBanks} (23031) & \texttt{CashCashEquivalentsAndFederalFundsSold} (23032) \\
-\texttt{CashCashEquivalentsAndShortTermInvestments} (23033) & \texttt{CommonStock} (23038) \\
-\texttt{CurrentAssets} (23044) & \texttt{CurrentDebt} (23045) \\
-\texttt{CurrentDebtAndCapitalLeaseObligation} (23046) & \texttt{CurrentLiabilities} (23047) \\
-\texttt{CurrentCapitalLeaseObligation} (23048) & \texttt{DeferredAssets} (23052) \\
-\texttt{DeferredCosts} (23054) & \texttt{NonCurrentDeferredLiabilities} (23057) \\
-\texttt{CurrentDeferredLiabilities} (23058) & \texttt{DeferredPolicyAcquisitionCosts} (23059) \\
-\texttt{CurrentDeferredRevenue} (23061) & \texttt{NonCurrentDeferredRevenue} (23062) \\
-\texttt{DeferredTaxAssets} (23063) & \texttt{CurrentDeferredTaxesAssets} (23064) \\
-\texttt{CurrentDeferredTaxesLiabilities} (23065) & \texttt{NonCurrentDeferredTaxesAssets} (23066) \\
-\texttt{NonCurrentDeferredTaxesLiabilities} (23067) & \texttt{EquityInvestments} (23076) \\
-\texttt{FederalFundsPurchasedAndSecuritiesSoldUnderAgreementToRepurchase} (23079) & \texttt{FederalFundsSoldAndSecuritiesPurchaseUnderAgreementsToResell} (23081) \\
-\texttt{FixedMaturityInvestments} (23089) & \texttt{FuturePolicyBenefits} (23095) \\
-\texttt{GeneralPartnershipCapital} (23096) & \texttt{Goodwill} (23097) \\
-\texttt{GoodwillAndOtherIntangibleAssets} (23098) & \texttt{GrossLoan} (23099) \\
-\texttt{GrossPPE} (23100) & \texttt{HeldToMaturitySecurities} (23102) \\
-\texttt{IncomeTaxPayable} (23103) & \texttt{InterestBearingDepositsLiabilities} (23105) \\
-\texttt{InterestPayable} (23106) & \texttt{InterestBearingDepositsAssets} (23107) \\
-\texttt{Inventory} (23108) & \texttt{InvestmentsAndAdvances} (23111) \\
-\texttt{LimitedPartnershipCapital} (23118) & \texttt{LongTermDebt} (23123) \\
-\texttt{LongTermDebtAndCapitalLeaseObligation} (23124) & \texttt{LongTermInvestments} (23126) \\
-\texttt{LongTermCapitalLeaseObligation} (23127) & \texttt{MinorityInterest} (23132) \\
-\texttt{MoneyMarketInvestments} (23133) & \texttt{NetLoan} (23137) \\
-\texttt{NetPPE} (23139) & \texttt{NonInterestBearingDeposits} (23142) \\
-\texttt{CurrentNotesPayable} (23143) & \texttt{NotesReceivable} (23144) \\
-\texttt{NonCurrentNoteReceivables} (23146) & \texttt{OtherCurrentLiabilities} (23151) \\
-\texttt{OtherIntangibleAssets} (23155) & \texttt{ShortTermInvestments} (23163) \\
-\texttt{Payables} (23165) & \texttt{PayablesAndAccruedExpenses} (23166) \\
-\texttt{PolicyReservesBenefits} (23169) & \texttt{PolicyholderFunds} (23171) \\
-\texttt{PreferredSecuritiesOutsideStockEquity} (23172) & \texttt{PreferredStock} (23174) \\
-\texttt{PrepaidAssets} (23179) & \texttt{NonCurrentPrepaidAssets} (23180) \\
-\texttt{Receivables} (23189) & \texttt{ReinsuranceRecoverable} (23196) \\
-\texttt{RetainedEarnings} (23204) & \texttt{SecuritiesLendingCollateral} (23205) \\
-\texttt{SecurityAgreeToBeResell} (23207) & \texttt{SecuritySoldNotYetRepurchased} (23208) \\
-\texttt{SeparateAccountAssets} (23209) & \texttt{SeparateAccountBusiness} (23210) \\
-\texttt{ShortTermInvestmentsAvailableForSale} (23212) & \texttt{ShortTermInvestmentsHeldToMaturity} (23213) \\
-\texttt{ShortTermInvestmentsTrading} (23214) & \texttt{StockholdersEquity} (23215) \\
-\texttt{TotalTaxPayable} (23217) & \texttt{TotalAssets} (23220) \\
-\texttt{TotalDeposits} (23223) & \texttt{TotalInvestments} (23224) \\
-\texttt{TotalNonCurrentAssets} (23226) & \texttt{TotalPartnershipCapital} (23228) \\
-\texttt{TradingAssets} (23229) & \texttt{TradingLiabilities} (23230) \\
-\texttt{TradingSecurities} (23231) & \texttt{TreasuryStock} (23232) \\
-\texttt{UnearnedIncome} (23235) & \texttt{UnearnedPremiums} (23236) \\
-\texttt{UnpaidLossAndLossReserve} (23237) & \texttt{InvestedCapital} (23245) \\
-\texttt{CurrentDeferredAssets} (23252) & \texttt{NonCurrentDeferredAssets} (23253) \\
-\texttt{SecuritiesAndInvestments} (23258) & \texttt{TotalLiabilitiesNetMinorityInterest} (23259) \\
-\texttt{TotalNonCurrentLiabilitiesNetMinorityInterest} (23260) & \texttt{TotalEquityGrossMinorityInterest} (23261) \\
-\texttt{GrossAccountsReceivable} (23262) & \texttt{NonCurrentAccountsReceivable} (23263) \\
-\texttt{AccruedInterestReceivable} (23264) & \texttt{AdvanceFromFederalHomeLoanBanks} (23265) \\
-\texttt{AllowanceForDoubtfulAccountsReceivable} (23266) & \texttt{AllowanceForNotesReceivable} (23267) \\
-\texttt{AssetsHeldForSale} (23268) & \texttt{AssetsOfDiscontinuedOperations} (23269) \\
-\texttt{BankIndebtedness} (23271) & \texttt{BankOwnedLifeInsurance} (23273) \\
-\texttt{SecurityBorrowed} (23274) & \texttt{BuildingsAndImprovements} (23275) \\
-\texttt{CommercialLoan} (23278) & \texttt{CommercialPaper} (23279) \\
-\texttt{CommonStockEquity} (23280) & \texttt{ConstructionInProgress} (23282) \\
-\texttt{ConsumerLoan} (23283) & \texttt{MinimumPensionLiabilities} (23284) \\
-\texttt{CustomerAcceptances} (23285) & \texttt{DefinedPensionBenefit} (23288) \\
-\texttt{DerivativeProductLiabilities} (23289) & \texttt{DerivativeAssets} (23290) \\
-\texttt{DividendsPayable} (23291) & \texttt{EmployeeBenefits} (23293) \\
-\texttt{FederalFundsPurchased} (23295) & \texttt{FederalFundsSold} (23296) \\
-\texttt{FederalHomeLoanBankStock} (23297) & \texttt{FinancialAssets} (23298) \\
-\texttt{FinancialInstrumentsSoldUnderAgreementsToRepurchase} (23299) & \texttt{FinishedGoods} (23300) \\
-\texttt{FlightFleetVehicleAndRelatedEquipments} (23301) & \texttt{ForeclosedAssets} (23302) \\
-\texttt{ForeignCurrencyTranslationAdjustments} (23304) & \texttt{InventoriesAdjustmentsAllowances} (23307) \\
-\texttt{InvestmentsInOtherVenturesUnderEquityMethod} (23310) & \texttt{LandAndImprovements} (23312) \\
-\texttt{Leases} (23313) & \texttt{LiabilitiesOfDiscontinuedOperations} (23314) \\
-\texttt{LineOfCredit} (23316) & \texttt{LoansHeldForSale} (23317) \\
-\texttt{LoansReceivable} (23318) & \texttt{MachineryFurnitureEquipment} (23319) \\
-\texttt{MaterialsAndSupplies} (23320) & \texttt{MineralProperties} (23321) \\
-\texttt{MortgageLoan} (23322) & \texttt{MortgageAndConsumerloans} (23323) \\
-\texttt{GrossNotesReceivable} (23328) & \texttt{OtherAssets} (23329) \\
-\texttt{OtherCapitalStock} (23330) & \texttt{OtherCurrentAssets} (23331) \\
-\texttt{OtherCurrentBorrowings} (23332) & \texttt{OtherEquityAdjustments} (23335) \\
-\texttt{OtherInventories} (23337) & \texttt{OtherInvestedAssets} (23338) \\
-\texttt{OtherNonCurrentAssets} (23339) & \texttt{OtherProperties} (23340) \\
-\texttt{OtherRealEstateOwned} (23341) & \texttt{OtherReceivables} (23342) \\
-\texttt{NonCurrentPensionAndOtherPostretirementBenefitPlans} (23344) & \texttt{PolicyLoans} (23345) \\
-\texttt{PreferredStockEquity} (23347) & \texttt{Properties} (23351) \\
-\texttt{CurrentProvisions} (23352) & \texttt{LongTermProvisions} (23353) \\
-\texttt{RawMaterials} (23355) & \texttt{ReceivablesAdjustmentsAllowances} (23358) \\
-\texttt{RegulatoryAssets} (23359) & \texttt{RegulatoryLiabilities} (23360) \\
-\texttt{ReinsuranceBalancesPayable} (23361) & \texttt{RestrictedCash} (23365) \\
-\texttt{RestrictedCashAndCashEquivalents} (23366) & \texttt{RestrictedCashAndInvestments} (23367) \\
-\texttt{RestrictedCommonStock} (23368) & \texttt{RestrictedInvestments} (23369) \\
-\texttt{TaxesReceivable} (23372) & \texttt{TotalCapitalization} (23374) \\
-\texttt{TotalDeferredCreditsAndOtherNonCurrentLiabilities} (23375) & \texttt{UnbilledReceivables} (23376) \\
-\texttt{UnrealizedGainLoss} (23377) & \texttt{WorkInProcess} (23378) \\
-\texttt{OtherNonCurrentLiabilities} (23379) & \texttt{CapitalLeaseObligations} (23380) \\
-\texttt{OtherLiabilities} (23381) & \texttt{OtherPayable} (23382) \\
-\texttt{TangibleBookValue} (23383) & \texttt{TotalEquity} (23384) \\
-\texttt{WorkingCapital} (23385) & \texttt{TotalDebt} (23386) \\
-\texttt{CommonUtilityPlant} (23388) & \texttt{ElectricUtilityPlant} (23389) \\
-\texttt{NaturalGasFuelAndOther} (23390) & \texttt{NetUtilityPlant} (23391) \\
-\texttt{WaterProduction} (23392) & \texttt{OrdinarySharesNumber} (23393) \\
-\texttt{PreferredSharesNumber} (23394) & \texttt{TreasurySharesNumber} (23395) \\
-\texttt{TradingAndOtherReceivable} (23399) & \texttt{SecuritiesLoaned} (23401) \\
-\texttt{NetTangibleAssets} (23403) & \texttt{DuefromRelatedPartiesCurrent} (23404) \\
-\texttt{DuefromRelatedPartiesNonCurrent} (23405) & \texttt{DuetoRelatedParties} (23406) \\
-\texttt{DuetoRelatedPartiesCurrent} (23407) & \texttt{DuetoRelatedPartiesNonCurrent} (23408) \\
-\texttt{InvestmentProperties} (23410) & \texttt{InvestmentsinSubsidiariesatCost} (23411) \\
-\texttt{InvestmentsinAssociatesatCost} (23412) & \texttt{InvestmentsinJointVenturesatCost} (23413) \\
-\texttt{InvestmentinFinancialAssets} (23414) & \texttt{FinanceLeaseReceivables} (23415) \\
-\texttt{ConvertibleLoansCurrent} (23418) & \texttt{BankLoansCurrent} (23419) \\
-\texttt{OtherLoansCurrent} (23420) & \texttt{AccruedandDeferredIncome} (23422) \\
-\texttt{BankLoansNonCurrent} (23426) & \texttt{OtherLoansNonCurrent} (23427) \\
-\texttt{OtherReserves} (23430) & \texttt{LoansandAdvancestoBank} (23432) \\
-\texttt{LoansandAdvancestoCustomer} (23433) & \texttt{TreasuryBillsandOtherEligibleBills} (23434) \\
-\texttt{EquitySharesInvestments} (23435) & \texttt{DepositsbyBank} (23436) \\
-\texttt{CustomerAccounts} (23437) & \texttt{ItemsinTheCourseofTransmissiontoOtherBanks} (23438) \\
-\texttt{TradingandFinancialLiabilities} (23439) & \texttt{DebtSecuritiesinIssue} (23440) \\
-\texttt{SubordinatedLiabilities} (23441) & \texttt{ProvisionsTotal} (23443) \\
-\texttt{OperatingLeaseAssets} (23444) & \texttt{ClaimsOutstanding} (23445) \\
-\texttt{LiabilitiesHeldforSaleCurrent} (23452) & \texttt{LiabilitiesHeldforSaleNonCurrent} (23453) \\
-\texttt{DebtSecurities} (23455) & \texttt{TotalFinancialLeaseObligations} (23456) \\
-\texttt{AccruedandDeferredIncomeCurrent} (23457) & \texttt{AccruedandDeferredIncomeNonCurrent} (23458) \\
-\texttt{FinanceLeaseReceivablesCurrent} (23459) & \texttt{FinanceLeaseReceivablesNonCurrent} (23460) \\
-\texttt{FinancialLiabilitiesCurrent} (23462) & \texttt{FinancialLiabilitiesNonCurrent} (23463) \\
-\texttt{FinancialAssetsDesignatedasFairValueThroughProfitorLossTotal} (23466) & \texttt{TaxesAssetsCurrent} (23468) \\
-\texttt{OtherEquityInterest} (23469) & \texttt{InterestBearingBorrowingsNonCurrent} (23470) \\
-\texttt{NonInterestBearingBorrowingsNonCurrent} (23471) & \texttt{TradeandOtherPayablesNonCurrent} (23472) \\
-\texttt{NonInterestBearingBorrowingsCurrent} (23474) & \texttt{PensionandOtherPostRetirementBenefitPlansCurrent} (23475) \\
-\texttt{OtherLoanAssets} (23478) & \texttt{AssetsPledgedasCollateralSubjecttoSaleorRepledgingTotal} (23480) \\
-\texttt{TaxAssetsTotal} (23481) & \texttt{AdvancesfromCentralBanks} (23482) \\
-\texttt{DepositCertificates} (23484) & \texttt{NonInterestBearingBorrowingsTotal} (23487) \\
-\texttt{OtherBorrowedFunds} (23488) & \texttt{FinancialLiabilitiesDesignatedasFairValueThroughProfitorLossTotal} (23490) \\
-\texttt{FinancialLiabilitiesMeasuredatAmortizedCostTotal} (23491) & \texttt{AccruedLiabilitiesTotal} (23495) \\
-\texttt{DeferredIncomeTotal} (23496) & \texttt{DeferredTaxLiabilitiesTotal} (23497) \\
-\texttt{ReinsuranceAssets} (23499) & \texttt{DepositsMadeunderAssumedReinsuranceContract} (23502) \\
-\texttt{InsuranceContractAssets} (23503) & \texttt{InsuranceContractLiabilities} (23505) \\
-\texttt{DepositsReceivedunderCededInsuranceContract} (23508) & \texttt{InvestmentContractLiabilities} (23509) \\
-\texttt{PensionAndOtherPostretirementBenefitPlansTotal} (23515) & \texttt{LiabilitiesHeldforSaleTotal} (23516) \\
-\texttt{HedgingAssetsCurrent} (23518) & \texttt{ConvertibleLoansTotal} (23519) \\
-\texttt{BankLoansTotal} (23520) & \texttt{OtherLoansTotal} (23521) \\
-\texttt{InsuranceFundsNonCurrent} (23524) & \texttt{DebtTotal} (23528) \\
-\texttt{ComTreShaNum} (23529) & \texttt{PreTreShaNum} (23530) \\
-\texttt{NetDebt} (23531) & \texttt{ShareIssued} (23532) \\
-\texttt{AssetsHeldForSaleCurrent} (23533) & \texttt{AssetsHeldForSaleNonCurrent} (23534) \\
-\texttt{BiologicalAssets} (23535) & \texttt{CashRestrictedOrPledged} (23536) \\
-\texttt{ConvertibleLoansNonCurrent} (23537) & \texttt{OtherInvestments} (23540) \\
-\texttt{BSFileDate} (23542) & \texttt{DueFromRelatedParties} (23543) \\
-\texttt{UnallocatedSurplus} (23546) & \texttt{DebtDueInYear1} (23547) \\
-\texttt{DebtDueInYear2} (23548) & \texttt{DebtDueWithnYear5} (23549) \\
-\texttt{DebtDueBeyond} (23550) & \texttt{TotalDebtInMaturity} (23551) \\
-\texttt{FixedAssetsRevaluationReserve} (23552) & \texttt{CurrentOtherFinancialLiabilities} (23553) \\
-\texttt{NonCurrentOtherFinancialLiabilities} (23554) & \texttt{OtherFinancialLiabilities} (23555) \\
-\texttt{TotalLiabilitiesAsReported} (23556) & \texttt{TotalEquityAsReported} (23557) \\
-\bottomrule
-\end{longtable}}
-
-\section{Cash Flow (codes 26xxx)}
-{\footnotesize
-\begin{longtable}{@{}p{0.48\textwidth}p{0.48\textwidth}@{}}
-\toprule \textbf{Field (code)} & \textbf{Field (code)} \\
-\midrule \endhead
-\texttt{Amortization} (26000) & \texttt{CapitalExpenditure} (26005) \\
-\texttt{CashDividendsPaid} (26007) & \texttt{CashFlowFromContinuingFinancingActivities} (26008) \\
-\texttt{CashFlowFromContinuingInvestingActivities} (26009) & \texttt{CashFlowFromContinuingOperatingActivities} (26010) \\
-\texttt{CashFlowFromDiscontinuedOperation} (26011) & \texttt{FinancingCashFlow} (26012) \\
-\texttt{InvestingCashFlow} (26013) & \texttt{OperatingCashFlow} (26014) \\
-\texttt{BeginningCashPosition} (26015) & \texttt{EndCashPosition} (26016) \\
-\texttt{CashFromDiscontinuedFinancing} (26017) & \texttt{CashFromDiscontinuedFinancingActivities} (26018) \\
-\texttt{CashFromDiscontinuedInvesting} (26019) & \texttt{CashFromDiscontinuedInvestingActivities} (26020) \\
-\texttt{CashFromDiscontinuedOperating} (26021) & \texttt{ChangeInAccountPayable} (26022) \\
-\texttt{ChangeInTaxPayable} (26024) & \texttt{ChangeInAccruedExpense} (26025) \\
-\texttt{ChangeInAccruedInvestmentIncome} (26026) & \texttt{ChangesInCash} (26027) \\
-\texttt{ChangeInDeferredAcquisitionCosts} (26028) & \texttt{ChangeInFederalFundsAndSecuritiesSoldForRepurchase} (26030) \\
-\texttt{ChangeInFundsWithheld} (26031) & \texttt{ChangeInIncomeTaxPayable} (26032) \\
-\texttt{ChangeInInterestPayable} (26033) & \texttt{ChangeInInventory} (26034) \\
-\texttt{ChangeInLoans} (26035) & \texttt{ChangeInLossAndLossAdjustmentExpenseReserves} (26036) \\
-\texttt{ChangeInPayable} (26040) & \texttt{ChangeInPayablesAndAccruedExpense} (26041) \\
-\texttt{ChangeInPrepaidAssets} (26043) & \texttt{ChangeInReceivables} (26045) \\
-\texttt{ChangeInReinsuranceRecoverableOnPaidAndUnpaidLosses} (26047) & \texttt{ChangeInRestrictedCash} (26049) \\
-\texttt{ChangeInTradingAccountSecurities} (26050) & \texttt{ChangeInWorkingCapital} (26053) \\
-\texttt{DeferredIncomeTax} (26056) & \texttt{DeferredTax} (26057) \\
-\texttt{Depletion} (26058) & \texttt{Depreciation} (26059) \\
-\texttt{DepreciationAndAmortization} (26060) & \texttt{DepreciationAmortizationDepletion} (26061) \\
-\texttt{EffectOfExchangeRateChanges} (26063) & \texttt{IncreaseDecreaseInDeposit} (26069) \\
-\texttt{NetCommonStockIssuance} (26071) & \texttt{NetIssuancePaymentsOfDebt} (26072) \\
-\texttt{NetLongTermDebtIssuance} (26073) & \texttt{NetPreferredStockIssuance} (26074) \\
-\texttt{NetShortTermDebtIssuance} (26075) & \texttt{NetCashFromDiscontinuedOperations} (26077) \\
-\texttt{NetForeignCurrencyExchangeGainLoss} (26078) & \texttt{NetIncomeFromContinuingOperations} (26080) \\
-\texttt{PaymentForLoans} (26087) & \texttt{CommonStockPayments} (26088) \\
-\texttt{PreferredStockPayments} (26089) & \texttt{LongTermDebtPayments} (26090) \\
-\texttt{ShortTermDebtPayments} (26091) & \texttt{ProceedsFromLoans} (26095) \\
-\texttt{ProceedsFromStockOptionExercised} (26097) & \texttt{CommonStockIssuance} (26098) \\
-\texttt{LongTermDebtIssuance} (26099) & \texttt{PreferredStockIssuance} (26100) \\
-\texttt{ShortTermDebtIssuance} (26101) & \texttt{NetProceedsPaymentForLoan} (26103) \\
-\texttt{ProceedsPaymentInInterestBearingDepositsInBank} (26104) & \texttt{PurchaseOfIntangibles} (26108) \\
-\texttt{PurchaseOfInvestment} (26110) & \texttt{PurchaseOfPPE} (26112) \\
-\texttt{PurchaseOfBusiness} (26115) & \texttt{NetBusinessPurchaseAndSale} (26116) \\
-\texttt{NetIntangiblesPurchaseAndSale} (26117) & \texttt{NetInvestmentPurchaseAndSale} (26118) \\
-\texttt{NetPPEPurchaseAndSale} (26119) & \texttt{SaleOfBusiness} (26123) \\
-\texttt{SaleOfIntangibles} (26124) & \texttt{SaleOfInvestment} (26125) \\
-\texttt{SaleOfPPE} (26127) & \texttt{ChangesInAccountReceivables} (26137) \\
-\texttt{AmortizationOfFinancingCostsAndDiscounts} (26141) & \texttt{AmortizationOfSecurities} (26142) \\
-\texttt{AssetImpairmentCharge} (26143) & \texttt{ChangeInDividendPayable} (26144) \\
-\texttt{ChangeInDeferredCharges} (26145) & \texttt{ChangeInOtherCurrentAssets} (26146) \\
-\texttt{ChangeInOtherCurrentLiabilities} (26147) & \texttt{ChangeInOtherWorkingCapital} (26148) \\
-\texttt{ChangeInUnearnedPremiums} (26152) & \texttt{CommonStockDividendPaid} (26154) \\
-\texttt{EarningsLossesFromEquityInvestments} (26155) & \texttt{ExcessTaxBenefitFromStockBasedCompensation} (26156) \\
-\texttt{GainLossOnInvestmentSecurities} (26158) & \texttt{GainLossOnSaleOfBusiness} (26159) \\
-\texttt{GainLossOnSaleOfPPE} (26160) & \texttt{InterestCreditedOnPolicyholderDeposits} (26161) \\
-\texttt{CashFromDiscontinuedOperatingActivities} (26162) & \texttt{OperatingGainsLosses} (26163) \\
-\texttt{NetOtherFinancingCharges} (26164) & \texttt{NetOtherInvestingChanges} (26165) \\
-\texttt{OtherNonCashItems} (26166) & \texttt{PensionAndEmployeeBenefitExpense} (26167) \\
-\texttt{PreferredStockDividendPaid} (26168) & \texttt{ProceedsPaymentFederalFundsSoldAndSecuritiesPurchasedUnderAgreementToResell} (26169) \\
-\texttt{ProvisionForLoanLeaseAndOtherLosses} (26170) & \texttt{RealizedGainLossOnSaleOfLoansAndLease} (26171) \\
-\texttt{StockBasedCompensation} (26172) & \texttt{UnrealizedGainLossOnInvestmentSecurities} (26173) \\
-\texttt{UnrealizedGainsLossesOnDerivatives} (26174) & \texttt{AmortizationOfIntangibles} (26175) \\
-\texttt{IncomeTaxPaidSupplementalData} (26179) & \texttt{InterestPaidSupplementalData} (26180) \\
-\texttt{IssuanceOfCapitalStock} (26181) & \texttt{IssuanceOfDebt} (26182) \\
-\texttt{RepaymentOfDebt} (26183) & \texttt{RepurchaseOfCapitalStock} (26184) \\
-\texttt{FreeCashFlow} (26185) & \texttt{DecreaseinInterestBearingDepositsinBank} (26188) \\
-\texttt{IncreaseinInterestBearingDepositsinBank} (26189) & \texttt{InterestReceivedCFO} (26194) \\
-\texttt{InterestPaidCFO} (26195) & \texttt{PurchaseofSubsidiaries} (26196) \\
-\texttt{PurchaseofJointVentureAssociate} (26197) & \texttt{SaleofSubsidiaries} (26198) \\
-\texttt{SaleofJointVentureAssociate} (26199) & \texttt{IncreaseDecreaseinLeaseFinancing} (26200) \\
-\texttt{IncreaseinLeaseFinancing} (26201) & \texttt{RepaymentinLeaseFinancing} (26202) \\
-\texttt{ShareofAssociates} (26203) & \texttt{ProfitonDisposals} (26204) \\
-\texttt{ReorganizationOtherCosts} (26205) & \texttt{NetOutwardLoans} (26207) \\
-\texttt{IssueExpenses} (26208) & \texttt{ChangeinFairValueofInvestmentProperties} (26218) \\
-\texttt{ChangeinDepositsbyBankandCustomers} (26219) & \texttt{CashFlowsfromusedinOperatingActivitiesDirect} (26220) \\
-\texttt{ClassesofCashReceiptsfromOperatingActivities} (26221) & \texttt{OtherCashReceiptsfromOperatingActivities} (26222) \\
-\texttt{ClassesofCashPayments} (26223) & \texttt{PaymentstoSuppliersforGoodsandServices} (26224) \\
-\texttt{PaymentsonBehalfofEmployees} (26226) & \texttt{OtherCashPaymentsfromOperatingActivities} (26228) \\
-\texttt{DividendsPaidDirect} (26229) & \texttt{DividendsReceivedDirect} (26230) \\
-\texttt{InterestPaidDirect} (26231) & \texttt{InterestReceivedDirect} (26232) \\
-\texttt{TaxesRefundPaidDirect} (26233) & \texttt{TotalAdjustmentsforNonCashItems} (26234) \\
-\texttt{ImpairmentLossReversalRecognizedinProfitorLoss} (26235) & \texttt{DividendPaidCFO} (26238) \\
-\texttt{DividendReceivedCFO} (26239) & \texttt{TaxesRefundPaid} (26240) \\
-\texttt{OtherOperatingInflowsOutflowsofCash} (26241) & \texttt{CashAdvancesandLoansMadetoOtherParties} (26243) \\
-\texttt{CashReceiptsfromRepaymentofAdvancesandLoansMadetoOtherParties} (26244) & \texttt{DividendsReceivedCFI} (26246) \\
-\texttt{InterestReceivedCFI} (26247) & \texttt{InterestPaidCFF} (26253) \\
-\texttt{ChangeinAccruedIncome} (26255) & \texttt{ChangeinFinancialAssets} (26258) \\
-\texttt{ChangeinAdvancesfromCentralBanks} (26259) & \texttt{ChangeinFinancialLiabilities} (26260) \\
-\texttt{ChangeinInsuranceContractAssets} (26261) & \texttt{ChangeinReinsuranceReceivables} (26262) \\
-\texttt{ChangeinDeferredAcquisitionCostsNet} (26263) & \texttt{ChangeinInsuranceFunds} (26264) \\
-\texttt{ChangeinInvestmentContractLiabilities} (26266) & \texttt{ChangeinInsuranceContractLiabilities} (26267) \\
-\texttt{ProvisionandWriteOffofAssets} (26269) & \texttt{ReceiptsfromCustomers} (26270) \\
-\texttt{ReceiptsfromGovernmentGrants} (26271) & \texttt{MinorityInterest} (26272) \\
-\texttt{CapExReported} (26273) & \texttt{CashReceiptsfromTaxRefunds} (26274) \\
-\texttt{CashReceiptsfromDepositsbyBanksandCustomers} (26276) & \texttt{CashReceiptsfromLoans} (26277) \\
-\texttt{CashReceiptsfromSecuritiesRelatedActivities} (26278) & \texttt{CashReceiptsfromFeesandCommissions} (26280) \\
-\texttt{CashPaymentsforDepositsbyBanksandCustomers} (26282) & \texttt{CashPaymentsforLoans} (26283) \\
-\texttt{InterestandCommissionPaid} (26284) & \texttt{AllTaxesPaid} (26285) \\
-\texttt{CashReceivedfromInsuranceActivities} (26286) & \texttt{PremiumReceived} (26287) \\
-\texttt{ReinsuranceandOtherRecoveriesReceived} (26288) & \texttt{PolicyholderDepositInvestmentReceived} (26289) \\
-\texttt{CashPaidforInsuranceActivities} (26290) & \texttt{ClaimsPaid} (26291) \\
-\texttt{CommissionPaid} (26292) & \texttt{CashPaidtoReinsurers} (26293) \\
-\texttt{OtherUnderwritingExpensesPaid} (26294) & \texttt{CashDividendsForMinorities} (26295) \\
-\texttt{CFFileDate} (26296) & \texttt{CashGeneratedfromOperatingActivities} (26298) \\
-\texttt{FundFromOperation} (26299) & \texttt{NetInvestmentPropertiesPurchaseAndSale} (26300) \\
-\texttt{PurchaseOfInvestmentProperties} (26301) & \texttt{SaleOfInvestmentProperties} (26302) \\
-\texttt{OtherCashAdjustIncludedIntoChangeinCash} (26303) & \texttt{OtherCashAdjustExcludeFromChangeinCash} (26304) \\
-\texttt{ChangeinCashSupplementalAsReported} (26305) & \texttt{CashFlowfromOperationsbeforeNWC} (26306) \\
-\bottomrule
-\end{longtable}}
-
 
 \chapter{Writing Systems Reference}
 \label{ch:writing-systems}
