@@ -418,6 +418,101 @@ role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry ha
 of the package stays common --- which is what makes adding a second jurisdiction tractable rather
 than a rewrite.
 
+\section{Swap providers without swapping workflows}
+\label{sec:swap-providers}
+
+The portability split has a consequence worth stating on its own, because it is the property a user
+feels day to day: \textbf{the workflow is fixed; the provider behind each step is not}. One sequence of
+verbs and one row type are the stable \emph{port}:
+
+\begin{center}
+\texttt{search}\,/\,\texttt{discover} \(\rightarrow\) \texttt{fetch\_filing} \(\rightarrow\)
+\textbf{\texttt{facts(f)}} \(\rightarrow\) \texttt{select\_statement}\,/\,export\,/\,validate
+\quad\(\Rightarrow\)\quad a \texttt{FactRow} table.
+\end{center}
+
+\noindent Everything that could vary \emph{underneath} that port is an interchangeable \emph{adapter}.
+You change the adapter; the code above the port does not move. This holds on four independent axes ---
+where the data comes from, how facts are recovered from the bytes, which model (if any) reads the hard
+cases, and where the result is written --- and each can be swapped without touching the other three.
+
+\begin{table}[htbp]
+\centering
+\caption{Four provider axes behind one fixed workflow. The left two columns never change; the right two
+name what is interchangeable and how the choice is made.}
+\label{tab:swap-providers}
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}p{0.15\textwidth}p{0.24\textwidth}p{0.36\textwidth}p{0.17\textwidth}@{}}
+\toprule
+\textbf{Axis} & \textbf{Fixed port} & \textbf{Interchangeable providers} & \textbf{Selected by} \\
+\midrule
+Data source (jurisdiction) & \texttt{discover} \(\rightarrow\) \texttt{fetch\_filing} \(\rightarrow\)
+  \texttt{facts(f)}; the \texttt{FactRow} & SEC Archives, ESEF/NSM packages, Companies House, EDINET,
+  Russia (e-disclosure\,/\,RFSD)\,\ldots{} & the \texttt{FilingSystem} you query \\
+Format (extractor) & \texttt{facts(f)}; the \texttt{FactRow} & XBRL (\texttt{:ixbrl}/\texttt{:xbrl}),
+  PDF document-AI $+$ deterministic fallback (\texttt{:pdf}), RFSD row (\texttt{:ras}) &
+  \texttt{Filing.kind}, automatically \\
+AI model & the deterministic control loop $+$ the validation gate (accept\,/\,reject\,/\,escalate) &
+  Rung~0 deterministic; Rung~1 local specialists; Rung~2 local generalist; Rung~3 opt-in cloud $+$ agents
+  (\S\ref{sec:model-ladder}) & the orchestrator, only when the rung below fails its gate \\
+Output (persistence) & a \texttt{Selection} of \texttt{FactRow}s & Markdown, Facts JSON, the DuckDB
+  warehouse, \texttt{save\_selection}\,/\,repository & which export you call \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Same call, different data provider.} The extraction call is the same shape across systems;
+only discovery differs.
+
+\begin{lstlisting}
+using EDGAR
+set_user_agent("Your Name you@example.com")
+fs = filings_by_cik("320193"; forms = "10-K")            # SEC: Apple
+f  = fetch_filing("320193", fs[1].accession)             # f.kind == :ixbrl
+select_statement(facts(f; classify = true, labels = true), "BalanceSheet")
+\end{lstlisting}
+
+\begin{lstlisting}
+hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # NSM/ESEF: Tesco PLC
+facts(fetch_filing(first(hs)); classify = true, labels = true)    # same call, ESEF package
+\end{lstlisting}
+
+\begin{lstlisting}
+f = fetch_filing(first(discover(CompaniesHouseApi(); company_number = "00021497")))
+if f.kind in (:ixbrl, :xbrl)                             # Companies House: iXBRL or PDF
+    facts(f; classify = true)                            # structured path
+else                                                      # f.kind == :pdf
+    extract_pdf("00021497_accounts.pdf")                 # download, then the PDF extractor
+end
+\end{lstlisting}
+
+\begin{lstlisting}
+using EDGAR, DuckDB                                    # Russia: DuckDB reads the RFSD parquet partition
+h    = only(discover(RFSDFilings(); ticker = "GAZP", year = 2023))  # Gazprom -> its INN, via MOEX ISS
+f    = fetch_filing(h)                                 # one (inn, year) RFSD row, as a :ras Filing
+rows = facts(f)                                        # one Fact per OKUD line, in rubles
+\end{lstlisting}
+
+\noindent Four data providers --- three document formats and one pre-structured row source --- and the
+same \texttt{facts(f)} call, returning the same \texttt{FactRow} table each time. Downstream
+(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
+of which provider produced the rows. (For a born-digital PDF on disk the extractor entry today is
+\texttt{extract\_pdf(path)}; see Chapter~\ref{ch:pdf}.)
+
+\paragraph{Why the provider can change without the workflow noticing.} Two contracts do the work. First,
+the \textbf{uniform \texttt{FactRow}}: every extractor, on every format, in every jurisdiction, emits the
+same row table (\S\ref{sys:extraction}), so nothing above \texttt{facts(f)} can tell --- or needs to ---
+which adapter ran. Second, the \textbf{validation gate}: the AI-model axis is the delicate one, because a
+model is non-deterministic and may be a remote third party. It is made swappable by the same invariant
+that makes small local models safe --- a model's output is accepted \emph{only} if it passes the same
+deterministic check the Rung-0 path uses (a balance sheet must cross-foot, a magnitude must be plausible,
+a concept must type-check; \S\ref{sec:model-ladder}). Because a failed result is rejected rather than
+merged, a model provider can only \emph{improve or abstain}, never silently corrupt --- which is exactly
+what lets you change the model, or decline one entirely, without changing the workflow or trusting the
+provider. The choice of model is a cost/quality dial, not a correctness dependency.
+
 \section{Entity identity across jurisdictions}
 \label{sec:identity}
 
@@ -561,50 +656,11 @@ Chapter~\ref{ch:pdf}.)
 
 \subsection{Workflow examples}
 
-The extraction call is the same shape across systems; only discovery differs.
-
-\paragraph{SEC (inline XBRL).}
-\begin{lstlisting}
-using EDGAR
-set_user_agent("Your Name you@example.com")
-fs = filings_by_cik("320193"; forms = "10-K")            # Apple
-f  = fetch_filing("320193", fs[1].accession)             # f.kind == :ixbrl
-select_statement(facts(f; classify = true, labels = true), "BalanceSheet")
-\end{lstlisting}
-
-\paragraph{NSM / ESEF (UKSEF inline XBRL).}
-\begin{lstlisting}
-hs = discover(NSM(); lei = "2138002P5RNKC5W2JZ46", year = 2025)   # Tesco PLC
-facts(fetch_filing(first(hs)); classify = true, labels = true)    # same call, ESEF package
-\end{lstlisting}
-
-\paragraph{Companies House (iXBRL \emph{or} PDF --- read \texttt{f.kind}).}
-\begin{lstlisting}
-f = fetch_filing(first(discover(CompaniesHouseApi(); company_number = "00021497")))
-if f.kind in (:ixbrl, :xbrl)
-    facts(f; classify = true)                            # structured path
-else                                                      # f.kind == :pdf
-    # download the document, then run the PDF extractor on the file:
-    extract_pdf("00021497_accounts.pdf")
-end
-\end{lstlisting}
-
-\paragraph{Russia (RFSD structured row --- \texttt{:ras}).}
-\begin{lstlisting}
-using EDGAR, DuckDB                                    # DuckDB reads the RFSD parquet partition
-h    = only(discover(RFSDFilings(); ticker = "GAZP", year = 2023))  # Gazprom -> its INN, via MOEX ISS
-f    = fetch_filing(h)                                 # one (inn, year) RFSD row, as a :ras Filing
-rows = facts(f)                                        # one Fact per OKUD line, in rubles
-# the RAS balance sheet cross-foots: total assets == total equity + liabilities
-assets = only(r.value for r in rows if r.concept == "ras:line_1600")
-claims = only(r.value for r in rows if r.concept == "ras:line_1700")
-@assert assets == claims
-\end{lstlisting}
-
-\noindent (For a born-digital PDF, the extractor call is \texttt{extract\_pdf(path)} --- see
-Chapter~\ref{ch:pdf}.) In every case the result is the same \texttt{FactRow} row table, so the downstream
-(classification, \texttt{select\_statement}, CSV/DuckDB, the validation oracles) is identical regardless
-of which extractor produced it.
+The cross-jurisdiction examples --- the \emph{same} \texttt{facts(f)} call against SEC, the NSM/ESEF,
+Companies House and Russia, each returning the same \texttt{FactRow} table --- now open the chapter, in
+\S\ref{sec:swap-providers} (\emph{Swap providers without swapping workflows}), where they make the
+fixed-workflow point directly. The \texttt{:ras} route additionally cross-foots the RAS balance sheet
+(total assets \(=\) total equity \(+\) liabilities) straight off the returned rows.
 
 
 \section{The model ladder: a federation of specialists}
@@ -829,35 +885,40 @@ Yahoo and Datastream expose top holdings for listed funds; the pure-fundamentals
 \newcommand{\freemark}{\tikz[baseline=-0.5ex]{\fill[covfull,rounded corners=0.2pt] (-0.68ex,-0.68ex) rectangle (0.68ex,0.68ex);}}
 \newcommand{\paidmark}{\tikz[baseline=-0.5ex]{\draw[covpaid,line width=0.6pt,rounded corners=0.2pt] (-0.68ex,-0.68ex) rectangle (0.68ex,0.68ex);}}
 
-\begin{table}[htbp]
+\begin{table}[tbp]
 \centering
-\caption{Entity coverage and information type: EDGAR.jl beside ten financial databases.
-Coverage: full / partial / not covered; access marked free or paid subscription (legend below).}
+\caption{Entity Coverage and Information Type.}
 \label{tab:db-comparison}
+{\footnotesize\raggedright Financial Databases:
+A = Yahoo Finance,
+B = Compustat Global Fundamentals,
+C = Compustat Global Security Daily,
+D = CRSP,
+E = Datastream,
+F = Worldscope,
+G = TRACE\,/\,FISD,
+H = I/B/E/S,
+I = OptionMetrics,
+J = Orbis. 
+OHLCV = open/high/low/close/volume.
+BS/IS/CF = Balance Sheet / Income Statement / Cash-Flow Statement.\par}
+\smallskip
 \footnotesize
-\setlength{\tabcolsep}{3pt}
+\setlength{\tabcolsep}{6pt}
 \renewcommand{\arraystretch}{1.2}
-\begin{tabular}{@{}p{0.20\textwidth}*{11}{c}@{}}
+\begin{tabular}{@{}p{0.28\textwidth}c*{10}{c}@{}}
 \toprule
-& \rotatebox[origin=l]{90}{\textbf{EDGAR.jl}}
-& \rotatebox[origin=l]{90}{Yahoo Finance}
-& \rotatebox[origin=l]{90}{Compustat Global Fund.}
-& \rotatebox[origin=l]{90}{Compustat Global SecD}
-& \rotatebox[origin=l]{90}{CRSP}
-& \rotatebox[origin=l]{90}{Datastream}
-& \rotatebox[origin=l]{90}{Worldscope}
-& \rotatebox[origin=l]{90}{TRACE / FISD}
-& \rotatebox[origin=l]{90}{I/B/E/S}
-& \rotatebox[origin=l]{90}{OptionMetrics}
-& \rotatebox[origin=l]{90}{Orbis} \\
+& \textbf{EDGAR}
+& \textbf{A} & \textbf{B} & \textbf{C} & \textbf{D} & \textbf{E}
+& \textbf{F} & \textbf{G} & \textbf{H} & \textbf{I} & \textbf{J} \\
 \midrule
-Access / licensing            & \freemark & \freemark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark \\
+Free Access           & \freemark & \freemark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark & \paidmark \\
 \midrule
 \multicolumn{12}{@{}l}{\textit{Listed companies}} \\
-\quad OHLCV --- shares        & \cvN & \cvF & \cvN & \cvF & \cvF & \cvF & \cvN & \cvN & \cvN & \cvP & \cvP \\
-\quad OHLCV --- bonds         & \cvN & \cvN & \cvN & \cvN & \cvP & \cvF & \cvN & \cvF & \cvN & \cvN & \cvN \\
-\quad OHLCV --- options       & \cvN & \cvP & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvN & \cvF & \cvN \\
-\quad Balance sheet / IS / CF & \cvF & \cvP & \cvF & \cvN & \cvN & \cvF & \cvF & \cvN & \cvN & \cvN & \cvF \\
+\quad Share Prices: OHLCV        & \cvN & \cvF & \cvN & \cvF & \cvF & \cvF & \cvN & \cvN & \cvN & \cvP & \cvP \\
+\quad Bond Prices: OHLCV         & \cvN & \cvN & \cvN & \cvN & \cvP & \cvF & \cvN & \cvF & \cvN & \cvN & \cvN \\
+\quad Option Prices: OHLCV       & \cvN & \cvP & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvN & \cvF & \cvN \\
+\quad BS/IS/CF & \cvF & \cvP & \cvF & \cvN & \cvN & \cvF & \cvF & \cvN & \cvN & \cvN & \cvF \\
 \quad Narratives              & \cvF & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvP \\
 \quad Earnings forecasts      & \cvP & \cvF & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvF & \cvN & \cvN \\
 \quad Earnings announcements  & \cvP & \cvF & \cvP & \cvN & \cvN & \cvP & \cvP & \cvN & \cvF & \cvN & \cvN \\
@@ -866,26 +927,18 @@ Access / licensing            & \freemark & \freemark & \paidmark & \paidmark & 
 \quad Directors \& executives & \cvP & \cvP & \cvN & \cvN & \cvN & \cvN & \cvP & \cvN & \cvN & \cvN & \cvF \\
 \addlinespace[2pt]
 \multicolumn{12}{@{}l}{\textit{Private companies}} \\
-\quad Balance sheet / IS / CF & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
+\quad BS/IS/CF & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
 \quad Narratives              & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvP \\
 \quad M\&A / corporate actions& \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
 \quad Ownership structures    & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
 \quad Directors \& executives & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvN & \cvF \\
 \addlinespace[2pt]
-\multicolumn{12}{@{}l}{\textit{REITs \& investment funds}} \\
+\multicolumn{12}{@{}l}{\textit{Investment Funds and REITs}} \\
 \quad Portfolio composition   & \cvP & \cvP & \cvN & \cvN & \cvP & \cvP & \cvN & \cvN & \cvN & \cvN & \cvN \\
 \bottomrule
 \end{tabular}
-
-\vspace{2pt}
-{\footnotesize\noindent\textbf{Legend:} \cvF~full / native source \quad \cvP~partial (limited,
-indirect or filing-driven) \quad \cvN~not covered \quad\textbar\quad \freemark~free / open
-\quad \paidmark~paid subscription.\par\smallskip
-\noindent Only EDGAR.jl and Yahoo Finance are free; the remaining nine are paid
-subscriptions, most reached through WRDS. (TRACE/FISD is marked paid as the research-grade package
---- FINRA's raw TRACE prints are themselves publicly disseminated.) An interactive, colour-coded
-version of this table ships with the source at \texttt{docs/manual/coverage-matrix.html}.\par}
 \end{table}
+
 
 \paragraph{Reading the table.} Two patterns carry the message. Read \emph{down} the EDGAR.jl column
 and you see a source that is full on statements and narrative and empty on prices --- a fundamentals
@@ -1020,7 +1073,7 @@ The engine choice was settled empirically on Moutai's FY2023 statements, and Min
 operational reference (install, OCR, page-scoping, troubleshooting) --- is collected in this chapter's
 appendix, \S\ref{app:docling}. The rest of this chapter describes the Docling path.
 
-\section{The ingestion pipeline}\label{sec:pdf-pipeline}
+\section{The Ingestion Pipeline}\label{sec:pdf-pipeline}
 
 Whichever engine runs, the main approach produces \emph{one} Structured Document; every output family and
 every persistence target derives from it (Figure~\ref{fig:pdf-ingestion}).
@@ -1036,7 +1089,7 @@ every persistence target derives from it (Figure~\ref{fig:pdf-ingestion}).
   arr/.style={-{Latex[length=2.2mm]}, thick},
 ]
   \node[box] (pdf) {PDF Document};
-  \node[box, below=of pdf] (parser) {Document Parser: \textbf{Docling} / \textbf{MinerU}
+  \node[box, below=of pdf] (parser) {Document Parser: \textbf{Docling}
     \\[1pt] {\scriptsize \texttt{pdf.js} path as the fallback}};
   \node[sd, below=of parser] (sd) {\textbf{Structured Document}\\[2pt]
     headings hierarchy \\ paragraphs \\ tables \\ figures \\ captions \\
@@ -1075,7 +1128,7 @@ line already runs through the engine itself --- which is exactly why the local v
 (\S\ref{sec:pdf-accuracy}, the model ladder \S\ref{sec:model-ladder}) can be a Docling pipeline \emph{flag}
 rather than new infrastructure.
 
-\begin{figure}[h]
+\begin{figure}[th]
 \centering
 \begin{tikzpicture}[
   font=\small,
@@ -1119,7 +1172,7 @@ rather than new infrastructure.
   \draw[arr] (enr) -- (doc);
   \draw[arr] (doc) -- (out);
 \end{tikzpicture}
-\caption{Docling's present-day (2026) pipeline. The \emph{standard} PDF pipeline EDGAR.jl uses is
+\caption{Docling's Present-Day (June 2026) Pipeline. The \emph{standard} PDF pipeline EDGAR.jl uses is
 specialised computer-vision models (layout $\to$ TableFormer $\to$ optional OCR), not a language model; the
 alternative \emph{VLM} pipeline has a single small vision-language model read each page. Both converge on one
 \texttt{DoclingDocument}, which EDGAR.jl maps to its \texttt{StructuredDocument}. VLMs also appear as optional
@@ -1297,7 +1350,7 @@ fresh filers (HK, DE, CN and EU/ESEF) that each reconcile to the reported total;
 wide tables an extractor splits into column-groups, div-positioned iXBRL, and decimal-comma locales --- is
 tracked in \texttt{docs/dev/segments-pdf-plan.md}.
 
-\section{The deterministic fallback}
+\section{The Deterministic Fallback}
 \label{sec:pdf-fallback}
 
 When the document-AI stack is absent, the fallback runs: a \textbf{single Node/TypeScript toolchain} ---
@@ -2033,7 +2086,7 @@ identified verbatim, normalised, and grouped by theme:
     the \texttt{Symbol} convention of the other tag fields (\texttt{source}, a filing's \texttt{kind}); in the
     exported \texttt{NarrativeRow} it serialises to a plain \texttt{String}, exactly as \texttt{source} does.
     Under the default \texttt{lang=:auto} it is resolved per row: a source language tag wins (XBRL
-    \texttt{xml:lang} / the document section), else a lightweight detector covering \textbf{eighteen}
+    \texttt{xml:lang} / the document section), else a lightweight detector covering \textbf{sixteen}
     languages --- \texttt{:en}, \texttt{:pt}, \texttt{:es}, \texttt{:fr}, \texttt{:de}, \texttt{:it},
     \texttt{:nl}, \texttt{:sv}, \texttt{:da}, \texttt{:no}, \texttt{:fi}, \texttt{:pl} by word markers, plus
     \texttt{:ja}, \texttt{:ko}, \texttt{:zh}, \texttt{:ru} by script --- else \texttt{:und} (undetermined,
@@ -2060,6 +2113,16 @@ producer emitted the row:
     \texttt{id} or XBRL role for a viewer to jump to (\texttt{""} for PDF); \texttt{kind} --- an optional
     semantic tag (e.g.\ \texttt{"statement"}).
 \end{itemize}
+
+\subsection{\texttt{TocRow}}
+\label{sec:api-tocrow}
+
+\noindent The \texttt{Tables.jl} \textbf{row} form of \texttt{TocNode} --- what \texttt{toc(x)}
+(\S\ref{sec:api-toc}) returns as a row table. It is a \texttt{NamedTuple} that adds filing provenance to the
+node's fields: \texttt{cik}, \texttt{accession}, \texttt{source}, \texttt{ord}, \texttt{level}, \texttt{title},
+\texttt{page} (\texttt{Int} or \texttt{nothing}), \texttt{anchor}, \texttt{kind}. Where a \texttt{TocNode} is
+one outline entry, \texttt{TocRow} is its exported, columnar shape --- the same relationship \texttt{FactRow}
+has to \texttt{Fact}.
 
 \subsection{\texttt{EntityId}}
 \label{sec:api-entityid}
@@ -2109,6 +2172,162 @@ at once: \texttt{cik}, \texttt{accession}, \texttt{url}, the \texttt{selector} t
 \texttt{kind}, and the region itself as \texttt{text}, \texttt{html}, \texttt{table} and extracted
 \texttt{facts}. It is produced interactively by the visual picker \texttt{select\_section} and consumed by
 the exporters (Markdown, iXBRL, facts JSON, DuckDB); that workflow is \S\ref{sec:select-section}.
+
+\section{Entity and Governance Records}
+\label{sec:api-entity-records}
+
+\noindent Beyond the numeric/prose value spine, a filing yields typed \textbf{records} about the entity and its
+governance --- who audits it, what it owns, what it announces. Each is a small struct produced by a dedicated
+accessor and shaped for a \texttt{Tables.jl} row table.
+
+\subsection{\texttt{AuditorInfo}}
+\label{sec:api-auditorinfo}
+
+\noindent The engagement auditor of a filing, returned by \texttt{auditor(f::Filing)}. Fields:
+\begin{itemize}[nosep]
+  \item \texttt{name}, \texttt{location} --- the audit firm and its city/country.
+  \item \texttt{firm\_id} --- the PCAOB firm ID (\texttt{Int}, or \texttt{nothing} where the regime assigns none).
+  \item \texttt{icfr\_attestation} --- whether the auditor \emph{also} attested internal control over financial
+    reporting (\texttt{Bool}, or \texttt{nothing} if not stated).
+  \item \texttt{senior\_statutory\_auditor} --- the named signing partner where disclosed (UK), else
+    \texttt{nothing}.
+  \item \texttt{opinion} --- the opinion type (e.g.\ unqualified), or \texttt{nothing}.
+\end{itemize}
+
+\subsection{\texttt{Subsidiary}}
+\label{sec:api-subsidiary}
+
+\noindent One entry of a filer's subsidiary list (the SEC's Exhibit~21 and its equivalents), returned by
+\texttt{subsidiaries(f::Filing)} and parsed by \texttt{parse\_subsidiaries}. Fields: \texttt{name},
+\texttt{jurisdiction} (place of incorporation), and \texttt{ownership} (the parent's percentage as a
+\texttt{Float64}, or \texttt{nothing} when the filing does not state it).
+
+\subsection{\texttt{PressRelease}}
+\label{sec:api-pressrelease}
+
+\noindent A press release attached to a filing --- typically a SEC 8-K earnings exhibit --- returned by
+\texttt{press\_releases(f::Filing)}. It carries the filing provenance (\texttt{cik}, \texttt{accession},
+\texttt{url}) alongside the exhibit's \texttt{document} name, \texttt{description}, and \texttt{type} (e.g.\
+\texttt{EX-99.1}). Its rendered body comes from \texttt{press\_release\_text} / \texttt{press\_release\_html}.
+
+\section{Fund and REIT Portfolio Types}
+\label{sec:api-portfolio-types}
+
+\noindent Portfolio disclosure --- what a fund or REIT holds --- is returned as a \texttt{FundPortfolio}, by
+\texttt{extract\_fund\_portfolio} (open-end funds, from Chinese fund reports today --- Chapter~\ref{sys:china})
+and \texttt{extract\_reit\_portfolio} (REITs, from HKEX reports --- Chapter~\ref{sys:hongkong}). Amounts are in
+the fund's reporting currency.
+
+\subsection{\texttt{FundPortfolio}}
+\label{sec:api-fundportfolio}
+
+\noindent The container, bundling three parallel schedules: \texttt{asset\_composition} (a
+\texttt{Vector\{FundAssetClass\}}, the by-asset-class breakdown), \texttt{industry} (a
+\texttt{Vector\{FundIndustryExposure\}}), and \texttt{holdings} (a \texttt{Vector\{FundHolding\}}, the
+line-by-line positions).
+
+\subsection{\texttt{FundHolding}}
+\label{sec:api-fundholding}
+
+\noindent One position in the holdings schedule: \texttt{category}
+(\texttt{"stock"}\,/\,\texttt{"bond"}\,/\,\texttt{"abs"}\,/\,\texttt{"metal"}\,/\,\texttt{"warrant"}),
+\texttt{code} (the exchange code, possibly with a market suffix), \texttt{name}, \texttt{quantity}
+(shares/units, or \texttt{nothing} when the schedule omits it), \texttt{fair\_value}, and \texttt{pct\_nav}
+(percent of net asset value).
+
+\subsection{\texttt{FundAssetClass}}
+\label{sec:api-fundassetclass}
+
+\noindent One row of the asset-composition schedule: \texttt{item} (the asset-class label --- equities,
+of-which-stocks, bank deposits, \ldots), \texttt{amount}, and \texttt{pct\_total\_assets} (percent of the
+fund's total assets).
+
+\subsection{\texttt{FundIndustryExposure}}
+\label{sec:api-fundindustryexposure}
+
+\noindent One row of the industry-exposure schedule: \texttt{sector\_code} (the regulator's sector code,
+\texttt{A}--\texttt{S}), \texttt{sector} (its name), \texttt{fair\_value}, and \texttt{pct\_nav}.
+
+\section{Supporting Types}
+\label{sec:api-supporting-types}
+
+\noindent Cross-cutting record types that back a single subsystem --- search, validation, and the language
+registry --- rather than the value spine.
+
+\subsection{\texttt{CompanyHit}}
+\label{sec:api-companyhit}
+
+\noindent One result of \texttt{company\_search} (\S\ref{sec:api-search}); the returned vector is a
+\texttt{Tables.jl} row table. A \texttt{NamedTuple} with \texttt{name}, \texttt{id} (an \texttt{EntityId}),
+\texttt{status}, \texttt{type}, \texttt{incorporated} (\texttt{Date} or \texttt{nothing}), \texttt{sic} (a
+\texttt{Vector\{String\}} of classification codes), \texttt{address} and \texttt{country}. It is the lookup step
+before \texttt{discover}: take a hit's \texttt{id} to fetch that filer's filings.
+
+\subsection{\texttt{OracleRow}}
+\label{sec:api-oraclerow}
+
+\noindent The row type of the validation cross-check: \texttt{validate} (\S\ref{sec:oracle-api}) returns a
+\texttt{Vector\{OracleRow\}}, one row per headline metric, pairing EDGAR's extracted figure with an independent
+provider's. It is a \texttt{NamedTuple} alias with seven fields:
+\begin{itemize}[nosep]
+  \item \texttt{statement} --- which statement the metric belongs to (\texttt{:bs}\,/\,\texttt{:is}\,/\,\texttt{:cf}).
+  \item \texttt{metric} --- the headline name (\texttt{"Assets"}, \texttt{"Revenue"}, \ldots).
+  \item \texttt{period\_end} --- the compared period (\texttt{Date}, or \texttt{nothing}).
+  \item \texttt{edgar} --- EDGAR's extracted value (\texttt{Float64}, or \texttt{nothing} if not extracted).
+  \item \texttt{reference} --- the provider's value (\texttt{Float64}, or \texttt{nothing} if the provider
+    does not cover it).
+  \item \texttt{rel\_diff} --- the relative difference between the two (\texttt{Float64}).
+  \item \texttt{match} --- agreement within tolerance (\texttt{Bool}; the \(0.1\%\) rule is
+    \S\ref{sec:oracle-api}).
+\end{itemize}
+
+\noindent It is the validation analogue of \texttt{Fact} --- a comparison row rather than a source figure ---
+and is documented in full alongside its producers, \texttt{validate}\,/\,\texttt{report}
+(\S\ref{sec:oracle-api}). (Distinct from the \texttt{accuracy} row of \S\ref{sec:pdf-accuracy}, which gauges
+the PDF path against the same providers but reports \texttt{within\_tol} per metric.)
+
+\subsection{\texttt{LanguageProfile}}
+\label{sec:api-languageprofile}
+
+\noindent One presentation language in the registry that drives every language-dependent behaviour --- prose
+detection, month-name parsing, statement location, label mapping and number locale. A \texttt{LanguageProfile}
+carries the language's \texttt{code} (BCP 47 primary subtag), \texttt{name}, \texttt{script}, detection
+\texttt{markers}, month table, \texttt{jurisdiction} (its number locale) and statement patterns; the vector of
+all registered profiles is the \texttt{SUPPORTED\_LANGS} constant. It is the \textbf{language} companion to the
+value-spine types --- ask \texttt{language\_covers} / \texttt{language\_coverage} what a profile covers rather
+than reading its fields --- and its full API (querying the registry, coverage, and \texttt{register\_language!}
+to add a language) is \S\ref{sec:api-languages}.
+
+\section{Constants}
+\label{sec:api-constants}
+
+A handful of exported names are \emph{registries} --- mutable-in-place vectors and dictionaries that the
+package treats as the single source of truth for a taxonomy, so that extending EDGAR.jl is a \emph{data} edit
+(push a new entry) rather than a code change. They are exported so a caller can inspect --- and, where a
+documented entry point exists, extend --- them.
+
+\subsection{\texttt{SUPPORTED\_LANGS}}
+\label{sec:api-supported-langs}
+
+\noindent The registry of \textbf{presentation languages}: a \texttt{Vector\{LanguageProfile\}}
+(\S\ref{sec:api-languageprofile}) holding every language EDGAR.jl is wired for --- \textbf{sixteen} today, the
+twelve Latin-script European languages (\texttt{en}, \texttt{pt}, \texttt{es}, \texttt{fr}, \texttt{de},
+\texttt{it}, \texttt{nl}, \texttt{sv}, \texttt{da}, \texttt{no}, \texttt{fi}, \texttt{pl}) plus \texttt{ja},
+\texttt{ko}, \texttt{zh} and \texttt{ru}. It is the source of truth behind the whole language API
+(\S\ref{sec:api-languages}): \texttt{supported\_languages} lists its codes, \texttt{language\_profile} looks one
+up, \texttt{language\_coverage} prints its live coverage matrix, and \texttt{register\_language!} mutates it in
+place to add a language. Because coverage is data rather than code, \texttt{language\_coverage} also flags any
+drift between the registry and the underlying tables. Query it through those functions rather than indexing it
+directly.
+
+\subsection{\texttt{TABLE\_CLASSES}}
+\label{sec:api-table-classes}
+
+\noindent The registry of \textbf{document table classes} --- the taxonomy \texttt{classify\_tables!} assigns
+to each parsed table (the four core statements plus note categories). Like \texttt{SUPPORTED\_LANGS} it is a
+live registry: \texttt{register\_table\_class!} adds an entry (taking precedence over the built-ins) and
+\texttt{classify\_table\_class} is the pure matcher over it. It is documented in full, with its companion
+functions and the \texttt{TableClass} type, in \S\ref{sec:api-classify-tables}.
 
 \section{Searching and Entity Lookup}
 \label{sec:api-search}
@@ -3616,6 +3835,7 @@ julia> DBInterface.execute(con,
 \end{lstlisting}
 
 \subsection{\texttt{classify\_tables!} and the table-class taxonomy}
+\label{sec:api-classify-tables}
 
 \begin{center}
 \textbf{\sig{classify\_tables!(db; doc\_id=nothing) -> Dict\{String,Int\}}}
@@ -3718,27 +3938,43 @@ translations, when added, live in \texttt{translations} (the source tables are n
 \end{tabular}
 \end{table}
 
-\subsection{Measuring the PDF fact path: \texttt{coverage} and \texttt{accuracy}}
+\subsection{Measuring and calibrating the PDF fact path: \texttt{coverage}, \texttt{accuracy} and
+\texttt{calibrate\_scale}}
 \label{sec:pdf-accuracy}
 
 The PDF fact path (\texttt{extract\_ifrs\_pdf} and its siblings) is \emph{deterministic} and
-\emph{jurisdiction-general} --- one structural pipeline, no per-filer tuning. Two exported functions let you
-judge it on \emph{your own} filings, each returning data (not just printing):
+\emph{jurisdiction-general} --- one structural pipeline, no per-filer tuning. Three exported functions let you
+judge \emph{and} correct it on \emph{your own} filings, each returning data (not just printing).
 
-\begin{itemize}
-\item \texttt{coverage(x)} --- the per-stage \textbf{funnel}: how far up the conveyor a report gets
-  (\emph{parsed} $\to$ \emph{located} $\to$ \emph{tables} $\to$ \emph{facts} $\to$ balance-sheet
-  \emph{cross-foot}), and the stage where it stops. \texttt{x} is a \texttt{Filing}, a PDF path, a
-  \texttt{Vector} of them, or already-extracted \texttt{FactRow}s. Network-free (the tables/facts stages need
-  the Tier-2 Docling stack).
-\item \texttt{accuracy(x; oracle, tol)} --- \textbf{correctness}: the five headline totals (Assets, Equity,
-  Revenue, Net income, Operating cash flow) against an independent \texttt{oracle}. \texttt{oracle = :yahoo}
-  compares to an external provider (needs a \texttt{ticker}; \S\ref{sec:oracle-api}); \texttt{oracle =
-  :xbrl\_twin} compares to the \emph{same} filer's own iXBRL filing (a \texttt{twin} \texttt{Filing}) --- the
-  dual-format check that needs no third party (\S\ref{sec:validation-crossformat}). Returns one row per metric
-  --- \texttt{(metric, statement, extracted, reference, rel\_diff, within\_tol)} --- plus the aggregate
-  \texttt{rate}.
-\end{itemize}
+\paragraph{\texttt{coverage} --- the per-stage funnel.} How far up the conveyor a report gets
+(\emph{parsed} $\to$ \emph{located} $\to$ \emph{tables} $\to$ \emph{facts} $\to$ balance-sheet
+\emph{cross-foot}), and the stage where it stops. \texttt{x} is a \texttt{Filing}, a PDF path, a
+\texttt{Vector} of them, or already-extracted \texttt{FactRow}s. Network-free (the tables/facts stages need
+the Tier-2 Docling stack).
+
+\sig{coverage(x) -> NamedTuple\quad(\texttt{Vector\{NamedTuple\}} for a \texttt{Vector} input)}
+
+\paragraph{\texttt{accuracy} --- correctness against an oracle.} The five headline totals (Assets, Equity,
+Revenue, Net income, Operating cash flow) against an independent \texttt{oracle}. \texttt{oracle = :yahoo}
+compares to an external provider (needs a \texttt{ticker}; \S\ref{sec:oracle-api}); \texttt{oracle =
+:xbrl\_twin} compares to the \emph{same} filer's own iXBRL filing (pass it as \texttt{twin}) --- the
+dual-format check that needs no third party (\S\ref{sec:validation-crossformat}). Returns one row per metric
+--- \texttt{(metric, statement, extracted, reference, rel\_diff, within\_tol)} --- plus the aggregate
+\texttt{rate}.
+
+\sig{accuracy(x; oracle = :yahoo, tol = 0.01, ticker = "", twin = nothing, system = :germany) -> NamedTuple}
+
+\paragraph{\texttt{calibrate\_scale} --- correction, not just measurement.} It fixes each statement's
+\emph{scale} (the most common systematic PDF error --- ``thousands'' read as units, and the like), returning
+the corrected \texttt{FactRow}s. Per statement it takes that statement's anchors (BS:
+\texttt{Assets}$+$\texttt{Equity}; IS: \texttt{Revenue}$+$\texttt{NetIncome}; CF: \texttt{OperCashFlow}),
+measures each anchor's order-of-magnitude gap to \texttt{provider}'s value, and multiplies \emph{every} fact
+in that statement by $10^{\text{gap}}$ --- but \textbf{only when all anchors agree} on the gap. A
+disagreement means an anchor is itself mis-extracted (not a scale error), so the statement is left exactly as
+the deterministic per-table scale produced it. Because it is order-of-magnitude only, a routine 1--2\,\%
+period or standardisation gap never triggers a correction.
+
+\sig{calibrate\_scale(x, ticker; provider = :yahoo, system = :germany) -> Vector\{FactRow\}}
 
 \begin{lstlisting}
 julia> using EDGAR, PythonCall             # PythonCall activates the Docling (Tier-2) extension
@@ -3755,6 +3991,10 @@ julia> res.rate                            # aggregate hit-rate within tol (defa
 julia> res.rows[1]
 (metric = "Assets", statement = :bs, extracted = ..., reference = ...,
  rel_diff = 0.0, within_tol = true)
+
+julia> rows = calibrate_scale(f, "TTE.PA");  # fix any per-statement scale error, in place
+julia> accuracy(rows; oracle = :yahoo, ticker = "TTE.PA").rate   # re-measure the corrected facts
+1.0
 \end{lstlisting}
 
 Both are \emph{honest, statistical} gauges: the deterministic fallback is judged over a \emph{sample}, and
@@ -4037,6 +4277,109 @@ Fast Retailing 138/138, whitespace-normalised). The check is \emph{exact} --- bo
 filing, so it validates the XBRL/iXBRL text-block extraction against an authoritative reference.
 
 
+\section{Languages and Writing Systems}
+\label{sec:api-languages}
+
+EDGAR.jl reads filings written in many languages, and every language-dependent behaviour is driven by one
+registry of \emph{presentation languages} rather than being scattered through the code. A language may cover up
+to six \textbf{components}:
+
+\begin{table}[h]
+\centering\small
+\caption{The language components. \texttt{language\_covers} tests one; \texttt{language\_coverage} prints the
+full matrix.}
+\label{tab:language-components}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Component} & \textbf{What it drives} \\
+\midrule
+\texttt{:detect}     & prose language detection (by word markers, or by script for non-Latin) \\
+\texttt{:tableclass} & table-class headings (statement-vs-note classification) \\
+\texttt{:stmtloc}    & locating the primary statements in a document \\
+\texttt{:months}     & month-name parsing (period-end dates) \\
+\texttt{:labels}     & line-item label $\to$ \texttt{ifrs-full} concept \\
+\texttt{:locale}     & number locale (decimal/grouping), via the language's jurisdiction \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The registry is the single source of truth: adding a language is a \emph{data} edit, not a code
+change. The full per-language detail (markers, month tables, statement patterns) is the \emph{Writing Systems
+Reference} appendix (Chapter~\ref{ch:writing-systems}); this section is the programmatic API. Note that this
+\emph{presentation}-language axis is distinct from the XBRL \emph{label}-language \texttt{lang=} keyword on
+\texttt{facts}\,/\,\texttt{breakdown}\,/\,\texttt{label\_map} (which selects among the tag languages a filer
+provided); it also underlies the \texttt{Narrative} \texttt{lang} field (\S\ref{sec:api-narratives}).
+
+\paragraph{\texttt{LanguageProfile} --- one language in the registry.} A \texttt{struct} with \texttt{code}
+(the BCP 47 primary subtag, \texttt{"en"}\,/\,\texttt{"pt"}\,/\,\texttt{"zh"}), \texttt{name}, \texttt{script}
+(\texttt{:latin}\,/\,\texttt{:han}\,/\,\texttt{:hangul}\,/\,\texttt{:kana}\,/\,\texttt{:cyrillic}),
+\texttt{markers} (prose-detection cues; empty $\Rightarrow$ detected by script), \texttt{months},
+\texttt{jurisdiction} (its default number locale), \texttt{stmt\_patterns}, and \texttt{declared} (components
+not yet re-homed into the profile). Ask for its covered-component set rather than reading fields directly ---
+the derived-plus-declared answer is what the pipeline uses.
+
+\paragraph{\texttt{SUPPORTED\_LANGS} --- the registry itself.} A \texttt{Vector\{LanguageProfile\}} of every
+registered language (sixteen today), mutated in place by \texttt{register\_language!}; it is documented as a
+constant in \S\ref{sec:api-supported-langs}.
+
+\paragraph{Querying the registry.}
+
+\sig{supported\_languages() -> Vector\{String\}}
+
+\noindent The BCP 47 codes of every registered language.
+
+\sig{language\_profile(code) -> Union\{LanguageProfile, Nothing\}}
+
+\noindent The profile for \texttt{code}, or \texttt{nothing} if it is not registered.
+
+\sig{is\_supported\_language(code) -> Bool}
+
+\noindent Whether \texttt{code} is a registered presentation language --- case-insensitive and
+region-subtag-insensitive (\texttt{"EN"}, \texttt{"en-GB"} all resolve to \texttt{"en"}).
+
+\sig{normalize\_language(code) -> String}
+
+\noindent Lower-case \texttt{code} and strip any BCP 47 region/script subtag to its registered primary
+(\texttt{"en-US"} $\to$ \texttt{"en"}, \texttt{"pt\_BR"} $\to$ \texttt{"pt"}); an unregistered input is returned
+lower-cased but otherwise unchanged.
+
+\sig{language\_covers(code, component::Symbol) -> Bool}
+
+\noindent Whether the registered language \texttt{code} is covered by \texttt{component} (one of the six in
+Table~\ref{tab:language-components}).
+
+\paragraph{Coverage and extension.}
+
+\sig{language\_coverage(; io = stdout) -> Vector\{LanguageProfile\}}
+
+\noindent Prints the language\,$\times$\,component coverage matrix and a per-component funnel, then cross-checks
+the \emph{declared} coverage against the live tables (so the registry cannot silently drift from the code), and
+returns \texttt{SUPPORTED\_LANGS}. The single, non-drifting answer to ``what languages do we support, and how
+far?''
+
+\sig{register\_language!(code, name, script; markers = String[], declared = Symbol[]) -> LanguageProfile}
+
+\noindent Add (or replace) a language --- the defined \textbf{``add a language''} entry point. Register the
+profile with its detection \texttt{markers} (empty for a non-Latin \texttt{script}, recognised by codepoint
+range), then fill the remaining components' data in their tables and list them in \texttt{declared} until they
+are re-homed. The domain components (\texttt{:stmtloc}, \texttt{:labels}, \texttt{:tableclass}) are real
+accounting translation and must be authored and verified on a live filer; \texttt{language\_coverage} then
+shows what the new language still lacks.
+
+\begin{lstlisting}
+julia> supported_languages()                 # every registered code
+["en", "pt", "es", "fr", "de", "it", "nl", "sv", "da", "no", "fi", "pl", "ja", "ko", "zh", "ru"]
+
+julia> normalize_language("pt-BR")           # region subtag stripped to the registered primary
+"pt"
+
+julia> language_covers("de", :labels)        # is German wired for label -> ifrs-full?
+true
+
+julia> language_coverage();                  # print the full matrix + funnel (returns SUPPORTED_LANGS)
+\end{lstlisting}
+
+
 \section{Low-Level Requests}
 \label{sec:api-lowlevel}
 
@@ -4226,8 +4569,8 @@ validate(system, locator, ticker; provider = :yahoo, scheme = :none) -> Vector{O
 report(firms = default_firms(provider); provider = :yahoo, scheme = :none) -> Bool
 \end{lstlisting}
 
-\noindent \texttt{validate} returns one \texttt{OracleRow} per metric --- \texttt{(statement, metric,
-period\_end, edgar, reference, rel\_diff, match)} --- where \texttt{reference} is the provider's value
+\noindent \texttt{validate} returns one \texttt{OracleRow} (\S\ref{sec:api-oraclerow}) per metric ---
+\texttt{(statement, metric, period\_end, edgar, reference, rel\_diff, match)} --- where \texttt{reference} is the provider's value
 (\texttt{nothing} if the provider does not cover it) and \texttt{match} is agreement within
 \textbf{0.1\%}. \texttt{report} runs a panel, prints each comparison grouped by statement, and returns
 \texttt{true} when there are no \emph{unexpected} mismatches. \texttt{system} is the filing system
