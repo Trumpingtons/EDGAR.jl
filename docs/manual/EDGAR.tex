@@ -418,7 +418,7 @@ role-vocabulary overrides, plus whatever jurisdiction-only APIs that registry ha
 of the package stays common --- which is what makes adding a second jurisdiction tractable rather
 than a rewrite.
 
-\section{Swap providers without swapping workflows}
+\section{Swap Providers without Swapping Workflows}
 \label{sec:swap-providers}
 
 The portability split has a consequence worth stating on its own, because it is the property a user
@@ -513,7 +513,7 @@ merged, a model provider can only \emph{improve or abstain}, never silently corr
 what lets you change the model, or decline one entirely, without changing the workflow or trusting the
 provider. The choice of model is a cost/quality dial, not a correctness dependency.
 
-\section{Entity identity across jurisdictions}
+\section{Entity Identity Across Jurisdictions}
 \label{sec:identity}
 
 Identity is one of those per-jurisdiction slices (Table~\ref{tab:portability}), and it is the concern most
@@ -559,7 +559,7 @@ SEC, ESEF and UKSEF appearances --- which a CIK, a Companies~House number or an 
 cannot. So while \texttt{EntityId} is deliberately scheme-agnostic, the LEI is the one scheme along which a
 \emph{single} entity's filings can be stitched together across the regimes this package covers.
 
-\section{Statement classification: two orthogonal axes}
+\section{Statement Classification: Two Orthogonal Axes}
 \label{sec:two-axes}
 \label{sec:classification-layers}
 
@@ -602,7 +602,7 @@ classification \emph{registry} today; the full per-request scoring cascade is a 
 port of the edgartools resolver. (This is a design direction and may change in detail.)
 
 
-\section{Extraction \textemdash{} from filings to facts}
+\section{Extraction: From Filings to Facts}
 \label{sys:extraction}
 
 A fetched \texttt{Filing} is only bytes plus a \texttt{kind}. An \textbf{extractor} turns it into the
@@ -663,7 +663,7 @@ fixed-workflow point directly. The \texttt{:ras} route additionally cross-foots 
 (total assets \(=\) total equity \(+\) liabilities) straight off the returned rows.
 
 
-\section{The model ladder: a federation of specialists}
+\section{The Model Ladder: A Federation of Specialists}
 \label{sec:model-ladder}
 
 Everything above is \emph{deterministic} --- regexes, structural parses, taxonomy maps. Language models enter
@@ -736,6 +736,94 @@ reasoning and, above all, the \emph{meta} work: an agent that plans, cracks a ha
 the deterministic rule} the local tier then runs at scale (the compile pattern above). So agents are the glue
 and the meta-programmer; the per-filing workhorse stays deterministic plus gated specialists. The design keeps
 climbing the ladder only on failure, and only when the answer is worth the next rung's cost.
+
+
+\section{Extending EDGAR.jl with coding agents}
+\label{sec:coding-agents}
+
+The two ladders so far --- the model ladder (\S\ref{sec:model-ladder}) and the provider axes
+(\S\ref{sec:swap-providers}) --- describe what happens \emph{at runtime}. The same principles pay off at a third
+place: \emph{development time}, when a user \textbf{extends} the toolkit --- adds a jurisdiction, a language, a
+label, a table class --- with the help of a coding agent. EDGAR.jl is designed so that this is not a rewrite but
+a small, checkable edit, which is exactly the shape of work a coding agent does well.
+
+\paragraph{Agent-extensible by construction.} The per-jurisdiction surface is small and mostly \emph{data}
+(\S\ref{sec:two-axes}): most of what a new regime needs is \emph{entries in a registry}, not new control flow.
+Adding a presentation language is \texttt{register\_language!} plus its tables (\S\ref{sec:api-languages}); a new
+statement or table heading is \texttt{register\_table\_class!} (\S\ref{sec:api-classify-tables}); a line-item
+label is a branch of \texttt{ifrs\_label\_concept} (\S\ref{sec:api-ifrs-label-concept}); a provider
+standardisation gap is a \texttt{standardize} mapping. Even a whole new \texttt{FilingSystem} is, in the main, a
+\texttt{discover}/\texttt{fetch} adapter plus identity and role-vocabulary overrides. These are pattern-following
+edits against a stable template --- precisely the tasks where an agent is productive and hand-coding is mostly
+transcription.
+
+\paragraph{The gate is what makes agent-written code safe.} An extension is only worth accepting if you can
+\emph{trust} it, and the invariant that lets a 3\,B model sit over authoritative data (\S\ref{sec:model-ladder})
+lets agent-written code do the same: every contribution must pass the deterministic checks before it counts ---
+a balance sheet must cross-foot, a roll-up must satisfy the calculation linkbase (\texttt{check\_calculations}),
+the headline totals must track an independent benchmark (\texttt{validate}\,/\,\texttt{accuracy},
+\S\ref{sec:oracle-api}, \S\ref{sec:pdf-accuracy}). Output that fails is rejected, not merged. So an agent, like a
+model, can only \textbf{improve or abstain} --- never silently corrupt --- and its work is \emph{verifiable}
+rather than taken on faith. That is what makes it defensible to let a coding agent touch code producing
+regulatory figures.
+
+\paragraph{An agent ladder, distinct from the model ladder.} The model ladder is about \emph{inference at
+runtime}; agents form a parallel ladder for \emph{authoring at development time}, and it too climbs only when the
+task warrants it:
+\begin{itemize}[nosep]
+  \item A \textbf{capable agent} (e.g.\ Claude Code) does the \emph{judgment}: read a new regime's real filings,
+    locate the seam in the codebase, design the deterministic rule or the \texttt{FilingSource} adapter, and wire
+    the oracle that will guard it. This is the meta-work the model ladder reserves for its top rung
+    (\S\ref{sec:model-ladder}) --- planning, cracking the hard case, and \textbf{writing the rule}.
+  \item A \textbf{weaker or local agent} takes the \emph{mundane, precisely-specified} remainder under exact
+    direction: transcribe a batch of label\,$\to$\,concept pairs from a spec, fill a month-name table, scaffold
+    the boilerplate of a new source, apply a mechanical refactor across files. Cheap, offline and bounded --- the
+    capable agent supplies the specification, the local agent supplies the volume.
+\end{itemize}
+
+\noindent The division is the development-time echo of \emph{``cloud compiles, local executes''}
+(\S\ref{sec:model-ladder}): the capable agent compiles \emph{understanding of a new regime} into a precise,
+mechanical instruction; the local agent executes it; and because both funnel through the same validation gate,
+delegating the volume downward costs nothing in correctness.
+
+\paragraph{Compile understanding into deterministic assets.} The highest-leverage use is the one the model
+ladder already names: spend the capable agent's reasoning \emph{once} to mint a cheap, reproducible artifact,
+then run it free forever. The multilingual \texttt{ifrs\_label\_concept} branches were built exactly this way ---
+a capable model read real line-item labels off live filings and emitted deterministic pattern branches
+(\S\ref{sec:model-ladder}). Agent-assisted extension generalises that template: point the agent at a new
+jurisdiction's filings, have it emit the registry entries and rules that regime needs, and let
+\texttt{language\_coverage} (\S\ref{sec:api-languages}) and the oracles report exactly what is covered and what
+still lacks. A worked ``add a language'' pass is a single registration followed by the coverage funnel telling
+you what remains:
+
+\begin{lstlisting}
+julia> register_language!("cs", "Czech", :latin; markers = [" a ", " je ", " na "])
+julia> language_coverage();   # the matrix now lists :cs and its still-missing components
+\end{lstlisting}
+
+\noindent The result is an extension path where the agent does the reading and the drafting, the registries keep
+the change to \emph{data}, and the validation gate keeps it \emph{honest} --- so augmenting EDGAR.jl stays
+bounded, reviewable work rather than an open-ended trust exercise.
+
+\paragraph{Tooling in practice (a 2026 snapshot).} The ladder has a concrete realisation, though the specific
+tools move quickly --- treat the names here as a dated snapshot, not a standing endorsement. Because an agent's
+competence is roughly its \emph{harness}\,$\times$\,its \emph{model}, the working rule is to run the capable tier
+where judgment is needed, delegate bounded work to a local agent on a smaller model, and gate both. For a
+\emph{Julia} package the highest-value piece is a \textbf{runtime bridge}: an MCP (Model~Context~Protocol) server
+that gives a coding agent live access to the Julia session --- REPL execution, method introspection, debugging
+--- so it works against the \emph{running} package rather than static text.
+\href{https://github.com/kahliburke/Kaimon.jl}{Kaimon.jl} and its lightweight \texttt{KaimonGate} are one such
+bridge (Appendix~\ref{ch:references}); the gate can expose \emph{EDGAR's own}
+\texttt{facts}\,/\,\texttt{validate}\,/\,\texttt{coverage} as agent-callable tools --- which is exactly how the
+validation gate (\S\ref{sec:model-ladder}) is made to run \emph{in the loop}: the agent drafts a rule, calls
+\texttt{validate}, and sees it cross-foot or fail before the change is kept. For the lower rung, a
+provider-agnostic terminal coding agent (\href{https://opencode.ai}{OpenCode}) pointed at a local model handles
+the mundane, precisely-directed edits, and a general local autonomous agent
+(\href{https://hermes-agent.org}{Hermes}, Nous~Research) can fill the same role. Finally, querying the DuckDB
+warehouse (\S\ref{sec:pdf-repo-schema}) in \emph{plain English} is a local text-to-SQL model's job ---
+\href{https://ollama.com/library/duckdb-nsql}{DuckDB-NSQL}, a small model fine-tuned on DuckDB SQL --- which
+realises the model ladder's ``code'' specialist (\S\ref{sec:model-ladder}) over the repository. All four are
+listed in Appendix~\ref{ch:references}.
 
 
 \section{Related Work and Comparison}
@@ -812,7 +900,7 @@ EDGAR.jl keeps a \emph{denormalised} wide facts table, which is what an analytic
 store like DuckDB prefers.
 
 
-\section{Coverage against financial databases}
+\section{Coverage Against Financial Databases}
 \label{sec:db-comparison}
 
 The comparison in \S\ref{sec:related-work} is against \emph{tooling} --- other libraries that
@@ -11258,12 +11346,23 @@ DOI~\texttt{10.1038/s41597-025-05150-1}; arXiv~\texttt{2501.05841}. Dataset: Hug
 \texttt{irlspbru/RFSD}; Zenodo DOI~\texttt{10.5281/zenodo.14622208}; CC\,BY\,4.0.
 \par
 
+\textsc{DuckDB-NSQL} (2024): \emph{A text-to-SQL model fine-tuned for DuckDB} (7\,B parameters, on Llama-2),
+distributed via Ollama. \href{https://ollama.com/library/duckdb-nsql}{ollama.com/library/duckdb-nsql}. The
+local natural-language-to-SQL option over the DuckDB warehouse, discussed in \S\ref{sec:coding-agents} (and
+\S\ref{sec:pdf-repo-schema}).
+\par
+
 \textsc{Financial Accounting Standards Board} (FASB): \emph{Accounting Standards Codification}, Norwalk, CT.
 The authoritative US~GAAP topics cited across the schemes, topics and fiscal/legal chapters
 (\S\ref{sec:schemes-topics}, Ch.~\ref{ch:fiscal}, Ch.~\ref{ch:legal}): ASC~330 (Inventory; the LIFO reserve),
 ASC~450 (Contingencies), ASC~715 (Compensation---Retirement Benefits), ASC~718 (Compensation---Stock
 Compensation), ASC~730 (Research and Development), ASC~740 (Income Taxes), ASC~842 (Leases). Not open access;
 the topic number is the citation.
+\par
+
+\textsc{Hermes Agent} (2026): \emph{An open-source local autonomous agent} (persistent memory, skill creation;
+runs on local models), Nous~Research. \href{https://hermes-agent.org}{hermes-agent.org}; MIT. Cited as a local
+autonomous-agent option in \S\ref{sec:coding-agents}.
 \par
 
 \textsc{International Accounting Standards Board} (IASB): \emph{IFRS Accounting Standards}, IFRS Foundation,
@@ -11278,6 +11377,12 @@ Payment). Not open access; the standard number is the citation.
 Constructive Capitalization,'' \emph{Accounting Horizons}, 5(1), 51--63. The constructive-capitalisation
 method --- discounting disclosed minimum lease payments to a balance-sheet asset and obligation --- behind the
 operating-lease topic (\S\ref{sec:topics-leases}).
+\par
+
+\textsc{Kaimon.jl} (2026): \emph{An MCP server bridging AI coding agents to the Julia runtime} (live REPL
+execution, method introspection, debugging; the \texttt{KaimonGate} companion exposes custom domain tools),
+K.~Burke. \href{https://github.com/kahliburke/Kaimon.jl}{github.com/kahliburke/Kaimon.jl}; MIT. The Julia
+runtime bridge discussed in \S\ref{sec:coding-agents}.
 \par
 
 \textsc{Lev, B., \textsc{and} T.~Sougiannis} (1996): ``The Capitalization, Amortization, and Value-Relevance of
@@ -11310,6 +11415,11 @@ to Practice,'' \emph{Review of Accounting Studies}, 6, 109--154. The operating/f
 financial statements --- net operating assets, RNOA, and the leverage decomposition of return on common
 equity --- underpinning the Penman--Nissim scheme (\S\ref{sec:schemes-penmannissim}).
 DOI~\texttt{10.1023/A:1011338221623}.
+\par
+
+\textsc{OpenCode} (2026): \emph{An open-source, provider-agnostic terminal AI coding agent} (bring-your-own
+model; MCP and LSP support). \href{https://opencode.ai}{opencode.ai}; MIT. Cited as a local coding-agent option
+in \S\ref{sec:coding-agents}.
 \par
 
 \textsc{Penman, S.~H.} (2013): \emph{Financial Statement Analysis and Security Valuation}, McGraw-Hill/Irwin,
