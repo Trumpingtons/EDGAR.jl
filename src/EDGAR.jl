@@ -114,7 +114,7 @@ export FilingSystem, SEC, ESEF, CompaniesHouse, EDINET, EDINETApi, DART, OpenDAR
        classify_table_class, table_class_kind, register_table_class!, TableClass, TABLE_CLASSES,
        LanguageProfile, SUPPORTED_LANGS, supported_languages, language_profile, language_covers,
        register_language!, language_coverage, is_supported_language, normalize_language,
-       parse_amount, amount_locale, infer_columns, parse_period_end, period_dates,
+       parse_amount, amount_locale, parse_period_end, period_dates,
        read_facts_json, standardize, set_standardizer, edgartools_mapping, statement_map,
        label_map, calculations, check_calculations, breakdown, segments, select_statement, reconstruct_from_notes, to_duckdb, statement_view, save_selection, archive_filings,
        set_config, set_user_agent, get_user_agent, set_credentials, set_cache_policy, persist_user_agent, unpersist_user_agent,

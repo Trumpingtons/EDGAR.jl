@@ -1581,7 +1581,7 @@ the narratives a filing already surfaces, not separate pipelines.
 \label{sec:audit-report}
 
 The audit report answers a question every financial statement raises: \emph{who} vouched for these numbers,
-and \emph{what} did they conclude. \texttt{auditor(f)} returns an \texttt{AuditorInfo} --- the independent
+and \emph{what} did they conclude. \texttt{auditor(f)} returns an \texttt{AuditorInfo} (\S\ref{sec:api-auditorinfo}) --- the independent
 auditor's name and office, and (where the regime provides them) the regulator's firm identifier and the
 internal-control attestation.
 
@@ -1826,7 +1826,7 @@ of what the announcement did to the price.
 
 At present \texttt{EDGAR.jl} reaches announcements two ways: by \textbf{discovery} ---
 \texttt{filings\_by\_cik(cik; forms = "8-K")} and each system's equivalent --- and, for the human-readable
-body, through the press-release and exhibit accessors (\texttt{press\_releases}, \texttt{exhibits}) that
+body, through the press-release and exhibit accessors (\texttt{press\_releases} --- \S\ref{sec:api-pressrelease} --- and \texttt{exhibits}) that
 lift the announcement text out of an 8-K or 6-K. Coverage is uneven by design: some channels are fully
 text-extracted, others are discovery-and-metadata only for now. The sections that follow build on this
 first-party layer.
@@ -1964,14 +1964,14 @@ cloud backend at all.
 \section{Investor Communications}
 \label{sec:investor-comms}
 
-\chapter{Common API}
+\chapter{Common API: Types and Constants}
 \label{sec:api}
 
-CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
-\texttt{0000320193}). Any \texttt{cik} argument accepts an integer or a string, with
-or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"0000320193"}
-are equivalent); functions normalize to the 10-digit form. Every data call goes
-through the cached, User-Agent-aware request layer (\S\ref{sec:ua}).
+The data model every workflow in the toolkit operates on: the value spine
+(\texttt{Filing}\,$\to$\,\texttt{Selection}\,$\to$\,\texttt{Fact}\,/\,\texttt{Narrative}), the record and
+portfolio types extracted from a filing, the supporting types behind search, validation and the language
+registry, and the exported registry constants. The methods that \emph{produce} and \emph{consume} these types
+are the next chapter (Chapter~\ref{sec:api-methods}).
 
 \section{Core Types}
 \label{sec:api-types}
@@ -2328,6 +2328,19 @@ to each parsed table (the four core statements plus note categories). Like \text
 live registry: \texttt{register\_table\_class!} adds an entry (taking precedence over the built-ins) and
 \texttt{classify\_table\_class} is the pure matcher over it. It is documented in full, with its companion
 functions and the \texttt{TableClass} type, in \S\ref{sec:api-classify-tables}.
+
+\chapter{Common API: Methods}
+\label{sec:api-methods}
+
+The functions of the toolkit --- search and lookup, the filing life-cycle (fetch, render, extract, save),
+the PDF/HTML document and financial-data readers, the text layer, the language registry, and the low-level
+request and caching controls. They operate on the types of the previous chapter (Chapter~\ref{sec:api}).
+
+CIKs are the SEC Central Index Key, zero-padded to 10 digits (Apple $\to$
+\texttt{0000320193}). Any \texttt{cik} argument accepts an integer or a string, with
+or without leading zeros (\texttt{320193}, \texttt{"320193"} and \texttt{"0000320193"}
+are equivalent); functions normalize to the 10-digit form. Every data call goes
+through the cached, User-Agent-aware request layer (\S\ref{sec:ua}).
 
 \section{Searching and Entity Lookup}
 \label{sec:api-search}
@@ -2893,6 +2906,18 @@ julia> f  = fetch_filing(h)
 julia> facts(f; classify = true, labels = true)
 \end{lstlisting}
 
+\subsection{\texttt{prefer\_statements}}
+\label{sec:api-prefer-statements}
+
+\noindent A discovery helper: collapse a filer's \texttt{FilingHandle}s to the \textbf{best-scoped document per
+reporting period}. When a source surfaces, for the same \texttt{(entity, period\_end)}, both a
+statements-bearing document and a thinner one, it keeps the former --- a \texttt{:statements} document wins over
+all, and an \texttt{:integrated}\,/\,\texttt{:summary} report loses to any sibling; input order (typically
+newest-first) is preserved, and unclassified handles pass through unchanged. Call it inside a \texttt{discover}
+method after building the per-record handles (as \texttt{CNINFOFilings} does), or on a handle list merged from
+several categories.
+
+\sig{prefer\_statements(handles::Vector\{FilingHandle\}) -> Vector\{FilingHandle\}}
 
 \subsection{\texttt{extract\_section}}
 
@@ -3892,6 +3917,23 @@ first class whose patterns match \texttt{heading}, or \texttt{nothing} (a descri
 \texttt{table\_class\_kind(key)} maps that key to its \texttt{kind} (so \texttt{fund\_portfolio} tables are
 tagged \texttt{kind="portfolio"}, not \texttt{"statement"}).
 
+\subsection{\texttt{derive\_facts!}}
+\label{sec:api-derive-facts}
+
+\noindent The repository's fact-derivation step: turn the classified statement tables into numeric
+\texttt{facts} rows. For every table marked \texttt{kind='statement'} it infers the value-column axis and parses
+each cell with the locale-aware primitives (\S\ref{sec:api-parsing-primitives}), emitting one fact per (body
+label-row $\times$ value column) --- notes and empty columns excluded --- each keeping \texttt{(table\_id, row,
+col)} and \texttt{section\_id} provenance. Period columns are recorded \textbf{faithfully, never fabricating a
+day the filing did not state}: \texttt{period\_start}\,/\,\texttt{period\_end} are filled only from a full date
+in the column header (or a same-year full date elsewhere in the report) and left \texttt{NULL} otherwise, while
+\texttt{fiscal\_year} always carries the stated year and \texttt{period\_precision} is \texttt{"day"} or
+\texttt{"year"} accordingly. It is idempotent per \texttt{doc\_id} (it replaces its own rows), optionally
+restricted to one. Like the other repository operations it is a \textbf{DuckDB-extension} entry point ---
+available only after \texttt{using DuckDB} --- and returns \texttt{(facts, tables)} counts.
+
+\sig{derive\_facts!(db; doc\_id = nothing) -> NamedTuple}
+
 \subsection{Repository Schema}
 \label{sec:pdf-repo-schema}
 
@@ -3937,6 +3979,67 @@ translations, when added, live in \texttt{translations} (the source tables are n
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Locale-aware parsing primitives}
+\label{sec:api-parsing-primitives}
+
+Turning a printed statement into facts means reading numbers and dates written in a dozen national conventions
+--- \texttt{1,234.56} vs \texttt{1.234,56} vs \texttt{1\,234,56}, \texttt{31/12/2023} vs \jpcjk{2023年3月31日}{}.
+The document extractor exposes the small, locale-aware primitives it uses for this, so you can reuse them on
+your own cells and headers. Each takes a \texttt{locale}; the language pipeline supplies it from the filing's
+jurisdiction (\S\ref{sec:api-languages}).
+
+\sig{amount\_locale(jurisdiction) -> Symbol}
+
+\noindent Map an ISO jurisdiction code to a number-separator class: \texttt{:en} (comma-thousands,
+dot-decimal), \texttt{:eu\_space} (space / comma --- e.g.\ France, Russia), or \texttt{:eu\_dot} (dot / comma
+--- e.g.\ Germany, Italy, Spain). Defaults to \texttt{:en}. This is the \texttt{locale} the other three
+primitives take.
+
+\sig{parse\_amount(s; locale = :en) -> Union\{Tuple\{Float64, Bool\}, Nothing\}}
+
+\noindent Parse one statement cell into a signed \texttt{Float64}. Returns \texttt{(value, nil)} --- with
+\texttt{nil\,=\,true} for an explicit zero or dash --- or \texttt{nothing} when \texttt{s} is not a number (a
+label, a note reference, blank). Parenthesised negatives, the sign, thousands separators and the decimal mark
+are all read per \texttt{locale}.
+
+\sig{parse\_period\_end(s; locale = :en) -> Union\{Date, Nothing\}}
+
+\noindent The period-\emph{end} date of a column header --- the \textbf{latest} full date it contains.
+Recognises CJK forms (\jpcjk{2025年3月31日}{} JP/CN, \krcjk{2025년 3월 31일}{} KR), numeric forms
+(\texttt{31/12/2023}, \texttt{31.12.2023}, \texttt{2023-12-31}) and worded month names in every registered
+language; \texttt{nothing} if the header carries no full date.
+
+\sig{period\_dates(s; locale = :en) -> Vector\{Date\}}
+
+\noindent Every full (day\,+\,month\,+\,year) date in a header, taken from the first matching format family ---
+so a period's start and end are just \texttt{minimum} / \texttt{maximum} of the returned set.
+
+\begin{lstlisting}
+julia> parse_amount("(1.234,56)"; locale = :eu_dot)   # German-style negative
+(-1234.56, false)
+julia> parse_period_end("30 September 2023")          # worded header -> the latest full date
+2023-09-30
+\end{lstlisting}
+
+\subsection{\texttt{ifrs\_label\_concept}}
+\label{sec:api-ifrs-label-concept}
+
+\noindent The deterministic \textbf{label\,$\to$\,concept} map behind the PDF IFRS extractor: classify one
+English (H)IFRS statement \texttt{label} --- as clustered from a PDF row --- to its \texttt{ifrs-full}
+\texttt{concept}, period type (\texttt{instant}) and \texttt{balance}
+(\texttt{:debit}\,/\,\texttt{:credit}\,/\,\texttt{:none}), within a known \texttt{statement}
+(\texttt{"BalanceSheet"}\,/\,\texttt{"IncomeStatement"}\,/\,\texttt{"CashFlow"}), or \texttt{nothing} if the
+label is not a recognised headline anchor. It is pattern-based (English phrasings vary) and statement-aware. The
+\texttt{balance} separates a line's \emph{value} from its \emph{contribution}: a debit line (e.g.\ cost of
+sales) prints in parentheses because it is \emph{subtracted}, but its stored value is the positive magnitude ---
+the sign belongs to the calculation, matching the \texttt{ifrs-full} XBRL convention (\S\ref{sec:pdf-sign});
+\texttt{:none} marks genuinely-signed lines such as cash-flow net flows. Only the totals needed for cross-foot
+and the external benchmark are mapped. It is also the deterministic artifact the ``cloud compiles, local
+executes'' pattern targets (\S\ref{sec:model-ladder}): its multilingual branches were minted by a capable model
+reading real filing labels, then run free forever at Rung~0.
+
+\sig{ifrs\_label\_concept(label, statement) -> Union\{Nothing, NamedTuple\{(:concept, :instant, :balance)\}\}}
 
 \subsection{Measuring and calibrating the PDF fact path: \texttt{coverage}, \texttt{accuracy} and
 \texttt{calibrate\_scale}}
@@ -8274,7 +8377,8 @@ consolidates its project-companies onto the corporate statements), and the secur
 A public fund's annual report carries something a company's does not: a \textbf{portfolio report} (\S8,
 \cncjk{投资组合报告}{}) --- the fund's \emph{holdings}. This is the CNINFO analogue of the SEC's N-PORT
 (\S\ref{N-PORT}), and it is a different artefact from the financial statements: a list of \emph{positions},
-not classified statement facts. \texttt{EDGAR.jl} extracts it with a dedicated function separate from the CAS
+not classified statement facts (returned as a \texttt{FundPortfolio} --- \S\ref{sec:api-portfolio-types}).
+\texttt{EDGAR.jl} extracts it with a dedicated function separate from the CAS
 statement path:
 \begin{lstlisting}[language=Julia]
 pf = extract_fund_portfolio(path)   # -> FundPortfolio
@@ -8383,7 +8487,8 @@ facts(f)                                            # statements via the PDF ext
   \item \textbf{Handles, newest first.} Each \texttt{FilingHandle}'s identity is the packed
     \texttt{EntityId(:cninfo,\ "code,orgId")} and its \texttt{period\_end} the fiscal-year end (Chinese fiscal
     years end 31~December), so \texttt{first(hs)} is the most recent annual report; the paired summary
-    is filtered out.
+    is filtered out --- \texttt{prefer\_statements} keeps the statements-bearing document per period
+    (\S\ref{sec:api-prefer-statements}).
   \item \textbf{Same caller API, PDF underneath.} \texttt{fetch\_filing(h)} $\to$ \texttt{facts(f)} /
     \texttt{narratives(f)} $\to$ \texttt{select\_statement} is identical to SEC, DART or India for the caller;
     what differs is \emph{internally} --- \texttt{facts(f)} runs the PDF extractor (Chapter~\ref{ch:pdf}) with
@@ -8547,8 +8652,8 @@ so a REIT's revenue, result and balance sheet extract through the ordinary path 
 ending 31~March; property revaluations can push the year to a loss). Its \textbf{property portfolio} is the REIT
 analogue of a fund's holdings: \texttt{extract\_reit\_portfolio} recovers the by-segment valuation breakdown
 (Link~REIT: Destination / Community / Neighbourhood, each with its valuation and share of the portfolio) into
-the \emph{same} \texttt{FundPortfolio} type \texttt{extract\_fund\_portfolio} returns for China and India
-(\S\ref{sec:india-formats}), so funds and REITs share one portfolio API. The \emph{distribution} statement is a
+the \emph{same} \texttt{FundPortfolio} type (\S\ref{sec:api-portfolio-types}) \texttt{extract\_fund\_portfolio}
+returns for China and India (\S\ref{sec:india-formats}), so funds and REITs share one portfolio API. The \emph{distribution} statement is a
 further REIT-specific extension.
 
 \begin{lstlisting}
@@ -10308,8 +10413,9 @@ legal, environmental and warranty exposures, is the analysis, and it ties direct
 \label{sec:legal-structure}
 Legal form, jurisdiction of incorporation, \emph{dual-class} control arrangements (the wedge between voting and
 economic ownership) and related-party transactions (IAS~24, Ch.~\ref{ch:references}) frame who really controls
-and benefits from the firm. The Exhibit~21 list of subsidiaries (SEC Regulation~S-K Item~601(b)(21)), with its
-per-regime equivalents, resolves to an \emph{entity/domicile graph} --- the bridge object the fiscal chapter
+and benefits from the firm. The Exhibit~21 list of subsidiaries (SEC Regulation~S-K Item~601(b)(21); read via
+\texttt{subsidiaries(f)} into \texttt{Subsidiary} rows, \S\ref{sec:api-subsidiary}), with its per-regime
+equivalents, resolves to an \emph{entity/domicile graph} --- the bridge object the fiscal chapter
 reads for tax domicile (\S\ref{sec:fiscal-geography}).
 
 \section{Debt Covenants and Material Contracts}
