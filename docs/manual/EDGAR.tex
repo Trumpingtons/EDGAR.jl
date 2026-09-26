@@ -808,21 +808,13 @@ bounded, reviewable work rather than an open-ended trust exercise.
 \paragraph{Tooling in practice (a 2026 snapshot).} The ladder has a concrete realisation, though the specific
 tools move quickly --- treat the names here as a dated snapshot, not a standing endorsement. Because an agent's
 competence is roughly its \emph{harness}\,$\times$\,its \emph{model}, the working rule is to run the capable tier
-where judgment is needed, delegate bounded work to a local agent on a smaller model, and gate both. For a
-\emph{Julia} package the highest-value piece is a \textbf{runtime bridge}: an MCP (Model~Context~Protocol) server
-that gives a coding agent live access to the Julia session --- REPL execution, method introspection, debugging
---- so it works against the \emph{running} package rather than static text.
-\href{https://github.com/kahliburke/Kaimon.jl}{Kaimon.jl} and its lightweight \texttt{KaimonGate} are one such
-bridge (Appendix~\ref{ch:references}); the gate can expose \emph{EDGAR's own}
-\texttt{facts}\,/\,\texttt{validate}\,/\,\texttt{coverage} as agent-callable tools --- which is exactly how the
-validation gate (\S\ref{sec:model-ladder}) is made to run \emph{in the loop}: the agent drafts a rule, calls
-\texttt{validate}, and sees it cross-foot or fail before the change is kept. For the lower rung, a
+where judgment is needed, delegate bounded work to a local agent on a smaller model, and gate both. For the lower rung, a
 provider-agnostic terminal coding agent (\href{https://opencode.ai}{OpenCode}) pointed at a local model handles
 the mundane, precisely-directed edits, and a general local autonomous agent
 (\href{https://hermes-agent.org}{Hermes}, Nous~Research) can fill the same role. Finally, querying the DuckDB
 warehouse (\S\ref{sec:pdf-repo-schema}) in \emph{plain English} is a local text-to-SQL model's job ---
 \href{https://ollama.com/library/duckdb-nsql}{DuckDB-NSQL}, a small model fine-tuned on DuckDB SQL --- which
-realises the model ladder's ``code'' specialist (\S\ref{sec:model-ladder}) over the repository. All four are
+realises the model ladder's ``code'' specialist (\S\ref{sec:model-ladder}) over the repository. All three are
 listed in Appendix~\ref{ch:references}.
 
 
@@ -11377,12 +11369,6 @@ Payment). Not open access; the standard number is the citation.
 Constructive Capitalization,'' \emph{Accounting Horizons}, 5(1), 51--63. The constructive-capitalisation
 method --- discounting disclosed minimum lease payments to a balance-sheet asset and obligation --- behind the
 operating-lease topic (\S\ref{sec:topics-leases}).
-\par
-
-\textsc{Kaimon.jl} (2026): \emph{An MCP server bridging AI coding agents to the Julia runtime} (live REPL
-execution, method introspection, debugging; the \texttt{KaimonGate} companion exposes custom domain tools),
-K.~Burke. \href{https://github.com/kahliburke/Kaimon.jl}{github.com/kahliburke/Kaimon.jl}; MIT. The Julia
-runtime bridge discussed in \S\ref{sec:coding-agents}.
 \par
 
 \textsc{Lev, B., \textsc{and} T.~Sougiannis} (1996): ``The Capitalization, Amortization, and Value-Relevance of
