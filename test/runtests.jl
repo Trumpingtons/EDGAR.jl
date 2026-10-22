@@ -22,6 +22,13 @@ const RUN_NETWORK = get(ENV, "EDGAR_NETWORK_TESTS", "true") != "false"
     @test (ok, bad) == (("0000320193", "0000320193", "0000320193", "0000320193"), (true, true, true))
 end
 
+@testset "submissions acceptanceDateTime corrected to UTC (offline)" begin
+    # An Apple Form 4 accepted at 18:32:55-04:00 (as EDGAR's Atom feed gives it), one at 18:34:19-05:00 in winter, and one under the pre-2007 rules
+    @test [EDGAR._submissions_accepted(raw) for raw in ["2026-10-20T02:32:55.000Z", "2026-01-30T04:34:19.000Z", "2006-07-01T00:00:00.000Z"]] ==
+          ["2026-10-19T22:32:55.000Z", "2026-01-29T23:34:19.000Z", "2006-06-30T20:00:00.000Z"]
+    @test EDGAR._submissions_accepted(nothing) === missing
+end
+
 @testset "clean_cache (offline)" begin
     # clean_cache removes entries older than the cutoff and keeps fresh ones.
     dir = mktempdir()

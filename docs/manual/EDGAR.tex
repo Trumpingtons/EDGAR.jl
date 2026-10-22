@@ -8974,7 +8974,7 @@ Filer-level attributes such as company name, entity type, and SIC code are not i
 \texttt{form}               & Filing form type (e.g.\ \texttt{10-K}, \texttt{10-Q}, \texttt{8-K}). \\
 \texttt{reportDate}         & Reporting period covered by the filing, if available. \\
 \texttt{filed}              & Filing date. \\
-\texttt{acceptanceDateTime} & Date and time the SEC accepted the filing (UTC, ISO 8601 format). \\
+\texttt{acceptanceDateTime} & Date and time the SEC accepted the filing (UTC, ISO 8601 format). The submissions API gives New York time plus twice its offset, labelled UTC; EDGAR.jl corrects it to the true UTC instant. \\
 \texttt{accession}          & Unique accession number identifying the filing. \\
 \texttt{document}           & Filename of the filing’s primary document. \\
 \texttt{isXBRL}             & Indicates whether the filing contains XBRL data. \\
@@ -8990,7 +8990,7 @@ julia> rows = filings_by_cik(320193; forms = "8-K", startdate = "2026-01-01");
 
 julia> rows[1]
 (form = "8-K", reportDate = "2026-04-30", filed = "2026-04-30",
- acceptanceDateTime = "2026-04-30T20:30:41.000Z",
+ acceptanceDateTime = "2026-04-30T16:30:41.000Z",
  accession = "0000320193-26-000011", document = "aapl-20260430.htm",
  isXBRL = true, isInlineXBRL = true, isXBRLNumeric = false)
 \end{lstlisting}

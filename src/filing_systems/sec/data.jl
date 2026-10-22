@@ -180,12 +180,17 @@ This is the EFTS counterpart of the web search's company/CIK field — a true "f
 matches filings that merely *mention* it).
 
 Each row is **one filing**: `form`, `reportDate` (period covered), `filed` (filing
-date), `acceptanceDateTime` (when the SEC accepted it), `accession`, `document`
+date), `acceptanceDateTime` (when the SEC accepted it, in UTC — see below), `accession`, `document`
 (primary filename), and the XBRL flags `isXBRL`, `isInlineXBRL`, `isXBRLNumeric`.
 The XBRL flags are joined per-filing on the accession (so a `10-K` is XBRL while a
 `Form 4` is not), and are `missing` for any filing outside the submissions recent
 window. Filer-level data (name, `entityType`, SIC, fiscal year-end, …) is *not*
 repeated on every row — get it from [`profile`](@ref).
+
+`acceptanceDateTime` is corrected: the submissions API labels New York time plus
+twice its UTC offset as UTC (a filing accepted at 18:32:55 EDT, 22:32:55Z, comes as
+`02:32:55.000Z` the next day), so EDGAR.jl takes the offset back out, giving the
+true UTC instant, as EDGAR's filing index pages and Atom feeds show it.
 
 Results are newest-first (there is no relevance to rank by). `forms`/dates/`from`
 behave as in [`full_text_search`](@ref); the page is 100, and there is no total
@@ -214,12 +219,41 @@ function filings_by_cik(cik; forms=nothing, startdate=nothing, enddate=nothing, 
         i = get(idx, String(h._source.adsh), nothing)
         at(arr) = i === nothing ? nothing : arr[i]   # nothing if the filing isn't in the recent window
         return (form = e.form, reportDate = e.reportDate, filed = e.filed,
-                acceptanceDateTime = mstr(at(rec.acceptanceDateTime)),
+                acceptanceDateTime = _submissions_accepted(at(rec.acceptanceDateTime)),
                 accession = e.accession, document = e.document,
                 isXBRL = mflag(at(rec.isXBRL)), isInlineXBRL = mflag(at(rec.isInlineXBRL)),
                 isXBRLNumeric = mflag(at(rec.isXBRLNumeric)))
     end
     return RowT[row(h) for h in res.hits.hits]
+end
+
+# Whether New York is on daylight-saving time at the UTC instant `t`: from 2 a.m. on the
+# second Sunday of March to 2 a.m. on the first Sunday of November (2007 onward), or
+# from the first Sunday of April to the last Sunday of October (1987-2006).
+function _newyork_dst(t::DateTime)
+    y = year(t)
+    sunday(d::Date) = d + Day(mod(7 - dayofweek(d), 7))   # the first Sunday on or after d
+    if y >= 2007
+        start, stop = sunday(Date(y, 3, 8)), sunday(Date(y, 11, 1))
+    else
+        start, stop = sunday(Date(y, 4, 1)), sunday(Date(y, 10, 25))
+    end
+    # 2 a.m. local: 07:00 UTC on standard time, 06:00 UTC on daylight time
+    return DateTime(start) + Hour(7) <= t < DateTime(stop) + Hour(6)
+end
+
+# The submissions API's `acceptanceDateTime`, corrected to UTC. It gives New York's wall
+# time plus twice its offset, labelled `Z`: four hours late in summer, five in winter.
+# The offset is the one in force at the corrected instant: four hours back unless that
+# lands outside daylight time, then five.
+function _submissions_accepted(raw)
+    raw === nothing && return missing
+    m = match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$", String(raw))
+    m === nothing && return String(raw)
+    t = DateTime(m.captures[1]) + Millisecond(m.captures[2] === nothing ? 0 : parse(Int, rpad(m.captures[2], 3, '0')))
+    summer = t - Hour(4)
+    utc = _newyork_dst(summer) ? summer : t - Hour(5)
+    return Dates.format(utc, dateformat"yyyy-mm-ddTHH:MM:SS.sss") * "Z"
 end
 
 """
