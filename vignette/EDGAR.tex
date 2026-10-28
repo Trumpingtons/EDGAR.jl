@@ -1,0 +1,190 @@
+% Pollis Domain Packages: SEC EDGAR filings and XBRL data (EDGAR.jl) -- draft 1 (28 October 2026)
+% Compile with: latexmk -pdf EDGAR.tex && latexmk -c
+\input{newmethods_style}
+
+% A package Pollis needs for a panel of its own, not one that reproduces a paper: its own header, key facts and credit
+\renewcommand{\nmdate}{28 October 2026}
+\fancyfoot[L]{\footnotesize\color{soft}\textbf{Pollis}\enspace Domain Packages\enspace·\enspace\nmtheme}
+\renewcommand{\nmhead}[3]{%
+  \renewcommand{\nmtheme}{#1}%
+  \thispagestyle{fancy}%
+  \begin{minipage}[c]{13mm}\pollislogo{11mm}\end{minipage}%
+  \begin{minipage}[c]{\dimexpr\linewidth-13mm\relax}
+    {\color{navy}\Large\bfseries Pollis}\enspace{\color{soft}Domain Packages}\hfill
+    {\color{deepamber}\small\bfseries\MakeUppercase{#1}}
+  \end{minipage}\par\vspace{7mm}
+  {\color{navy}\fontsize{22}{26}\selectfont\bfseries #2}\par\vspace{4pt}
+  {\color{soft}\large #3}\par\vspace{5mm}}
+\renewcommand{\factsheet}[4]{%
+  \begin{tcolorbox}[enhanced, colback=pale, colframe=pale, boxrule=0pt, sharp corners,
+    left=7pt, right=7pt, top=5pt, bottom=5pt, fontupper=\small]
+  \begin{tabularx}{\linewidth}{@{}>{\leavevmode\bfseries\color{navy}}p{27mm}>{\leavevmode}X@{}}
+  In Pollis & #1\\
+  Missing in Julia & #2\\
+  Package & #3\\
+  Tests & #4
+  \end{tabularx}
+  \end{tcolorbox}}
+\renewcommand{\nmcredit}{%
+  \par\vfill
+  \begin{minipage}[b]{0.78\linewidth}\footnotesize\color{soft}
+  Package written and tested with Claude Code (Anthropic) in Pollis.\par
+  \textcopyright\ 2026 Antonio Saragga Seabra\enspace·\enspace Licensed under \href{https://creativecommons.org/licenses/by-sa/4.0/}{CC BY-SA 4.0}\enspace·\enspace Draft, \nmdate
+  \end{minipage}\hfill
+  \begin{minipage}[b]{0.18\linewidth}\raggedleft\pollislogo{9mm}\par\vspace{2pt}{\footnotesize contact@pollis.org}\end{minipage}}
+
+
+\begin{document}
+\emergencystretch=3em
+
+\nmhead{Company Filings}
+  {EDGAR.jl: the SEC's filings and their numbers}
+  {What American companies file with the Securities and Exchange Commission, read into Julia: their filing
+   histories, every number they have tagged in XBRL, the text of their filings, item by item.}
+
+\factsheet
+  {The \emph{US SEC EDGAR} panel, in Explore > Access Data Libraries: submissions, company facts, company
+   concept, frames and full-text search, with the contact the SEC requires set once with \emph{Set contact}.}
+  {a client for EDGAR's REST APIs that sends the User-Agent the SEC asks for, and readers that turn a filing into
+   its items and its statements. Python has edgartools; Julia had ScrapeSEC.jl, which downloads the filing
+   documents in bulk but does not read them.}
+  {\fn{EDGAR.jl} 0.8.0, from GitHub:\newline \fn{Pkg.add(url = "https://github.com/Trumpingtons/EDGAR.jl")}.}
+  {an offline suite, on saved filings and responses, that sends nothing to the SEC; and comparisons with
+   edgartools on live filings: the items of eleven 10-Ks, GE's 10-K and nine 20-Fs to the character, and the face
+   statements of 50 filers of unusual kinds, 386 of 389 values.}
+
+\nmsection{Why a package}
+EDGAR, the SEC's Electronic Data Gathering, Analysis and Retrieval system, holds the filings of the companies,
+funds and insiders it regulates, searchable by their text from 2001 on: annual reports (10-K), quarterly reports (10-Q), current reports
+(8-K), the annual reports of foreign issuers (20-F, 40-F), and many more. Since 2009 the financial statements
+come tagged in XBRL, and the SEC serves those tags as JSON on \fn{data.sec.gov}, free and with no key
+(\nmcite{sec-api}{SEC, EDGAR APIs}). Two things stand between those APIs and an analysis. Every request must say
+who sends it, or the SEC refuses it; and the numbers come as the filers tagged them, a quarter and a year mixed
+together, each period repeated as a comparative in the filings after it, revenue under one tag until 2017 and
+another since. EDGAR.jl handles the first and gives the tools for the second; for the filing itself, the
+document, it reads the items (\emph{Item 1A.\ Risk Factors}, \emph{Item 7.\ Management's Discussion}) and the
+statements, with the algorithms of edgartools (\nmcite{edgartools}{Gunning, edgartools}) translated line for
+line.
+
+\nmsub{Where it is used}
+\begin{itemize}
+  \item \textbf{Accounting and finance research.} A firm's reported numbers over time, or one number across
+    every filer for one period, without a commercial database.
+  \item \textbf{Text as data.} The risk factors or the management's discussion of many filings, for text
+    analysis.
+  \item \textbf{Event studies.} When each filing was accepted, to the second: the moment the market could read
+    it.
+\end{itemize}
+
+\nmsection{The contact}
+The SEC asks every program that reads EDGAR to send a User-Agent that names the person or organisation and
+gives an email address, and to stay under ten requests a second (\nmcite{sec-access}{SEC, Accessing EDGAR
+Data}); a request without one gets HTTP 403. EDGAR.jl takes the contact, on every request, from
+\fn{set\_user\_agent("Name email")} if it was called in the session, and otherwise from the environment variable
+\fn{SEC\_USER\_AGENT}; with neither, it stops with an error before it contacts the SEC.
+
+In Pollis the contact is set once, with \emph{Set contact} on the Powered-by line of the US SEC EDGAR panel.
+Pollis keeps it in VS Code's Secret Storage, encrypted by the operating system, and puts it in the environment of
+each Julia REPL and terminal it starts, as \fn{SEC\_USER\_AGENT}, without writing it to a file or into the
+code. The panel's examples begin with \fn{using EDGAR} and nothing else: the contact is already there.
+
+\nmsection{What it reads}
+A CIK, the SEC's Central Index Key, identifies a filer; every function takes it as a number or a string, with or
+without its leading zeros (320193 or \fn{"0000320193"} for Apple).
+\begin{valuetable}{@{}>{\raggedright\arraybackslash}p{56mm}>{\raggedright\arraybackslash}X@{}}
+\textbf{Function} & \textbf{Returns}\\\midrule
+\fn{cik("AAPL"; by = :ticker)} & the CIKs of the SEC's ticker list that match a ticker or a name\\
+\fn{profile(cik)} & the filer: name, SIC industry, fiscal year end, tickers, exchanges, former names\\
+\fn{filings\_by\_cik(cik; forms, startdate, enddate)} & one row per filing, newest first: form, period, date
+  filed, acceptance time in UTC, accession number, primary document, XBRL flags\\
+\fn{full\_text\_search(query; forms, \dots)} & the filings whose text contains a phrase, ranked by relevance\\
+\fn{company\_facts(cik)} & every XBRL fact the filer has reported, by taxonomy and concept\\
+\fn{company\_concept(cik, taxonomy, tag)} & one concept over time, by unit\\
+\fn{xbrl\_frames(taxonomy, tag, unit, period)} & one concept for one calendar period, across every filer\\
+\fn{fetch\_filing(cik, accession)} & a filing's document, in memory, to read\\
+\fn{sections(f)}, \fn{TenK}, \fn{TwentyF} & a filing's items, in order\\
+\fn{facts(f; classify = true)} & a filing's facts, each with its statement and with the signs as reported\\
+\end{valuetable}
+Search and filing lists come 100 rows to a page, as EDGAR's full-text search gives them, with no total count:
+pass \fn{from = 100, 200, \dots} for the next pages. The rows are vectors of named tuples, so any Tables.jl
+reader takes them. Beyond the SEC, the package reads the filing systems of other countries (the ESEF reports of
+the European Union, Companies House, EDINET, DART and others); this vignette is about the SEC.
+
+\nmsection{A worked example}
+\nmsub{Apple's net income, a fact a year}
+\begin{nbox}{}
+\ttfamily\small
+using EDGAR\hfill \# the contact comes from Set contact\\
+p = profile(320193)\hfill \# Apple Inc., fiscal year ending 0927\\
+c = company\_concept(320193, "us-gaap", "NetIncomeLoss")\\
+annual = filter(o -> haskey(o, :frame) \&\& !occursin('Q', o.frame), c.units.USD)
+\end{nbox}
+\fn{c.units.USD} has every net income Apple has tagged: quarters and years, each repeated as a comparative in
+the two filings after it. The SEC marks with a \fn{frame} (\fn{CY2023}, \fn{CY2023Q1}) the one fact that best
+fits each calendar period, so the filter keeps one fact a year. Apple's year ends in September, so its fiscal
+2023 is framed as \fn{CY2023}, the calendar year it overlaps most. Across filers, frames do the same
+(\fn{xbrl\_frames("us-gaap", "Assets", "USD", "CY2022Q4I")}): a trailing \fn{I} asks for an instant, a balance at
+the end of the period, and no \fn{I} for a flow over it.
+
+\nmsub{When a filing was accepted}
+The submissions API, \fn{data.sec.gov/submissions}, gives each filing's \fn{acceptanceDateTime} as UTC, but it is
+New York time plus twice New York's offset: four hours late in summer, five in winter. EDGAR's own filing index
+pages and Atom feeds give the right time. \fn{filings\_by\_cik} takes the offset back out, with New York's
+daylight-saving rules:
+\begin{valuetable}{@{}lll@{}}
+\textbf{Accepted, New York} & \textbf{Submissions API} & \textbf{EDGAR.jl}\\\midrule
+19 Oct 2026, 18:32:55 EDT & 2026-10-20T02:32:55.000Z & 2026-10-19T22:32:55.000Z\\
+29 Jan 2026, 18:34:19 EST & 2026-01-30T04:34:19.000Z & 2026-01-29T23:34:19.000Z\\
+\end{valuetable}
+The rows are two of Apple's filings, out of nine checked against their index pages. For an event study of
+filings, the difference is the difference between after the close and the next morning.
+
+\nmsection{What the tests show}
+\nmsub{Offline}
+\fn{test/runtests.jl} runs on saved filings and responses in \fn{test/data} and sends no request to the SEC: the
+CIK forms, the acceptance times above, the readers of items and tables, the XBRL parsers, the classification of
+statements, the cache. It needs no contact, so it runs in continuous integration.
+
+\nmsub{Against edgartools}
+On live filings, EDGAR.jl was compared with edgartools 5.39 (Python):
+\begin{valuetable}{@{}>{\raggedright\arraybackslash}p{62mm}>{\raggedright\arraybackslash}X@{}}
+\textbf{Compared} & \textbf{Result}\\\midrule
+Items of eleven 10-Ks of large companies, Apple, Johnson \& Johnson, JPMorgan, Coca-Cola, Exxon, Boeing, Walmart,
+  Chevron, Pfizer and 3M among them & the same text, to the character\\
+GE's 10-K, whose items are found through its cross-reference index & 23 of 23 items, to the character\\
+Nine 20-Fs (SAP, Novartis, TSMC, AstraZeneca, Toyota, Sony, Honda, Novo Nordisk, Lloyds), filed through three
+  filing agents or by the company itself
+  & every item, to the character\\
+Face statements of 50 filers chosen for unusual structures (partnerships, foreign issuers under other GAAPs,
+  REITs, utilities, insurers, asset managers) & 386 of 389 values; the other 3 a choice of the comparison, not of
+  either package\\
+Ten 10-K/A amendments, all small companies & 42 of 42 values\\
+\end{valuetable}
+The comparisons found faults on both sides. EDGAR.jl's were fixed: slips in the translation of edgartools' item
+readers (a byte too many at the end of an item, an empty string that Python reads as false, the order of a Python
+dictionary), two names of income statements it did not know (\emph{Statement of Earnings}, \emph{Comprehensive
+Earnings}), and the negated labels: a filer can store a cash outflow as a positive number and show it with a
+minus sign, through the label of its presentation. 71 of the 72 filers checked do this, on a median of 23 lines; \fn{facts(f;
+classify = true)} now gives the numbers as the statements show them, and \fn{classify = false} as stored, as
+\fn{company\_facts} does.
+
+\nmsection{Still open}
+\begin{itemize}
+  \item \textbf{Some layouts.} Neither package finds the items of Tesla's 10-K; in a 20-F of 53 MB (Santander)
+    EDGAR.jl finds 3 items, and both packages take minutes to read it.
+  \item \textbf{The rate.} EDGAR.jl does not hold its requests under the SEC's ten a second; a loop over many
+    filers has to pace itself. Responses are cached, for the session by default.
+  \item \textbf{The panel.} The US SEC EDGAR panel shows the five data APIs; reading a filing into its items and
+    statements is in the package but not yet in the panel.
+\end{itemize}
+
+\nmsection{References}
+{\footnotesize\sloppy
+\nmref{edgartools}{Gunning, D. edgartools: a Python library for SEC EDGAR filings (MIT). \url{https://github.com/dgunning/edgartools}}
+\nmref{sec-access}{U.S. Securities and Exchange Commission. Accessing EDGAR Data: fair access and the User-Agent. \url{https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data}}
+\nmref{sec-api}{U.S. Securities and Exchange Commission. EDGAR Application Programming Interfaces. \url{https://www.sec.gov/search-filings/edgar-application-programming-interfaces}}
+\nmref{software}{Software: HTTP.jl, JSON3.jl, EzXML.jl, OrderedCollections.jl and ZipArchives.jl (MIT); concept mappings vendored from edgartools (MIT).}
+}
+
+\nmcredit
+\end{document}

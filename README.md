@@ -196,6 +196,10 @@ set_config(cache_ttl = 3600, cache_max_age = 30*24*3600)  # re-fetch hourly, kee
 
 `clean_cache()` also prunes on demand, and `cache_metrics()` reports hit/miss counts.
 
+## Vignette
+
+[EDGAR.jl: the SEC's filings and their numbers](vignette/EDGAR.pdf)
+
 ## Documentation
 
 Full documentation: **https://trumpingtons.github.io/EDGAR.jl/**

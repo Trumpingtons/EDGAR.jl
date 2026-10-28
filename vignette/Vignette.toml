@@ -1,0 +1,14 @@
+# The vignette of EDGAR.jl, shown in Help > Documentation > Vignettes once the package is installed.
+
+article = ""
+author = "Antonio Saragga Seabra"
+citation = ""
+description = "The SEC's EDGAR in Julia: submissions, XBRL company facts, concepts and frames, full-text search, and filings read into their items and statements, with the contact the SEC requires taken from Pollis; checked against edgartools."
+license = "MIT"
+method = "SEC EDGAR filings and XBRL data"
+package = "EDGAR"
+pdf = "EDGAR.pdf"
+repository = "https://github.com/Trumpingtons/EDGAR.jl"
+title = "EDGAR.jl: the SEC's filings and their numbers"
+topic = "Company Filings"
+version = "0.8.0"
