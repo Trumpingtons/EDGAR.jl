@@ -1123,10 +1123,10 @@ end
     <link:labelArc xlink:from="loc_R" xlink:to="lab_R"/>
     <link:label xlink:label="lab_R" xlink:role="http://www.xbrl.org/2003/role/label">Net sales</link:label>
     </link:linkbase>"""
-    @test (EDGAR._concept_labels(lab; lang = "en")["jppfs-cor:Assets"],
-           EDGAR._concept_labels(lab; lang = "ja")["jppfs-cor:Assets"],
+    @test (EDGAR._concept_labels(lab; lang = :en)["jppfs-cor:Assets"],
+           EDGAR._concept_labels(lab; lang = :ja)["jppfs-cor:Assets"],
            EDGAR._concept_labels(lab)["jppfs-cor:Assets"],
-           EDGAR._concept_labels(sec; lang = "ja")["us-gaap:Revenues"]) ==
+           EDGAR._concept_labels(sec; lang = :ja)["us-gaap:Revenues"]) ==
           ("Assets", "資産", "資産", "Net sales")
 end
 
